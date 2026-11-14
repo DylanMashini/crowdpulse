@@ -72,7 +72,7 @@ export function Accuracy() {
                 </p>
                 <dl className="lp-figures">
                   <Figure value={bpm(rest.perRecordingMaeBpm)} unit="bpm" label="Mean absolute error" />
-                  <Figure value={percent(rest.perRecordingWithin5)} label="Within 5 bpm, of the sittings that gave a heart rate" />
+                  <Figure value={percent(rest.perRecordingWithin5)} label={`Within 5 bpm, of the ${rest.recordingsWithSummary} sittings that gave a heart rate`} />
                   <Figure value={String(rest.recordingsWithSummary)} unit={`of ${rest.recordings}`} label="Recordings that gave a sitting heart rate" />
                 </dl>
               </div>
