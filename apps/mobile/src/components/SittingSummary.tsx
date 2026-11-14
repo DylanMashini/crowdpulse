@@ -58,7 +58,7 @@ export function SittingSummary({ items, status, sourceNote, children }: Props) {
               value={item.value ?? undefined}
               unit={item.unit}
               state={item.value == null ? 'none' : 'valid'}
-              foot={item.reason ?? 'Median of this sitting'}
+              foot={item.reason ?? item.note ?? 'Median of this sitting'}
               experimental={item.experimental}
               size="lg"
             />

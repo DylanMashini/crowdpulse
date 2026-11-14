@@ -1,4 +1,12 @@
-import { type Flag, type FlagAlert, type FlagRule, type Patient, type Sitting, flagAlerts } from '@triagecam/contracts';
+import {
+  type Flag,
+  type FlagAlert,
+  type FlagRule,
+  type Patient,
+  type Sitting,
+  flagAlerts,
+  isLowConfidence,
+} from '@triagecam/contracts';
 
 import { clockTime, percent, wholeNumber } from '../format.ts';
 import { sourceLabel } from './worklistFormat.ts';
@@ -239,9 +247,11 @@ export function sittingRows(sittings: Sitting[], now: number): SittingRow[] {
     if (summary) {
       const seconds = `${Math.round(summary.durationSeconds)} s`;
       detail =
-        pulse != null
-          ? `${seconds}, pulse read ${percent(summary.heartRate.coverage)} of the time`
-          : `${seconds}, no pulse or breathing could be read`;
+        pulse == null
+          ? `${seconds}, no pulse or breathing could be read`
+          : isLowConfidence(summary.heartRateConfidence)
+            ? `${seconds}, lower-confidence pulse, not used for trends or flags`
+            : `${seconds}, pulse read ${percent(summary.heartRate.coverage)} of the time`;
       if (pulse == null && breathing != null) detail = `${seconds}, breathing only`;
     } else if (!running) {
       detail = 'Ended without a summary';

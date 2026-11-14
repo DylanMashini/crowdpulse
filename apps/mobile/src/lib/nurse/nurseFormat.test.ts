@@ -350,6 +350,18 @@ test('sitting rows are newest first and say what each sitting gave', () => {
   assert.equal(rows[2]!.sourceLabel, 'Simulated');
 });
 
+test('a lower-confidence pulse is named in its sitting row, not given a share of the time', () => {
+  const weak = sitting('b', at(13, 30), 101.5, null);
+  weak.summary!.heartRate.coverage = 0.05;
+  weak.summary!.heartRateConfidence = 'low';
+  const normal = sitting('c', at(13, 40), 84, null);
+  normal.summary!.heartRateConfidence = 'normal';
+  const rows = sittingRows([weak, normal], NOW);
+  assert.equal(rows[1]!.pulse, '102');
+  assert.equal(rows[1]!.detail, '60 s, lower-confidence pulse, not used for trends or flags');
+  assert.equal(rows[0]!.detail, '60 s, pulse read 83% of the time');
+});
+
 test('the connection has three states, each with its own words', () => {
   assert.equal(connectionText('live'), 'Live');
   assert.equal(connectionText('polling'), 'Updating every 5 s');

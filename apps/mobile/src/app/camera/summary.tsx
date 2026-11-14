@@ -11,7 +11,7 @@ import { SittingSummary } from '@/components/SittingSummary';
 import { useScopedTheme } from '@/components/ThemeScope';
 import { PatientIdentity } from '@/components/PatientIdentity';
 import { usePatientRef } from '@/hooks/usePatientRef';
-import { summaryItems } from '@/lib/capture/readingFormat';
+import { hasLowConfidencePulse, summaryItems } from '@/lib/capture/readingFormat';
 import { type FinishedSitting, finishedSitting } from '@/lib/capture/sittingSession';
 import type { UploadState } from '@/lib/capture/uploadQueue';
 import { sentences } from '@/lib/format';
@@ -42,7 +42,7 @@ function SummaryContent({ sitting }: { sitting: FinishedSitting }) {
   const { colors, space } = theme;
   const router = useRouter();
   const uploads = useSyncExternalStore(sitting.uploads.subscribe, sitting.uploads.getState);
-  const status = uploadStatus(uploads, sitting.kind);
+  const status = uploadStatus(uploads, sitting.kind, hasLowConfidencePulse(sitting.summary));
   const source = sourceLabel(sitting.source);
   const patient = usePatientRef(sitting.patientNumber, null);
 
@@ -89,13 +89,16 @@ function SummaryContent({ sitting }: { sitting: FinishedSitting }) {
 function uploadStatus(
   uploads: UploadState,
   kind: FinishedSitting['kind'],
+  lowConfidence: boolean,
 ): { icon: IconName; text: string; settled: boolean; detail: string | null } {
   const refused =
     uploads.droppedReadings > 0
       ? `The station did not accept ${uploads.droppedReadings} of the one-second readings`
       : null;
   if (uploads.finish === 'sent') {
-    return { icon: 'check', text: kind === 'check_in' ? 'Baseline saved' : 'Re-check saved', settled: true, detail: refused };
+    // A lower-confidence pulse is kept with the sitting but is no baseline and no re-check.
+    const text = lowConfidence ? 'Saved. Repeat the sitting' : kind === 'check_in' ? 'Baseline saved' : 'Re-check saved';
+    return { icon: 'check', text, settled: true, detail: refused };
   }
   if (uploads.finish === 'failed') {
     return {

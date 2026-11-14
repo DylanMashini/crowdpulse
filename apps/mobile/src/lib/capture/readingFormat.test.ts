@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import type { Estimate } from '@triagecam/contracts';
 import type { CaptureSittingSummary, VariabilityReason } from 'triage-capture';
 
-import { ReasonTally, STALE_BLANK_AFTER_MS, readoutFor, summaryItems } from './readingFormat.ts';
+import { ReasonTally, STALE_BLANK_AFTER_MS, hasLowConfidencePulse, readoutFor, summaryItems } from './readingFormat.ts';
 
 const estimate = (patch: Partial<Estimate>): Estimate => ({
   value: null,
@@ -84,6 +84,34 @@ test('the summary names the main reason a measurement failed and tags variabilit
   assert.equal(items[1]!.reason, 'Chest not in view for most of the sitting');
   assert.equal(items[3]!.reason, 'Clean beats covered too little of the sitting');
   assert.equal(items[1]!.coverage, 0.1);
+});
+
+test('a lower-confidence heart rate says so in place of "Median of this sitting"', () => {
+  const none = { value: null, coverage: 0, reason: 'no_heart_rate' } as const;
+  const summary = (heartRateConfidence: 'normal' | 'low' | null | undefined, value: number | null = 101.5): CaptureSittingSummary => ({
+    durationSeconds: 60,
+    frameCount: 3600,
+    droppedFrames: 0,
+    heartRate: { value, coverage: 0.05, reason: value === null ? 'too_few_readings' : null },
+    breathingRate: { value: null, coverage: 0, reason: 'no_chest' },
+    rmssd: none,
+    sdnn: none,
+    beatIntervals: [],
+    timeToFirstReadingSeconds: 9,
+    longestDropoutSeconds: 49,
+    heartRateConfidence,
+  });
+  const note = (s: CaptureSittingSummary) => summaryItems(s, { heartRate: null, breathingRate: null })[0]!.note;
+  assert.equal(note(summary('low')), 'Lower confidence. Too little of the sitting gave a clear pulse. Not used for trends or flags. Repeat the sitting.');
+  assert.equal(hasLowConfidencePulse(summary('low')), true);
+  // Normal, null and a capture module from before the field existed all read as an ordinary rate.
+  for (const confidence of ['normal', null, undefined] as const) {
+    assert.equal(note(summary(confidence)), undefined);
+    assert.equal(hasLowConfidencePulse(summary(confidence)), false);
+  }
+  // No heart rate: nothing to qualify.
+  assert.equal(hasLowConfidencePulse(summary('low', null)), false);
+  assert.equal(note(summary('low', null)), undefined);
 });
 
 test('a withheld RMSSD or SDNN gives the reason the engine gave', () => {
