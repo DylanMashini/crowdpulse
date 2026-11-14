@@ -114,6 +114,16 @@ const password = "correct horse battery";
 assert.equal((await ok(HealthResponse, 200, "GET", routes.health)).status, "ok");
 done("the health route answers ok with no session");
 
+for (const path of ["/", routes.health]) {
+  const { headers } = await call("GET", path);
+  assert.match(headers.get("strict-transport-security") ?? "", /max-age=\d+/, path);
+  assert.equal(headers.get("x-frame-options"), "DENY", path);
+  assert.equal(headers.get("x-content-type-options"), "nosniff", path);
+  assert.ok(headers.get("referrer-policy"), path);
+  assert.equal(headers.get("x-powered-by"), null, path);
+}
+done("pages and API answers carry the security headers and do not name the framework");
+
 await refused(401, "unauthenticated", "GET", routes.worklist);
 await refused(401, "unauthenticated", "GET", routes.stream);
 await refused(401, "unauthenticated", "POST", routes.patients, { body: {} });
