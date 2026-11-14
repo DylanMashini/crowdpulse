@@ -5,7 +5,9 @@ import {
   CreatePatientRequest,
   ErrorCode,
   Estimate,
+  FLAG_RULE_ORDER,
   type Flag,
+  FlagRule,
   FrameRecord,
   Reading,
   Settings,
@@ -14,6 +16,7 @@ import {
   UpdatePatientRequest,
   patientLabel,
   defaultSettings,
+  byFlagRule,
   errorStatus,
   flagAlerts,
   timelineByAlert,
@@ -143,6 +146,20 @@ test('flags that share an alert id are one alert, and an alert waits until all o
   assert.deepEqual(partly?.waiting.map((each) => each.id), ['b']);
   assert.equal(flagAlerts([flag('a', 'score_rise', 'x', { closedAt })])[0]?.closedAt, closedAt);
   assert.deepEqual(flagAlerts([]), []);
+});
+
+test('an alert names its rules in one order, whatever order the server listed its flags in', () => {
+  const rise = flag('a', 'score_rise', 'trend-14-1');
+  const shift = flag('b', 'baseline_shift', 'trend-14-1');
+  for (const given of [[rise, shift], [shift, rise]]) {
+    const [alert] = flagAlerts(given);
+    assert.deepEqual(alert?.flags.map((each) => each.rule), ['score_rise', 'baseline_shift']);
+    assert.equal(alert?.lead, rise);
+    assert.deepEqual(alert?.waiting.map((each) => each.rule), ['score_rise', 'baseline_shift']);
+  }
+  assert.deepEqual([...FlagRule.options].reverse().sort(byFlagRule), FLAG_RULE_ORDER);
+  // Every rule has a place in the order.
+  assert.deepEqual([...FLAG_RULE_ORDER].sort(), [...FlagRule.options].sort());
 });
 
 test('the timeline tells an alert opening or closing once, however many rules it tripped', () => {

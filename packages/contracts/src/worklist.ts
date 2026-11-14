@@ -21,6 +21,16 @@ export type Trend = z.infer<typeof Trend>;
 export const FlagRule = z.enum(['score_rise', 'baseline_shift', 'overdue']);
 export type FlagRule = z.infer<typeof FlagRule>;
 
+/**
+ * The one order rules are named and listed in, on every screen and on the server: the trend
+ * rules, score first, then overdue.
+ */
+export const FLAG_RULE_ORDER: readonly FlagRule[] = ['score_rise', 'baseline_shift', 'overdue'];
+
+/** Sorts rules, or anything that has one, into `FLAG_RULE_ORDER`. */
+export const byFlagRule = (a: FlagRule | { rule: FlagRule }, b: FlagRule | { rule: FlagRule }): number =>
+  FLAG_RULE_ORDER.indexOf(typeof a === 'string' ? a : a.rule) - FLAG_RULE_ORDER.indexOf(typeof b === 'string' ? b : b.rule);
+
 /** The numbers a flag was raised on, frozen when it opened. */
 export const FlagDetail = z.object({
   pulse: Trend,
@@ -65,9 +75,9 @@ export type Flag = z.infer<typeof Flag>;
 export type FlagAlert = {
   /** The `alertId` its flags share. */
   id: string;
-  /** In the order they were given. Never empty. */
+  /** In rule order (`FLAG_RULE_ORDER`), whatever order they were given in. Never empty. */
   flags: Flag[];
-  /** The first flag. An alert's flags share their patient, opening time, numbers and sentence. */
+  /** The first of them. An alert's flags share their patient, opening time, numbers and sentence. */
   lead: Flag;
   /** The open flags nobody has acknowledged. Acknowledging any one of them covers the rest. */
   waiting: Flag[];
@@ -100,7 +110,9 @@ export function flagAlerts(flags: Flag[]): FlagAlert[] {
     if (group) group.push(flag);
     else groups.set(flag.alertId, [flag]);
   }
-  return [...groups].map(([id, members]) => {
+  return [...groups].map(([id, given]) => {
+    // A stable sort: two flags of one rule (an episode that closed and a later one) keep their order.
+    const members = [...given].sort(byFlagRule);
     const acknowledgedAt = latest(members.map((flag) => flag.acknowledgedAt));
     return {
       id,
