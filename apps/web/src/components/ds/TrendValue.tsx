@@ -9,8 +9,9 @@ export interface TrendValueProps {
   unit: string;
   notMeasuredYet?: boolean;
   /**
-   * `cell` is for a table: the value, then the change from check-in in a slot of its own, so the
-   * digits of a column line up whether or not a row has changed. `tile` has room for the words.
+   * `cell` is for a table: the value, then the change and the check-in baseline in a slot of its
+   * own ("+26 from 82"), so the digits of a column line up whether or not a row has changed.
+   * `tile` stacks the same words under the value.
    */
   layout?: 'cell' | 'tile';
   /** Colours the change on a flagged row. */
@@ -31,11 +32,14 @@ export function TrendValue({ trend, unit, notMeasuredYet, layout = 'tile', sever
 
   if (layout === 'cell') {
     return (
-      <span className="inline-flex items-baseline gap-[6px] whitespace-nowrap" title={trend.base != null ? `${rate(trend.base)} ${unit} at check-in` : undefined}>
+      <span className="inline-flex items-baseline gap-2 whitespace-nowrap">
         <span className={cx('type-readout-sm', bright ? 'text-ink-bright' : 'text-ink')}>{rate(trend.now)}</span>
-        <span className={cx('inline-block min-w-[28px] text-left type-caption tabular-nums', change && severity ? DELTA[severity] : 'text-ink-faint')}>
-          {change ?? (trend.base != null ? '0' : '')}
-          {trend.base != null ? <span className="sr-only"> from {rate(trend.base)} at check-in</span> : null}
+        <span className="inline-block min-w-[84px] text-left type-caption text-ink-faint tabular-nums">
+          {trend.base == null ? null : (
+            <>
+              {change ? <span className={severity ? DELTA[severity] : 'text-ink-muted'}>{change} </span> : null}from {rate(trend.base)}
+            </>
+          )}
         </span>
       </span>
     );
