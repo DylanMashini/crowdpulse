@@ -303,14 +303,6 @@ function Results({ data }: { data: Statistics }) {
   );
 }
 
-/** The state in a word or two: the row has its own columns for how long. */
-const STATE_WORDS: Record<TileState, (minutesSinceObserved: number | null) => string> = {
-  observed: (minutesSinceObserved) => (minutesSinceObserved == null ? 'Not yet observed' : 'Observed'),
-  flag: () => 'Trend flag',
-  overdue: () => 'Overdue',
-  'no-reading': () => 'No reading',
-};
-
 function PatientRow({ row }: { row: PatientStatistics }) {
   const muted = 'text-[13px] whitespace-nowrap text-ink-muted';
   // "No reading" means a sitting ran and gave nothing; with no sitting at all, say that instead.
@@ -324,7 +316,7 @@ function PatientRow({ row }: { row: PatientStatistics }) {
       </td>
       <td className={tableCell}>
         {row.state ? (
-          <StatusBadge state={row.state}>{STATE_WORDS[row.state](row.minutesSinceObserved)}</StatusBadge>
+          <StatusBadge state={row.state} minutes={row.minutesSinceObserved} brief />
         ) : (
           <span className="whitespace-nowrap text-ink-muted">Discharged{row.dischargedAt ? ` ${timeOrDayTime(row.dischargedAt)}` : ''}</span>
         )}
