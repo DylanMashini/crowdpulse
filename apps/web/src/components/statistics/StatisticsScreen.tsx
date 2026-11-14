@@ -2,7 +2,7 @@
 
 import { patientLabel, type FlagRule, type PatientStatistics, type Statistics, type TileState } from '@triagecam/contracts';
 import Link from 'next/link';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { useLiveEvents } from '@/components/app/live';
 import { PatientIdentity, ScoreChip, StatusBadge, TrendValue, buttonClass, tableCell, tableFrame, tableHeadCell } from '@/components/ds';
@@ -20,6 +20,8 @@ import { Sparkline } from './Sparkline';
 
 type Preset = 'today' | 'day' | 'week';
 const HOUR = 3_600_000;
+/** Events arrive in bursts (every auto-save of the intake form is one), so they share one refresh. */
+const REFRESH_DELAY_MS = 2000;
 
 interface Range {
   preset: Preset;
@@ -93,9 +95,27 @@ export function StatisticsScreen() {
   const statistics = useResource(`statistics:${range.preset}:${range.from ?? ''}`, () => api.statistics(range.from));
   const reload = statistics.reload;
 
-  // The page counts what the waiting room is doing, so it follows the room.
+  // The page counts what the waiting room is doing, so it follows the room: at most one refresh
+  // every REFRESH_DELAY_MS, however many events arrive in that time.
+  const latestReload = useRef(reload);
+  const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    latestReload.current = reload;
+  });
+  useEffect(
+    () => () => {
+      if (pending.current) clearTimeout(pending.current);
+    },
+    [],
+  );
   useLiveEvents((event) => {
-    if (event.type !== 'reading' && event.type !== 'live_changed' && event.type !== 'sitting_started') reload();
+    // None of these changes a number on the page.
+    if (event.type === 'reading' || event.type === 'live_changed' || event.type === 'sitting_started') return;
+    if (pending.current) return;
+    pending.current = setTimeout(() => {
+      pending.current = null;
+      latestReload.current();
+    }, REFRESH_DELAY_MS);
   });
 
   const choose = (preset: Preset) => {
