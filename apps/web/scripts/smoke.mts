@@ -440,8 +440,15 @@ assert.equal(acknowledged.closedAt, null, "acknowledging does not close the flag
 const twice = (await ok(FlagResponse, 200, "POST", routes.flagAcknowledge(scoreRise.id), { auth: web })).flag;
 assert.equal(twice.acknowledgedAt, acknowledged.acknowledgedAt);
 await seen("flag_acknowledged", (event) => event.flag.id === scoreRise.id);
+// One deterioration, one alert: the acknowledgement covered the patient's other trend flag.
+const baselineShift = flags.find((flag) => flag.rule === "baseline_shift");
+assert.ok(baselineShift);
+const covered = (await openFlags(number)).find((flag) => flag.id === baselineShift.id);
+assert.equal(covered?.acknowledgedAt, acknowledged.acknowledgedAt, "one acknowledgement covers both trend flags");
+assert.equal(covered?.acknowledgedBy, email);
+await seen("flag_acknowledged", (event) => event.flag.id === baselineShift.id);
 await refused(404, "not_found", "POST", routes.flagAcknowledge(camera.id), { auth: web });
-done(`acknowledged by ${acknowledged.acknowledgedBy}`);
+done(`both trend flags acknowledged by ${acknowledged.acknowledgedBy} in one request`);
 
 await (await sit(number, "recheck", 110, 24, 3)).finish();
 assert.equal((await openFlags(number)).length, 2, "a third raised observation opens no new episode");
@@ -482,6 +489,16 @@ for (const type of ["created", "sitting", "flag_opened", "flag_acknowledged", "f
   assert.ok(patientView.timeline.some((entry) => entry.type === type), `the timeline has a ${type} entry`);
 }
 assert.deepEqual(patientView.timeline.map((entry) => entry.at), patientView.timeline.map((entry) => entry.at).sort().reverse());
+assert.equal(
+  patientView.timeline.filter((entry) => entry.type === "flag_acknowledged").length,
+  1,
+  "the acknowledgement that covered both trend flags is one timeline entry",
+);
+// Read oldest first, every flag opens after the sitting that raised it, never before.
+const oldestFirst = [...patientView.timeline].reverse();
+const trippingAt = oldestFirst.findIndex((entry) => entry.type === "sitting" && entry.sittingId === tripping.id);
+const firstOpened = oldestFirst.findIndex((entry) => entry.type === "flag_opened");
+assert.ok(trippingAt !== -1 && trippingAt < firstOpened, "the sitting comes before the flags it raised");
 done("patient detail: baseline, sittings, flags and a newest-first timeline");
 
 // --- settings and statistics --------------------------------------------------------------
