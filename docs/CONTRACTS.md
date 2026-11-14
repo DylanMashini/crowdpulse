@@ -187,7 +187,7 @@ Until the Swift functions exist in the build, `TriageCaptureModule.ts` hands bac
 | `stopSitting()` | `Promise<SittingResult>` | `{ sittingId, endedAt, summary, fileUri }`. `summary` is `SignalEngine.finish()` unchanged and is the body of the finish request. `fileUri` is a `file://` URI, or null from the stub. The caller decides when 60 seconds are up. |
 | `deleteSittingFile(fileUri)` | `Promise<void>` | After upload, or when the file is not wanted |
 | `setLivePreview(options)` | `Promise<void>` | `{ enabled, fps?: 1 to 30 (default 2), maxLongSide?: up to 640 (default 480), quality?: 0 to 1 (default 0.5), uploadUrl?, uploadHeaders? }`. Off by default. With `uploadUrl` (the absolute live-view frame route) the module posts each frame itself as a raw `image/jpeg` body with `uploadHeaders`, at most two in flight and the rest dropped, and reports through `onLiveUpload`; without it, frames arrive as `onPreviewFrame`. Frames are never written to disk. |
-| `captureFaceCrop()` | `Promise<{ jpegBase64, width, height }>` | The tracked face from the current frame, at most 512 px on the long side. Sent once per check-in sitting as the profile photo (`PUT /api/patients/:number/photo`), and for face enrolment when the patient opted in. |
+| `captureFaceCrop()` | `Promise<{ jpegBase64, width, height }>` | The tracked face from the current frame, at most 512 px on the long side. Sent once per check-in sitting as a fallback profile photo (`PUT /api/patients/:number/photo`, kept only when the patient has none), and for face enrolment when the patient opted in. |
 | `addListener(name, listener)` | `{ remove() }` | |
 
 Every promise rejects with an `Error` whose `code` is one of `ERR_CAMERA_PERMISSION`, `ERR_CAMERA_UNAVAILABLE`, `ERR_CAPTURE_INTERRUPTED`, `ERR_NOT_CAPTURING`, `ERR_SITTING_RUNNING`, `ERR_NO_SITTING`, `ERR_NO_FACE`, `ERR_FILE`.
@@ -261,27 +261,27 @@ A patient is one visit to the waiting room. The record is created empty the mome
 | `PATCH /api/patients/:number` | staff | `UpdatePatientRequest`: any subset of the intake fields, `faceOptIn?`, `intakeComplete?` | 200 `PatientResponse`. A field left out keeps its value; `null` or an empty string clears it. The check-in page sends this as staff type (about 0.4 s after the last key), so it is cheap and safe to repeat. `faceOptIn: false` deletes the stored embedding; changing `faceOptIn` on a discharged patient is 409 `patient_discharged`, intake fields can still be corrected. |
 | `POST /api/patients/:number/discharge` | staff | none | 200 `PatientResponse`. Sets status, closes open flags, deletes face embeddings. The name, intake details and photo stay. Calling it again returns the same patient. |
 | `GET /api/patients/:number/photo` | staff | Optional query `v=<photoUpdatedAt>` | 200 `image/jpeg`, a 384 px square (`PATIENT_PHOTO_SIZE`). With `v` it is `Cache-Control: private, max-age=31536000, immutable`. 404 `not_found` when there is no photo. |
-| `PUT /api/patients/:number/photo` | staff | `PatientPhotoRequest` `{ jpegBase64 }`: the phone's face crop | 200 `PatientResponse`. Replaces an earlier photo. |
+| `PUT /api/patients/:number/photo` | staff | `PatientPhotoRequest` `{ jpegBase64, replace? }`: the phone's face crop | 200 `PatientResponse`. Without `replace: true` it only fills a gap: the crop is dropped, and the unchanged patient returned, when there is already a photo or staff removed it. |
 | `POST /api/patients/:number/photo/capture` | staff | `CapturePatientPhotoRequest` `{ deviceId }` | 200 `PatientResponse`. Cuts the portrait from the frame that camera phone is sending to the live view now. 409 `conflict` when the phone is not live, 422 `no_face_detected`, 503 `face_unavailable`. |
-| `DELETE /api/patients/:number/photo` | staff | none | 204 |
+| `DELETE /api/patients/:number/photo` | staff | none | 204. The photo stays removed: automatic capture and the phone's crop do not put one back until staff take one (the capture route, or `PUT` with `replace: true`). |
 
 `Patient` is the intake fields plus `{ number, status: 'waiting' \| 'discharged', createdAt, dischargedAt, intakeCompletedAt, photoUpdatedAt, faceOptIn, faceEnrolled }`.
 
 | Intake field (`PatientIntake`) | Type | Meaning |
 |---|---|---|
 | `name` | string or null, at most 120 | Null until staff have typed it. Show `patientLabel(patient)`, which falls back to "Patient 14". |
-| `dateOfBirth` | `YYYY-MM-DD` or null | A calendar date, no time or zone |
+| `dateOfBirth` | `YYYY-MM-DD` or null | A calendar date, no time or zone. A request must give one from 1900-01-01 (`EARLIEST_DATE_OF_BIRTH`) to today, or it is refused with 400 `invalid_request`. |
 | `sex` | `'female' \| 'male' \| 'other'` or null | |
 | `reasonForVisit` | string or null, at most 280 | The chief complaint |
 | `painScore` | integer 0 to 10 or null | As the patient reports it |
 | `allergies` | string or null, at most 280 | |
 | `notes` | string or null, at most 2000 | Symptoms, history, medication |
 
-Text is trimmed on the way in and an empty string is stored as null. `intakeCompletedAt` is stamped by `intakeComplete: true` and cleared by `false`. `photoUpdatedAt` is when the profile photo was last stored, null when there is none, and the `v` to put on the photo URL.
+Text is trimmed on the way in and an empty string is stored as null. `intakeCompletedAt` is stamped by `intakeComplete: true` and cleared by `false`; completing needs a name (in the record or in the same request), otherwise 400 `invalid_request`. `photoUpdatedAt` is when the profile photo was last stored, null when there is none, and the `v` to put on the photo URL.
 
 **`PatientRef`** `{ number, name, photoUpdatedAt }` is enough to draw an avatar and a name. Every payload about one patient carries it as `patient`, beside the older `patientNumber`: `WorklistItem`, `Flag`, the `sitting_started` and `patient_changed` stream events, and a matched `MatchFaceResponse`. Clients show the photo at `routes.patientPhoto(number) + '?v=' + photoUpdatedAt` (the phone adds its bearer header) and initials when `photoUpdatedAt` is null.
 
-**The profile photo** is taken once per patient, three ways, and is the only picture the system stores: (1) automatically, by the server, from the live-view frames during a sitting for a patient with no photo: about twice a second it looks for a face, and the first frame with a clear one is cropped and stored; (2) by the phone, which sends its own sharper `captureFaceCrop()` once the viewfinder is measuring during a check-in sitting; this replaces (1); (3) by staff, with "Retake photo" on the check-in page (the capture route).
+**The profile photo** is taken once per patient, three ways, and is the only picture the system stores: (1) automatically, by the server, from the live-view frames during a sitting for a patient with no photo: about twice a second it looks for a face, and the first frame with a clear one is cropped and stored; (2) by the phone, which sends its own `captureFaceCrop()` once the viewfinder is measuring during a check-in sitting; it is a tight face box, so it is kept only when (1) has not stored a portrait; (3) by staff, with "Retake photo" on the check-in page (the capture route), which always replaces. "Remove" (`DELETE`) is final until staff take a photo again: the server remembers the removal in memory and neither (1) nor (2) stores a new one.
 
 ### Sittings
 
