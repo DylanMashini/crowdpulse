@@ -1,4 +1,4 @@
-import type { Flag, TicketDetailResponse } from '@triagecam/contracts';
+import type { Flag, PatientDetailResponse } from '@triagecam/contracts';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { type ReactNode, useCallback, useState } from 'react';
 import { RefreshControl, ScrollView, Text, View } from 'react-native';
@@ -10,8 +10,8 @@ import { Icon } from '@/components/Icon';
 import { Notice } from '@/components/Notice';
 import { StatusBadge } from '@/components/StatusBadge';
 import { useScopedTheme } from '@/components/ThemeScope';
-import { TicketNumber } from '@/components/TicketNumber';
-import { TicketTimeline } from '@/components/TicketTimeline';
+import { PatientIdentity } from '@/components/PatientIdentity';
+import { PatientTimeline } from '@/components/PatientTimeline';
 import { Touchable } from '@/components/Touchable';
 import { usePolling } from '@/hooks/usePolling';
 import { useScreenFocused } from '@/hooks/useScreenFocused';
@@ -23,7 +23,7 @@ import { fonts } from '@/theme';
 
 const REFRESH_MS = 5000;
 
-export default function TicketScreen() {
+export default function PatientScreen() {
   const theme = useScopedTheme();
   const { colors, space } = theme;
   const router = useRouter();
@@ -33,7 +33,7 @@ export default function TicketScreen() {
   const number = Number(params.number);
   const valid = Number.isSafeInteger(number) && number > 0;
 
-  const [detail, setDetail] = useState<TicketDetailResponse | null>(null);
+  const [detail, setDetail] = useState<PatientDetailResponse | null>(null);
   const [failure, setFailure] = useState<{ message: string; missing: boolean } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [acknowledging, setAcknowledging] = useState<string | null>(null);
@@ -41,7 +41,7 @@ export default function TicketScreen() {
 
   const load = useCallback(async () => {
     try {
-      setDetail(await api.ticket(number));
+      setDetail(await api.patient(number));
       setFailure(null);
     } catch (error) {
       setFailure({ message: errorMessage(error), missing: isApiError(error) && error.code === 'not_found' });
@@ -107,29 +107,33 @@ export default function TicketScreen() {
           </Touchable>
           {valid ? (
             <View accessibilityRole="header">
-              <TicketNumber number={number} size="lg" />
+              <PatientIdentity
+                patient={detail?.patient ?? { number, name: null, photoUpdatedAt: null }}
+                size="lg"
+                detail={detail?.patient.reasonForVisit}
+              />
             </View>
           ) : null}
           {detail?.state ? (
             <StatusBadge state={detail.state} minutes={minutesSince(detail)} />
-          ) : detail?.ticket.status === 'discharged' ? (
+          ) : detail?.patient.status === 'discharged' ? (
             <Text style={[theme.type.caption, { color: colors.inkMuted }]}>
-              Discharged{detail.ticket.dischargedAt ? ` at ${clockTime(detail.ticket.dischargedAt)}` : ''}
+              Discharged{detail.patient.dischargedAt ? ` at ${clockTime(detail.patient.dischargedAt)}` : ''}
             </Text>
           ) : null}
         </View>
 
         {!valid ? (
-          <Notice title="This is not a ticket number" body="Go back to the worklist and open a ticket from there" />
+          <Notice title="This is not a patient number" body="Go back to the worklist and open a patient from there" />
         ) : !detail && failure ? (
           <Notice
-            title={failure.missing ? `There is no ticket ${number}` : 'The ticket did not load'}
+            title={failure.missing ? `There is no patient ${number}` : 'The patient did not load'}
             body={failure.missing ? 'It may belong to another station. Go back to the worklist.' : failure.message}
           >
             {failure.missing ? null : <Button variant="primary" block label="Try again" onPress={() => void load()} />}
           </Notice>
         ) : !detail ? (
-          <Notice title={`Loading ticket ${number}`} />
+          <Notice title={`Loading patient ${number}`} />
         ) : (
           <>
             {failure ? <Notice title="Not updated" body={sentences(failure.message, 'The values below may be out of date')} /> : null}
@@ -180,9 +184,9 @@ export default function TicketScreen() {
 
             <Section heading="Timeline">
               {detail.timeline.length > 0 ? (
-                <TicketTimeline rows={timelineRows(detail.timeline)} />
+                <PatientTimeline rows={timelineRows(detail.timeline)} />
               ) : (
-                <Notice title="Nothing recorded yet" body="The first entry appears when the ticket's check-in sitting ends" />
+                <Notice title="Nothing recorded yet" body="The first entry appears when the patient's check-in sitting ends" />
               )}
             </Section>
           </>
@@ -193,7 +197,7 @@ export default function TicketScreen() {
 }
 
 /** Whole minutes since the last sitting that gave a pulse or a breathing rate, or null. */
-function minutesSince(detail: TicketDetailResponse): number | null {
+function minutesSince(detail: PatientDetailResponse): number | null {
   const observed = detail.sittings.filter(
     (sitting) => sitting.endedAt && (sitting.summary?.heartRate.value != null || sitting.summary?.breathingRate.value != null),
   );

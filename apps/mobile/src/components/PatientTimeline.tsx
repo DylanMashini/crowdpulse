@@ -11,8 +11,8 @@ import { useScopedTheme } from './ThemeScope';
 const TIME_WIDTH = 52;
 const MARK = 10;
 
-/** Every observation and flag event for one ticket, oldest first, with the failed sittings kept. */
-export function TicketTimeline({ rows }: { rows: TimelineRow[] }) {
+/** Every observation and flag event for one patient, oldest first, with the failed sittings kept. */
+export function PatientTimeline({ rows }: { rows: TimelineRow[] }) {
   const theme = useScopedTheme();
   const { colors, space } = theme;
   return (

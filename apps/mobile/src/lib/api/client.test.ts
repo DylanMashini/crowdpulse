@@ -87,13 +87,13 @@ test('a request with no answer in time is a network failure that names the URL',
 
 test('a contract error keeps its code, status and the server sentence', async () => {
   const { client } = clientWith(() =>
-    json(409, { error: { code: 'ticket_discharged', message: 'Ticket 14 has been discharged' } }),
+    json(409, { error: { code: 'patient_discharged', message: 'Patient 14 has been discharged' } }),
   );
-  const error = await failure(client.request({ method: 'GET', path: routes.ticket(14) }, WorklistResponse));
+  const error = await failure(client.request({ method: 'GET', path: routes.patient(14) }, WorklistResponse));
   assert.equal(error.kind, 'http');
-  assert.equal(error.code, 'ticket_discharged');
+  assert.equal(error.code, 'patient_discharged');
   assert.equal(error.status, 409);
-  assert.equal(error.message, 'Ticket 14 has been discharged');
+  assert.equal(error.message, 'Patient 14 has been discharged');
   assert.equal(error.retryable, false);
 });
 

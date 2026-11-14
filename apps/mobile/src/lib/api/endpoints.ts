@@ -18,8 +18,8 @@ import {
   type SittingKind,
   SittingResponse,
   StartSittingResponse,
-  TicketDetailResponse,
-  TicketResponse,
+  PatientDetailResponse,
+  PatientResponse,
   VerifyEmailResponse,
   WorklistResponse,
   routes,
@@ -52,13 +52,13 @@ export function createApi(client: ApiClient) {
     registerDevice: (device: { id?: string; role: DeviceRole; label: string; expoPushToken?: string | null }) =>
       client.request({ method: 'POST', path: routes.devices, body: device }, DeviceResponse),
 
-    createTicket: () =>
-      client.request({ method: 'POST', path: routes.tickets, body: { faceOptIn: false } }, TicketResponse),
-    ticket: (number: number) => client.request({ method: 'GET', path: routes.ticket(number) }, TicketDetailResponse),
+    createPatient: () =>
+      client.request({ method: 'POST', path: routes.patients, body: { faceOptIn: false } }, PatientResponse),
+    patient: (number: number) => client.request({ method: 'GET', path: routes.patient(number) }, PatientDetailResponse),
     setFaceOptIn: (number: number, faceOptIn: boolean) =>
-      client.request({ method: 'PATCH', path: routes.ticket(number), body: { faceOptIn } }, TicketResponse),
+      client.request({ method: 'PATCH', path: routes.patient(number), body: { faceOptIn } }, PatientResponse),
 
-    startSitting: (sitting: { ticketNumber: number; deviceId: string; kind: SittingKind; source: CaptureSource }) =>
+    startSitting: (sitting: { patientNumber: number; deviceId: string; kind: SittingKind; source: CaptureSource }) =>
       client.request(
         { method: 'POST', path: routes.sittings, body: { ...sitting, clientTime: new Date().toISOString() } },
         StartSittingResponse,
@@ -77,8 +77,12 @@ export function createApi(client: ApiClient) {
         raw: { body: file, contentType: 'application/x-ndjson' },
       }),
 
-    enrolFace: (ticketNumber: number, jpegBase64: string) =>
-      client.request({ method: 'POST', path: routes.ticketFace(ticketNumber), body: { jpegBase64 } }, EnrolFaceResponse),
+    /** The profile photo: the face crop from the capture module, taken during the intake sitting. */
+    putPatientPhoto: (patientNumber: number, jpegBase64: string) =>
+      client.request({ method: 'PUT', path: routes.patientPhoto(patientNumber), body: { jpegBase64 } }, PatientResponse),
+
+    enrolFace: (patientNumber: number, jpegBase64: string) =>
+      client.request({ method: 'POST', path: routes.patientFace(patientNumber), body: { jpegBase64 } }, EnrolFaceResponse),
     matchFace: (jpegBase64: string) =>
       client.request({ method: 'POST', path: routes.faceMatch, body: { jpegBase64 } }, MatchFaceResponse),
 

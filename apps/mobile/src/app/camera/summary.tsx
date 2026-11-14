@@ -9,7 +9,8 @@ import { PrivacyNote } from '@/components/PrivacyNote';
 import { Screen } from '@/components/Screen';
 import { SittingSummary } from '@/components/SittingSummary';
 import { useScopedTheme } from '@/components/ThemeScope';
-import { TicketNumber } from '@/components/TicketNumber';
+import { PatientIdentity } from '@/components/PatientIdentity';
+import { usePatientRef } from '@/hooks/usePatientRef';
 import { summaryItems } from '@/lib/capture/readingFormat';
 import { type FinishedSitting, finishedSitting } from '@/lib/capture/sittingSession';
 import type { UploadState } from '@/lib/capture/uploadQueue';
@@ -25,7 +26,7 @@ export default function Summary() {
       <Screen title="Sitting summary">
         <Notice
           title="This sitting is no longer on the phone"
-          body="Summaries are kept only while the app stays open. The ticket page on the dashboard has the saved values."
+          body="Summaries are kept only while the app stays open. The patient page on the dashboard has the saved values."
         >
           <Button variant="primary" block label="Back to check-in" onPress={() => router.dismissTo('/camera')} />
         </Notice>
@@ -42,14 +43,15 @@ function SummaryContent({ sitting }: { sitting: FinishedSitting }) {
   const uploads = useSyncExternalStore(sitting.uploads.subscribe, sitting.uploads.getState);
   const status = uploadStatus(uploads, sitting.kind);
   const source = sourceLabel(sitting.source);
+  const patient = usePatientRef(sitting.patientNumber, null);
 
   return (
     <Screen title="Sitting summary">
       <View style={{ gap: space.space1 }}>
+        <PatientIdentity patient={patient} size="lg" />
         <Text style={[theme.type.bodyTouch, { color: colors.inkMuted }]}>
-          Keep this number. Show it when you sit down again.
+          Give your name when you sit down again
         </Text>
-        <TicketNumber number={sitting.ticketNumber} size="xl" />
       </View>
 
       <SittingSummary
@@ -67,13 +69,13 @@ function SummaryContent({ sitting }: { sitting: FinishedSitting }) {
         ) : null}
         {sitting.face.status === 'enrolled' ? (
           <PrivacyNote icon="scan">
-            Face match is on for this ticket. The picture was not stored, and the numbers made from it are deleted at
+            Face match is on for this patient. The picture was not stored, and the numbers made from it are deleted at
             discharge.
           </PrivacyNote>
         ) : null}
         {sitting.face.status === 'failed' ? (
-          <PrivacyNote icon="ticket">
-            {sentences(`Face match was not set up: ${sitting.face.reason}`, 'The ticket number works for re-checks')}
+          <PrivacyNote icon="user">
+            {sentences(`Face match was not set up: ${sitting.face.reason}`, 'Re-checks start from the waiting-room list instead')}
           </PrivacyNote>
         ) : null}
       </SittingSummary>
@@ -102,7 +104,7 @@ function uploadStatus(
       detail: sentences(
         'The station refused this sitting',
         uploads.error,
-        'The values below were measured but are not on the ticket',
+        'The values below were measured but are not on the patient',
         'Run the sitting again',
       ),
     };

@@ -23,6 +23,9 @@ struct LivePreviewRecord: Record {
   @Field var fps: Double?
   @Field var maxLongSide: Double?
   @Field var quality: Double?
+  /// Where to post the frames. Set: the module uploads them itself. Nil: onPreviewFrame.
+  @Field var uploadUrl: String?
+  @Field var uploadHeaders: [String: String]?
 }
 
 public class TriageCaptureModule: Module {
@@ -33,7 +36,7 @@ public class TriageCaptureModule: Module {
   public func definition() -> ModuleDefinition {
     Name("TriageCapture")
 
-    Events("onReading", "onStatus", "onFaceRegions", "onPreviewFrame", "onError")
+    Events("onReading", "onStatus", "onFaceRegions", "onPreviewFrame", "onLiveUpload", "onError")
 
     Function("getSource") { () -> String in
       self.controller.sourceName
@@ -100,8 +103,16 @@ public class TriageCaptureModule: Module {
     }
 
     AsyncFunction("setLivePreview") { (options: LivePreviewRecord) in
+      var upload: LiveUploadTarget?
+      if let address = options.uploadUrl {
+        guard let url = URL(string: address), url.scheme == "http" || url.scheme == "https" else {
+          throw CaptureError(.file, "The live-view address is not a valid URL")
+        }
+        upload = LiveUploadTarget(url: url, headers: options.uploadHeaders ?? [:])
+      }
       self.controller.setLivePreview(
-        framesPerSecond: options.fps, maxLongSide: options.maxLongSide, quality: options.quality, enabled: options.enabled
+        framesPerSecond: options.fps, maxLongSide: options.maxLongSide, quality: options.quality,
+        enabled: options.enabled, upload: upload
       )
     }
 

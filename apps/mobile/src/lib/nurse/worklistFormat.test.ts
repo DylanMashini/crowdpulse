@@ -69,12 +69,12 @@ test('only sittings that did not come from the camera get a source label', () =>
 });
 
 test('flag titles match the system push', () => {
-  assert.equal(flagTitle('score_rise', 14), 'Trend flag, ticket 14');
-  assert.equal(flagTitle('baseline_shift', 14), 'Trend flag, ticket 14');
-  assert.equal(flagTitle('overdue', 9), 'Overdue, ticket 9');
+  assert.equal(flagTitle('score_rise', { number: 14, name: 'Maya Chen' }), 'Trend flag: Maya Chen');
+  assert.equal(flagTitle('baseline_shift', { number: 14, name: null }), 'Trend flag: Patient 14');
+  assert.equal(flagTitle('overdue', { number: 9, name: 'Robert Okafor' }), 'Overdue: Robert Okafor');
 });
 
-test('the header counts waiting and flagged tickets', () => {
+test('the header counts waiting and flagged patients', () => {
   assert.equal(worklistSummary([]), '0 waiting');
   assert.equal(worklistSummary([{ state: 'observed' }, { state: 'overdue' }]), '2 waiting');
   assert.equal(worklistSummary([{ state: 'flag' }, { state: 'flag' }, { state: 'observed' }]), '3 waiting, 2 flagged');
@@ -90,13 +90,13 @@ test('clock times are 24-hour in the device zone, and shares are whole percentag
 });
 
 test('one sentence has no full stop, two or more keep them', () => {
-  assert.equal(tidy('Ticket 14 has been discharged.'), 'Ticket 14 has been discharged');
+  assert.equal(tidy('Patient 14 has been discharged.'), 'Patient 14 has been discharged');
   assert.equal(tidy('Sit 0.6 to 0.9 m from the phone'), 'Sit 0.6 to 0.9 m from the phone');
   assert.equal(tidy('Cannot reach the server. Check the tunnel'), 'Cannot reach the server. Check the tunnel.');
-  assert.equal(sentences('Ticket 14 has been discharged', null, ''), 'Ticket 14 has been discharged');
+  assert.equal(sentences('Patient 14 has been discharged', null, ''), 'Patient 14 has been discharged');
   assert.equal(
-    sentences('Ticket 14 has been discharged', 'The list below may be out of date'),
-    'Ticket 14 has been discharged. The list below may be out of date.',
+    sentences('Patient 14 has been discharged', 'The list below may be out of date'),
+    'Patient 14 has been discharged. The list below may be out of date.',
   );
   assert.equal(sentences('Cannot reach the server at https://x.', 'Keep the app open'), 'Cannot reach the server at https://x. Keep the app open.');
 });
@@ -106,7 +106,7 @@ test('the timeline is oldest first and keeps the sitting that failed', () => {
   const id = '0b0e4a53-3c1b-4b7e-9d0a-0d3f6f2a1c11';
   const newestFirst: TimelineEntry[] = [
     { type: 'flag_acknowledged', at: at(31), flagId: id, by: 'nurse@clinic.org' },
-    { type: 'flag_opened', at: at(30), flagId: id, rule: 'baseline_shift', handoff: 'Ticket 14: pulse 82 at check-in, 108 now.' },
+    { type: 'flag_opened', at: at(30), flagId: id, rule: 'baseline_shift', handoff: 'Patient 14: pulse 82 at check-in, 108 now.' },
     { type: 'sitting', at: at(29), sittingId: id, kind: 'recheck', source: 'simulated', heartRate: 108.4, breathingRate: null, score: 1 },
     { type: 'sitting', at: at(15), sittingId: id, kind: 'recheck', source: 'camera', heartRate: null, breathingRate: null, score: null },
     { type: 'sitting', at: at(2), sittingId: id, kind: 'check_in', source: 'camera', heartRate: 82, breathingRate: 16, score: 0 },
@@ -116,7 +116,7 @@ test('the timeline is oldest first and keeps the sitting that failed', () => {
 
   assert.deepEqual(
     rows.map((row) => `${row.time} ${row.title}`),
-    ['14:00 Ticket created', '14:02 Check-in sitting', '14:15 Re-check', '14:29 Re-check', '14:30 Flag opened', '14:31 Flag acknowledged'],
+    ['14:00 Patient created', '14:02 Check-in sitting', '14:15 Re-check', '14:29 Re-check', '14:30 Flag opened', '14:31 Flag acknowledged'],
   );
   assert.deepEqual(rows[1]!.vitals, { pulse: '82', breathing: '16', score: 0 });
 
@@ -130,7 +130,7 @@ test('the timeline is oldest first and keeps the sitting that failed', () => {
   assert.equal(rows[3]!.sourceLabel, 'Simulated');
 
   assert.equal(rows[4]!.state, 'flag');
-  assert.equal(rows[4]!.note, 'Ticket 14: pulse 82 at check-in, 108 now.');
+  assert.equal(rows[4]!.note, 'Patient 14: pulse 82 at check-in, 108 now.');
   // Who acknowledged is never printed by name.
   assert.equal(JSON.stringify(rows[5]).includes('nurse@clinic.org'), false);
 });
@@ -141,7 +141,7 @@ test('overdue and discharge events have their own rows', () => {
   const rows = timelineRows([
     { type: 'discharged', at },
     { type: 'flag_closed', at, flagId: id, rule: 'overdue' },
-    { type: 'flag_opened', at, flagId: id, rule: 'overdue', handoff: 'Ticket 9: last observed 31 min ago.' },
+    { type: 'flag_opened', at, flagId: id, rule: 'overdue', handoff: 'Patient 9: last observed 31 min ago.' },
   ]);
   assert.deepEqual(
     rows.map((row) => [row.title, row.state]),

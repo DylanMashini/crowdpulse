@@ -31,12 +31,13 @@ final class CaptureController: FrameSourceDelegate {
   /// viewfinder goes back to searching for the next patient.
   private static let lostSeconds = 10.0
   private static let previewDefaults = PreviewSettings(framesPerSecond: 2, maxLongSide: 480, quality: 0.5)
-  private static let previewLimits = PreviewSettings(framesPerSecond: 5, maxLongSide: 640, quality: 1)
+  private static let previewLimits = PreviewSettings(framesPerSecond: 30, maxLongSide: 640, quality: 1)
 
   private let queue = DispatchQueue(label: "triagecam.capture.engine", qos: .userInitiated)
   private let source: FrameSource
   private let emit: Emit
   private let sittingsDirectory: URL
+  private let uploader = LiveUploader()
 
   private var capturing = false
   private var ticker: DispatchSourceTimer?
@@ -96,6 +97,7 @@ final class CaptureController: FrameSourceDelegate {
   }
 
   private func stop() {
+    uploader.setTarget(nil)
     guard capturing else { return }
     capturing = false
     ticker?.cancel()
@@ -164,8 +166,13 @@ final class CaptureController: FrameSourceDelegate {
 
   // MARK: Live view and face crop
 
-  /// Nil turns the live view off. Values are clamped to the limits of the contract.
-  func setLivePreview(framesPerSecond: Double?, maxLongSide: Double?, quality: Double?, enabled: Bool) {
+  /// Nil turns the live view off. Values are clamped to the limits of the contract. With an
+  /// upload target the frames are posted from here and `onLiveUpload` reports on them once a
+  /// second; without one they are handed to JavaScript as `onPreviewFrame`.
+  func setLivePreview(
+    framesPerSecond: Double?, maxLongSide: Double?, quality: Double?, enabled: Bool, upload: LiveUploadTarget? = nil
+  ) {
+    uploader.setTarget(enabled ? upload : nil)
     guard enabled else { return source.setPreview(nil) }
     let defaults = Self.previewDefaults, limits = Self.previewLimits
     source.setPreview(PreviewSettings(
@@ -201,6 +208,7 @@ final class CaptureController: FrameSourceDelegate {
   }
 
   func frameSource(_ source: FrameSource, didEncodePreview image: EncodedImage) {
+    if uploader.hasTarget { return uploader.upload(image, capturedAt: Date()) }
     var body = Payloads.image(image)
     body["t"] = Timestamps.string(from: Date())
     emit("onPreviewFrame", body)
@@ -252,6 +260,11 @@ final class CaptureController: FrameSourceDelegate {
     tick += 1
     if tick % Self.ticksPerSecond == 0 {
       emit("onStatus", status(at: now))
+      if let report = uploader.takeReport() {
+        emit("onLiveUpload", [
+          "delivered": report.delivered, "failed": report.failed, "viewers": report.viewers.map { $0 as Any } ?? NSNull(),
+        ])
+      }
       framesThisSecond = 0
     }
   }

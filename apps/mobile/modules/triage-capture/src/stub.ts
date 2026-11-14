@@ -89,6 +89,7 @@ export class TriageCaptureStub implements TriageCapture {
     onStatus: new Set(),
     onFaceRegions: new Set(),
     onPreviewFrame: new Set(),
+    onLiveUpload: new Set(),
     onError: new Set(),
   };
   private secondTimer: ReturnType<typeof setInterval> | null = null;

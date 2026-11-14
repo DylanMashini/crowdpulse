@@ -9,7 +9,7 @@ import { useScopedTheme } from './ThemeScope';
 import { Touchable } from './Touchable';
 
 type Props = {
-  /** "Trend flag, ticket 14": the same words as the system push. */
+  /** "Trend flag, patient 14": the same words as the system push. */
   title: string;
   /** Clock time the flag opened. */
   time: string;
@@ -79,7 +79,7 @@ export function PushBanner(props: Props) {
             onPress={props.onAcknowledge}
           />
         )}
-        <Button variant="quiet" label="Open ticket" onPress={props.onOpen} />
+        <Button variant="quiet" label="Open patient" onPress={props.onOpen} />
       </View>
     </View>
   );

@@ -1,4 +1,3 @@
-import type { Ticket } from '@triagecam/contracts';
 import { useRouter } from 'expo-router';
 import { type ReactNode, useState } from 'react';
 import { Text, View } from 'react-native';
@@ -9,56 +8,54 @@ import { ConsentSheet } from '@/components/ConsentSheet';
 import { Notice } from '@/components/Notice';
 import { Screen } from '@/components/Screen';
 import { useScopedTheme } from '@/components/ThemeScope';
-import { TicketEntry } from '@/components/TicketEntry';
-import { TicketNumber } from '@/components/TicketNumber';
+import { PatientPicker } from '@/components/PatientPicker';
 import { api, errorMessage } from '@/lib/api';
 import { sentences } from '@/lib/format';
 import { sourceLabel } from '@/lib/nurse/worklistFormat';
 
-type NewTicket =
+type NewPatient =
   | { step: 'idle' }
   | { step: 'creating' }
   | { step: 'failed'; message: string }
-  /** The ticket exists and the patient is being asked about face match. */
-  | { step: 'consent'; ticket: number; saving: boolean }
+  /** The record exists and the patient is being asked about face match. */
+  | { step: 'consent'; patient: number; saving: boolean }
   /** The patient said yes but the choice did not reach the server. */
-  | { step: 'opt_in_failed'; ticket: number; message: string };
+  | { step: 'opt_in_failed'; patient: number; message: string };
 
 export default function CheckIn() {
   const theme = useScopedTheme();
   const router = useRouter();
-  const [newTicket, setNewTicket] = useState<NewTicket>({ step: 'idle' });
+  const [newPatient, setNewPatient] = useState<NewPatient>({ step: 'idle' });
   const source = sourceLabel(TriageCapture.getSource());
 
-  const startSitting = (ticket: number, kind: 'check_in' | 'recheck', enrolFace: boolean) => {
-    setNewTicket({ step: 'idle' });
+  const startSitting = (patient: number, kind: 'check_in' | 'recheck', enrolFace: boolean) => {
+    setNewPatient({ step: 'idle' });
     router.push({
       pathname: '/camera/sitting',
-      params: { ticket: String(ticket), kind, enrol: enrolFace ? '1' : '0' },
+      params: { patient: String(patient), kind, enrol: enrolFace ? '1' : '0' },
     });
   };
 
-  const createTicket = async () => {
-    setNewTicket({ step: 'creating' });
+  const createPatient = async () => {
+    setNewPatient({ step: 'creating' });
     try {
-      const { ticket } = await api.createTicket();
-      setNewTicket({ step: 'consent', ticket: ticket.number, saving: false });
+      const { patient } = await api.createPatient();
+      setNewPatient({ step: 'consent', patient: patient.number, saving: false });
     } catch (error) {
-      setNewTicket({ step: 'failed', message: errorMessage(error) });
+      setNewPatient({ step: 'failed', message: errorMessage(error) });
     }
   };
 
-  const acceptFaceMatch = async (ticket: number) => {
-    setNewTicket({ step: 'consent', ticket, saving: true });
+  const acceptFaceMatch = async (patient: number) => {
+    setNewPatient({ step: 'consent', patient, saving: true });
     try {
-      await api.setFaceOptIn(ticket, true);
-      startSitting(ticket, 'check_in', true);
+      await api.setFaceOptIn(patient, true);
+      startSitting(patient, 'check_in', true);
     } catch (error) {
-      setNewTicket({ step: 'opt_in_failed', ticket, message: errorMessage(error) });
+      setNewPatient({ step: 'opt_in_failed', patient, message: errorMessage(error) });
     }
   };
 
-  const recheck = (ticket: Ticket) => startSitting(ticket.number, 'recheck', ticket.faceOptIn && !ticket.faceEnrolled);
 
   return (
     <Screen
@@ -66,42 +63,41 @@ export default function CheckIn() {
       subtitle={source ? `${source} signal: this build is not measuring with the camera` : undefined}
       action={{ icon: 'sliders', label: 'Settings', onPress: () => router.push('/settings') }}
     >
-      <Section heading="New patient" body="Gives the patient the next ticket number, then starts a 60-second sitting">
-        {newTicket.step === 'failed' ? <Notice title="No ticket was created" body={newTicket.message} /> : null}
-        {newTicket.step === 'opt_in_failed' ? (
+      <Section heading="New patient" body="Starts a 60-second sitting. The name and the rest of intake are typed on the dashboard while it runs, and the photo is taken by itself.">
+        {newPatient.step === 'failed' ? <Notice title="No patient was created" body={newPatient.message} /> : null}
+        {newPatient.step === 'opt_in_failed' ? (
           <Notice
             title="Face match was not turned on"
-            body={sentences(newTicket.message, 'The ticket was created and its number works for re-checks')}
+            body={sentences(newPatient.message, 'The patient was created and can be checked in without it')}
           >
-            <TicketNumber number={newTicket.ticket} size="lg" />
             <Button
               variant="primary"
               block
               label="Start sitting without face match"
-              onPress={() => startSitting(newTicket.ticket, 'check_in', false)}
+              onPress={() => startSitting(newPatient.patient, 'check_in', false)}
             />
           </Notice>
         ) : (
           <Button
             variant="primary"
             block
-            icon="ticket"
-            label={newTicket.step === 'creating' ? 'Creating ticket' : 'New ticket'}
-            disabled={newTicket.step === 'creating' || newTicket.step === 'consent'}
-            onPress={() => void createTicket()}
+            icon="user"
+            label={newPatient.step === 'creating' ? 'Starting check-in' : 'Check in a new patient'}
+            disabled={newPatient.step === 'creating' || newPatient.step === 'consent'}
+            onPress={() => void createPatient()}
           />
         )}
       </Section>
 
       <View style={{ height: 1, backgroundColor: theme.colors.line }} />
 
-      <Section heading="Re-check" body="For a patient who already has a ticket">
-        <TicketEntry onFound={recheck} />
+      <Section heading="Re-check" body="For someone already in the waiting room. Tap them to start.">
+        <PatientPicker onPick={(item) => startSitting(item.patientNumber, 'recheck', false)} />
         <Button
           variant="secondary"
           block
           icon="scan"
-          label="Find ticket by face"
+          label="Find patient by face"
           accessibilityHint="For patients who turned on face match at check-in"
           onPress={() => router.push('/camera/match')}
         />
@@ -110,13 +106,13 @@ export default function CheckIn() {
         </Text>
       </Section>
 
-      {newTicket.step === 'consent' ? (
+      {newPatient.step === 'consent' ? (
         <ConsentSheet
           visible
-          ticket={newTicket.ticket}
-          busy={newTicket.saving}
-          onDecline={() => startSitting(newTicket.ticket, 'check_in', false)}
-          onAccept={() => void acceptFaceMatch(newTicket.ticket)}
+          patient={newPatient.patient}
+          busy={newPatient.saving}
+          onDecline={() => startSitting(newPatient.patient, 'check_in', false)}
+          onAccept={() => void acceptFaceMatch(newPatient.patient)}
         />
       ) : null}
     </Screen>

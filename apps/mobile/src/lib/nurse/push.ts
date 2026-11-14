@@ -44,13 +44,13 @@ export async function registerForPush(): Promise<PushRegistration> {
   }
 }
 
-/** The ticket a notification is about, from the `data` the server attaches to every flag push. */
-export function ticketOfNotification(notification: Notifications.Notification): {
+/** The patient a notification is about, from the `data` the server attaches to every flag push. */
+export function patientOfNotification(notification: Notifications.Notification): {
   flagId: string | null;
-  ticketNumber: number;
+  patientNumber: number;
 } | null {
-  const data = notification.request.content.data as { flagId?: unknown; ticketNumber?: unknown } | undefined;
-  const ticketNumber = Number(data?.ticketNumber);
-  if (!Number.isSafeInteger(ticketNumber) || ticketNumber < 1) return null;
-  return { flagId: typeof data?.flagId === 'string' ? data.flagId : null, ticketNumber };
+  const data = notification.request.content.data as { flagId?: unknown; patientNumber?: unknown } | undefined;
+  const patientNumber = Number(data?.patientNumber);
+  if (!Number.isSafeInteger(patientNumber) || patientNumber < 1) return null;
+  return { flagId: typeof data?.flagId === 'string' ? data.flagId : null, patientNumber };
 }
