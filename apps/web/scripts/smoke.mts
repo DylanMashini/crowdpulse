@@ -286,7 +286,15 @@ function summary(heartRate: number | null, breathingRate: number | null) {
 }
 
 /** A whole sitting compressed in time: start, `seconds` readings one per request, finish. */
-async function sit(patientNumber: number, kind: "check_in" | "recheck", heartRate: number | null, breathingRate: number | null, seconds: number) {
+async function sit(
+  patientNumber: number,
+  kind: "check_in" | "recheck",
+  heartRate: number | null,
+  breathingRate: number | null,
+  seconds: number,
+  /** Changes to the summary: a heart-rate coverage, a confidence. */
+  summaryChanges: { heartRateCoverage?: number; heartRateConfidence?: "normal" | "low" } = {},
+) {
   const startedOnPhone = phoneNow();
   const started = await ok(StartSittingResponse, 201, "POST", routes.sittings, {
     auth: mobile,
@@ -307,7 +315,14 @@ async function sit(patientNumber: number, kind: "check_in" | "recheck", heartRat
   const finish = () =>
     ok(SittingResponse, 200, "POST", routes.sittingFinish(id), {
       auth: mobile,
-      body: { endedAt: new Date(startedOnPhone.getTime() + seconds * 1000).toISOString(), summary: summary(heartRate, breathingRate) },
+      body: {
+        endedAt: new Date(startedOnPhone.getTime() + seconds * 1000).toISOString(),
+        summary: {
+          ...summary(heartRate, breathingRate),
+          ...(summaryChanges.heartRateCoverage === undefined ? {} : { heartRate: { value: heartRate, coverage: summaryChanges.heartRateCoverage } }),
+          ...(summaryChanges.heartRateConfidence === undefined ? {} : { heartRateConfidence: summaryChanges.heartRateConfidence }),
+        },
+      },
     });
   return { id, started, readings, startedOnPhone, finish };
 }
@@ -501,6 +516,74 @@ const trippingAt = oldestFirst.findIndex((entry) => entry.type === "sitting" && 
 const firstOpened = oldestFirst.findIndex((entry) => entry.type === "flag_opened");
 assert.ok(trippingAt !== -1 && trippingAt < firstOpened, "the sitting comes before the flags it raised");
 done("patient detail: baseline, sittings, flags and a newest-first timeline");
+
+// --- lower-confidence heart rates --------------------------------------------------------------
+
+{
+  // A phone build from before heartRateConfidence: a rate with no valid second behind it. The
+  // server applies the engine's rule itself, so it is stored low and is no baseline.
+  const old = (await ok(PatientResponse, 201, "POST", routes.patients, { auth: web, body: {} })).patient.number;
+  const weak = (await (await sit(old, "check_in", 61.5, null, 3, { heartRateCoverage: 0 })).finish()).sitting;
+  assert.equal(weak.summary?.heartRate.value, 61.5);
+  assert.equal(weak.summary?.heartRateConfidence, "low", "a rate on fewer than ten valid seconds is low without the phone saying so");
+  let row = (await worklistItem(old)).item;
+  assert.equal(row.state, "no-reading");
+  assert.deepEqual(row.pulse, { base: null, now: null, lowConfidence: 61.5 });
+  assert.equal(row.score, null);
+  assert.equal(row.minutesSinceObserved, null);
+  assert.match(row.handoff, /not yet observed.*read pulse 62 bpm with lower confidence; repeat it\.$/);
+  // Nine valid seconds of sixty is low; ten is normal; and what the phone says wins either way.
+  const nine = (await (await sit(old, "recheck", 70, null, 3, { heartRateCoverage: 9 / 60 })).finish()).sitting;
+  assert.equal(nine.summary?.heartRateConfidence, "low");
+  const stated = (await (await sit(old, "recheck", 70, null, 3, { heartRateCoverage: 0.87, heartRateConfidence: "low" })).finish()).sitting;
+  assert.equal(stated.summary?.heartRateConfidence, "low");
+  const ten = (await (await sit(old, "recheck", 74, null, 3, { heartRateCoverage: 10 / 60 })).finish()).sitting;
+  assert.equal(ten.summary?.heartRateConfidence, "normal");
+  row = (await worklistItem(old)).item;
+  assert.equal(row.state, "observed");
+  assert.equal(row.pulse.base, 74);
+  assert.equal(row.pulse.now, 74);
+  assert.equal(row.pulse.lowConfidence, undefined);
+  assert.ok(row.pulse.baseAt, "a baseline from a re-check says when it is from");
+  assert.match(row.handoff, /pulse 74 bpm now, lower confidence at check-in/);
+  const vouched = (await (await sit(old, "recheck", 75, null, 3, { heartRateCoverage: 0, heartRateConfidence: "normal" })).finish()).sitting;
+  assert.equal(vouched.summary?.heartRateConfidence, "normal");
+  await ok(PatientResponse, 200, "POST", routes.patientDischarge(old), { auth: web });
+  done("a finish without heartRateConfidence is stored low under ten valid seconds, and is no baseline");
+
+  // A lower-confidence check-in that also read breathing: the first re-check with a pulse that
+  // counts is the pulse baseline, and a large change from it opens a flag (QA round 2, W1).
+  const { pulseDeltaBpm, baselineShiftEnabled } = (await ok(SettingsResponse, 200, "GET", routes.settings, { auth: web })).settings;
+  if (!baselineShiftEnabled || pulseDeltaBpm >= 30) {
+    done(`pulse baseline after a lower-confidence check-in: not run, baseline shift is ${baselineShiftEnabled ? `${pulseDeltaBpm} bpm` : "off"}`);
+  } else {
+    const later = (await ok(PatientResponse, 201, "POST", routes.patients, { auth: web, body: {} })).patient.number;
+    await (await sit(later, "check_in", 101.5, 16, 3, { heartRateCoverage: 0.05, heartRateConfidence: "low" })).finish();
+    row = (await worklistItem(later)).item;
+    assert.equal(row.state, "observed", "breathing makes the check-in an observation");
+    assert.deepEqual(row.pulse, { base: null, now: null, lowConfidence: 101.5 });
+    assert.deepEqual(row.breathing, { base: 16, now: 16 });
+    await (await sit(later, "recheck", 55, 16, 3)).finish();
+    row = (await worklistItem(later)).item;
+    assert.equal(row.pulse.base, 55);
+    assert.ok(row.pulse.baseAt);
+    assert.equal(row.breathing.baseAt, undefined);
+    await (await sit(later, "recheck", 85, 16, 3)).finish();
+    assert.equal((await openFlags(later)).length, 0, "one raised observation is not yet a flag");
+    await (await sit(later, "recheck", 86, 16, 3)).finish();
+    const raised = await openFlags(later);
+    assert.deepEqual(raised.map((flag) => flag.rule), ["baseline_shift"]);
+    assert.equal(raised[0]?.detail.pulse.base, 55);
+    assert.equal(raised[0]?.detail.pulse.now, 86);
+    assert.ok(raised[0]?.detail.pulse.baseAt);
+    assert.match(raised[0]?.handoff ?? "", /pulse 55 bpm at a re-check, 86 bpm now/);
+    assert.doesNotMatch(raised[0]?.handoff ?? "", /pulse[^;]*at check-in/);
+    row = (await worklistItem(later)).item;
+    assert.equal(row.state, "flag");
+    await ok(PatientResponse, 200, "POST", routes.patientDischarge(later), { auth: web });
+    done("after a lower-confidence check-in with breathing, the first re-check that counts is the pulse baseline and 55, 85, 86 bpm opens a flag");
+  }
+}
 
 // --- two deteriorations, two alerts -----------------------------------------------------------
 
