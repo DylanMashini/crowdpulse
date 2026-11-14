@@ -47,7 +47,12 @@ export const MINUTE_MS = 60_000;
 export function rateLimit(key: string, limit: number, windowMs: number, counters: RateLimiter = limiter): void {
   const retryAfterSeconds = counters.hit(`${key}|${limit}|${windowMs}`, limit, windowMs);
   if (retryAfterSeconds > 0) {
-    throw new ApiError("rate_limited", `Too many attempts. Try again in ${retryAfterSeconds} seconds.`);
+    throw new ApiError(
+      "rate_limited",
+      `Too many attempts. Try again in ${retryAfterSeconds} seconds.`,
+      undefined,
+      retryAfterSeconds,
+    );
   }
 }
 
