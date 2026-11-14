@@ -2,10 +2,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { Estimate } from '@triagecam/contracts';
+import { EXPOSURE_STUCK, EXPOSURE_STUCK_AFTER_SECONDS, type Estimate } from '@triagecam/contracts';
 import type { CaptureSittingSummary, VariabilityReason } from 'triage-capture';
 
-import { ReasonTally, STALE_BLANK_AFTER_MS, hasLowConfidencePulse, readoutFor, summaryItems } from './readingFormat.ts';
+import { ReasonTally, STALE_BLANK_AFTER_MS, hasLowConfidencePulse, readoutFor, summaryItems, viewfinderHint } from './readingFormat.ts';
 
 const estimate = (patch: Partial<Estimate>): Estimate => ({
   value: null,
@@ -140,4 +140,13 @@ test('a withheld RMSSD or SDNN gives the reason the engine gave', () => {
   assert.deepEqual(reasonFor('too_few_beats', 72), Array(2).fill('Too few clean beats in this sitting to report'));
   assert.deepEqual(reasonFor('low_beat_coverage', 72), Array(2).fill('Clean beats covered too little of the sitting'));
   assert.deepEqual(reasonFor('no_heart_rate', null), Array(2).fill('Needs a pulse reading first'));
+});
+
+test('exposure that will not settle says what to do about it (QA round 3, R5)', () => {
+  assert.equal(viewfinderHint('locking', 0), undefined);
+  assert.equal(viewfinderHint('locking', EXPOSURE_STUCK_AFTER_SECONDS - 1), undefined);
+  assert.equal(viewfinderHint('locking', EXPOSURE_STUCK_AFTER_SECONDS), `${EXPOSURE_STUCK}.`);
+  assert.match(viewfinderHint('locking', 60) ?? '', /move the light\.$/);
+  // Only while the camera is trying to lock on a face.
+  for (const state of ['searching', 'measuring', 'lost'] as const) assert.equal(viewfinderHint(state, 60), undefined);
 });

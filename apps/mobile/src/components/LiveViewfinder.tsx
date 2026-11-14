@@ -9,7 +9,10 @@ import TriageCapture, {
   hasNativePreview,
 } from 'triage-capture';
 
+import { EXPOSURE_STUCK_AFTER_SECONDS } from '@triagecam/contracts';
+
 import { captureErrorMessage } from '@/lib/capture/captureErrors';
+import { viewfinderHint } from '@/lib/capture/readingFormat';
 import { sentences } from '@/lib/format';
 
 import { Icon } from './Icon';
@@ -47,6 +50,17 @@ export function LiveViewfinder({ state, message, flipDisabled = false }: Props) 
     return () => subscription.remove();
   }, []);
 
+  // Exposure still locking after this long will not settle by itself (`viewfinderHint`).
+  const [lockingSeconds, setLockingSeconds] = useState(0);
+  useEffect(() => {
+    if (state !== 'locking') return;
+    const timer = setTimeout(() => setLockingSeconds(EXPOSURE_STUCK_AFTER_SECONDS), EXPOSURE_STUCK_AFTER_SECONDS * 1000);
+    return () => {
+      clearTimeout(timer);
+      setLockingSeconds(0);
+    };
+  }, [state]);
+
   // The reason a flip failed is read once; after that the framing guidance matters more.
   useEffect(() => {
     if (!flipError) return;
@@ -74,7 +88,7 @@ export function LiveViewfinder({ state, message, flipDisabled = false }: Props) 
     <Viewfinder
       state={state}
       regions={regions}
-      message={flipError ?? message}
+      message={flipError ?? message ?? viewfinderHint(state, lockingSeconds)}
       picture={hasNativePreview ? <CapturePreview style={{ flex: 1 }} /> : undefined}
       mirrored={hasNativePreview && camera === 'front'}
       control={

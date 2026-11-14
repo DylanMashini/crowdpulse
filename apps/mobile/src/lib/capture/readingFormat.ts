@@ -1,4 +1,6 @@
 import {
+  EXPOSURE_STUCK,
+  EXPOSURE_STUCK_AFTER_SECONDS,
   isLowConfidence,
   LOWER_CONFIDENCE,
   LOWER_CONFIDENCE_DETAIL,
@@ -6,7 +8,7 @@ import {
   type Estimate,
   type EstimateReason,
 } from '@triagecam/contracts';
-import type { CaptureSittingSummary, VariabilityReason } from 'triage-capture';
+import type { CaptureSittingSummary, VariabilityReason, ViewfinderState } from 'triage-capture';
 
 import { wholeNumber } from '../format.ts';
 
@@ -28,6 +30,16 @@ const REASONS: Record<EstimateReason, string> = {
 
 export function reasonText(reason: EstimateReason | null): string {
   return reason ? REASONS[reason] : REASONS.low_quality;
+}
+
+/**
+ * What the viewfinder says in place of its usual sentence, when something else is called for.
+ * The camera locks its exposure on a face within a second or two. When it has been trying for
+ * `EXPOSURE_STUCK_AFTER_SECONDS` the face is too bright, too dark, or its red channel clips,
+ * and it will go on trying until the light changes: the operator is told to change it.
+ */
+export function viewfinderHint(state: ViewfinderState, secondsInState: number): string | undefined {
+  return state === 'locking' && secondsInState >= EXPOSURE_STUCK_AFTER_SECONDS ? `${EXPOSURE_STUCK}.` : undefined;
 }
 
 /** Where a live number comes from, for the line under it. */

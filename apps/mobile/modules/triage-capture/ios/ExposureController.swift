@@ -29,7 +29,11 @@ final class ExposureController {
   /// (A sitting recorded at a red mean of 242 gave nothing; the others sat at 110 to 180.)
   private static let clipped = 235.0
   /// While metering a face that clips, the exposure target is lowered by this much, in
-  /// stops, no more often than `biasInterval`, down to `lowestBias`.
+  /// stops, no more often than `biasInterval`, down to `lowestBias`. A face that still clips
+  /// there (a lamp close to it) is never locked on, because a clipped channel carries no
+  /// pulse: the frames stay `adjusting`, and after `EXPOSURE_STUCK_AFTER_SECONDS` of that
+  /// the camera screen and the check-in page tell the operator to move the light
+  /// (`EXPOSURE_STUCK` in packages/contracts/src/copy.ts). Nothing here times out by itself.
   private static let biasStep: Float = 1.0 / 3
   private static let lowestBias: Float = -2
   private static let biasInterval = 0.5
