@@ -31,7 +31,7 @@ export function PatientTile({ patient, reason, ageYears, state, minutes, pulse, 
         {reason?.trim() ? <p className="line-clamp-2 text-[15px] leading-[20px] break-words">{reason}</p> : null}
       </header>
       <div className="flex w-full flex-wrap items-center justify-between gap-2">
-        <StatusBadge state={state} minutes={minutes} />
+        <StatusBadge state={state} minutes={minutes} lowConfidence={pulse?.lowConfidence != null} />
         {source ? <ProvenanceTag kind={source}>{sourceLabel}</ProvenanceTag> : null}
       </div>
       <dl className="grid w-full grid-cols-1 gap-2">

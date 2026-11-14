@@ -73,7 +73,7 @@ export function WorklistTable({ rows, selected, onSelect }: WorklistTableProps) 
                   <PatientIdentity patient={row.patient} size="sm" detail={intakeSummary(row.ageYears, row.reason)} />
                 </td>
                 <td className={tableCell}>
-                  <StatusBadge state={row.state} minutes={row.minutes} brief />
+                  <StatusBadge state={row.state} minutes={row.minutes} lowConfidence={row.pulse?.lowConfidence != null} brief />
                 </td>
                 <td className={tableCell}>
                   <TrendValue trend={row.pulse} unit="bpm" notMeasuredYet={!row.source} stacked />

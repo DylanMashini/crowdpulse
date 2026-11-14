@@ -4,10 +4,14 @@ export type TileState = 'observed' | 'flag' | 'overdue' | 'no-reading';
 export type Provenance = 'live' | 'recording' | 'experimental' | 'ai-draft';
 export type ScoreValue = 0 | 1 | 2 | 3;
 
-/** A value against the patient's own check-in baseline. `now: null` means no reading. */
+/** A value against the patient's own baseline, normally the check-in. `now: null` means no reading that counts. */
 export interface Trend {
   base?: number | null;
   now: number | null;
+  /** Set when the baseline is a re-check's, not the check-in's: when that re-check ended. */
+  baseAt?: string | null;
+  /** A pulse the latest sitting gave with lower confidence. Shown tagged, never compared with the baseline. */
+  lowConfidence?: number | null;
 }
 
 export interface WorklistRow {

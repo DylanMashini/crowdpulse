@@ -1,6 +1,6 @@
 'use client';
 
-import { flagAlerts, patientLabel, type Flag, type FlagAlert, type Patient, type PatientDetailResponse } from '@triagecam/contracts';
+import { flagAlerts, isLowConfidence, patientLabel, type Flag, type FlagAlert, type Patient, type PatientDetailResponse } from '@triagecam/contracts';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
@@ -96,7 +96,7 @@ function PatientView({ detail, updatedAt, refreshError, onChanged }: PatientView
           <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
             <PatientIdentity patient={patient} size="lg" heading detail={facts || undefined} />
             {detail.state ? (
-              <StatusBadge state={detail.state} minutes={row?.minutesSinceObserved}>
+              <StatusBadge state={detail.state} minutes={row?.minutesSinceObserved} lowConfidence={latestPulseIsLowConfidence(detail)}>
                 {detail.state === 'observed' && !row ? 'Observed' : undefined}
               </StatusBadge>
             ) : (
@@ -189,6 +189,7 @@ function PatientView({ detail, updatedAt, refreshError, onChanged }: PatientView
               <dt className="text-ink-muted">Sittings</dt>
               <dd className="tabular-nums">
                 {detail.sittings.length === 0 ? 'None yet' : `${detail.sittings.length}, baseline ${detail.baseline ? `from ${clockTime(detail.baseline.startedAt)}` : 'not set yet'}`}
+                {row?.pulse.baseAt ? `, pulse baseline from the ${clockTime(row.pulse.baseAt)} re-check` : ''}
               </dd>
               <dt className="text-ink-muted">Face match</dt>
               <dd>
@@ -241,6 +242,12 @@ const SEX: Record<NonNullable<Patient['sex']>, string> = { female: 'Female', mal
 
 function Missing() {
   return <span className="text-ink-muted">Not recorded</span>;
+}
+
+/** The newest finished sitting gave a pulse with lower confidence: the "no reading" state is then worded as that. */
+function latestPulseIsLowConfidence(detail: PatientDetailResponse): boolean {
+  const latest = detail.sittings.filter((sitting) => sitting.summary !== null).at(-1)?.summary;
+  return latest != null && latest.heartRate.value !== null && isLowConfidence(latest.heartRateConfidence);
 }
 
 /** The numbers the flag was raised on, frozen when it opened. */

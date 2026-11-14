@@ -326,7 +326,7 @@ function PatientRow({ row }: { row: PatientStatistics }) {
       </td>
       <td className={tableCell}>
         {row.state ? (
-          <StatusBadge state={row.state} minutes={row.minutesSinceObserved} brief />
+          <StatusBadge state={row.state} minutes={row.minutesSinceObserved} lowConfidence={row.pulse.lowConfidence != null} brief />
         ) : (
           <span className="whitespace-nowrap text-ink-muted">Discharged{row.dischargedAt ? ` ${timeOrDayTime(row.dischargedAt)}` : ''}</span>
         )}
