@@ -45,7 +45,7 @@ function Line({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex items-baseline justify-between gap-4 border-t border-line py-2 first:border-t-0 first:pt-0 last:pb-0">
       <dt className="text-ink-muted">{label}</dt>
-      <dd className="text-right font-medium tabular-nums">{children}</dd>
+      <dd className="text-right font-medium whitespace-nowrap tabular-nums">{children}</dd>
     </div>
   );
 }
@@ -257,7 +257,7 @@ function Results({ data }: { data: Statistics }) {
           <table className="w-full border-collapse text-[15px]">
             <thead>
               <tr>
-                {['Patient', 'Status', 'In the room', 'Observations', 'Pulse', 'Breathing', 'Partial score', 'Flags'].map((heading) => (
+                {['Patient', 'Status', 'In the room', 'Observations', 'Pulse', 'Breathing', 'Score', 'Flags'].map((heading) => (
                   <th key={heading} scope="col" className={tableHeadCell}>
                     {heading}
                   </th>
@@ -283,30 +283,38 @@ function Results({ data }: { data: Statistics }) {
   );
 }
 
+/** The state in a word or two: the row has its own columns for how long. */
+const STATE_WORDS: Record<TileState, (minutesSinceObserved: number | null) => string> = {
+  observed: (minutesSinceObserved) => (minutesSinceObserved == null ? 'Not yet observed' : 'Observed'),
+  flag: () => 'Trend flag',
+  overdue: () => 'Overdue',
+  'no-reading': () => 'No reading',
+};
+
 function PatientRow({ row }: { row: PatientStatistics }) {
   const muted = 'text-[13px] whitespace-nowrap text-ink-muted';
   // "No reading" means a sitting ran and gave nothing; with no sitting at all, say that instead.
   const unmeasured = row.sittings === 0 && row.pulse.base == null && row.breathing.base == null;
   return (
     <tr className="relative hover:[&>td]:bg-surface">
-      <td className={cx(tableCell, 'max-w-[280px] min-w-[200px]')}>
+      <td className={cx(tableCell, 'max-w-[260px] min-w-[180px]')}>
         <Link href={`/patients/${row.patientNumber}`} aria-label={`Open ${patientLabel(row.patient)}`} className="flex rounded-sm after:absolute after:inset-0 after:content-['']">
           <PatientIdentity patient={row.patient} size="sm" />
         </Link>
       </td>
       <td className={tableCell}>
         {row.state ? (
-          <StatusBadge state={row.state} minutes={row.minutesSinceObserved} />
+          <StatusBadge state={row.state}>{STATE_WORDS[row.state](row.minutesSinceObserved)}</StatusBadge>
         ) : (
-          <span className="whitespace-nowrap text-ink-muted">Discharged{row.dischargedAt ? ` at ${clockTime(row.dischargedAt)}` : ''}</span>
+          <span className="whitespace-nowrap text-ink-muted">Discharged{row.dischargedAt ? ` ${clockTime(row.dischargedAt)}` : ''}</span>
         )}
       </td>
       <td className={cx(tableCell, 'whitespace-nowrap tabular-nums')}>{minutes(row.minutesInRoom)}</td>
       <td className={cx(tableCell, 'whitespace-nowrap tabular-nums')}>
-        {row.sittings === 0 ? <span className={muted}>No sitting finished</span> : `${row.observations} of ${plural(row.sittings, 'sitting', 'sittings')}`}
+        {row.sittings === 0 ? <span className={muted}>No sitting finished</span> : `${row.observations} of ${row.sittings}`}
       </td>
       <td className={tableCell}>
-        <span className="flex items-center gap-3">
+        <span className="flex items-center gap-2">
           <TrendValue trend={row.pulse} unit="bpm" notMeasuredYet={unmeasured} />
           <Sparkline values={row.heartRates} />
         </span>

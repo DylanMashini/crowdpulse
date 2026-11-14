@@ -1,4 +1,4 @@
-const WIDTH = 72;
+const WIDTH = 48;
 const HEIGHT = 24;
 const PAD = 5;
 
