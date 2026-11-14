@@ -55,7 +55,7 @@ export function WorklistPreview() {
                 <span className="lp-row-reason">{row.reason}</span>
               </span>
               <span>
-                <StatusBadge state={row.state} severity={row.severity} brief />
+                <StatusBadge state={row.state} severity={row.severity} minutes={0} brief />
               </span>
               <span className="lp-row-score">
                 <ScoreChip score={row.score} caption={false} />

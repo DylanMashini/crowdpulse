@@ -183,9 +183,11 @@ export function LandingPage({ signedIn }: { signedIn: boolean }) {
         </section>
       </main>
 
-      <footer className="lp-wrap lp-footer">
-        <BrandLockup />
-        <span>{PROTOTYPE_NOTICE}</span>
+      <footer className="lp-foot">
+        <div className="lp-wrap lp-footer">
+          <BrandLockup />
+          <span>{PROTOTYPE_NOTICE}</span>
+        </div>
       </footer>
     </div>
   );

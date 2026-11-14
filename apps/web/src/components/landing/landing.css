@@ -483,7 +483,7 @@
   container-type: inline-size;
   position: relative;
   min-width: 0;
-  padding-bottom: var(--space-12);
+  padding-bottom: 56px;
   font-size: 13px;
   line-height: 20px;
 }
@@ -625,7 +625,6 @@
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-xl);
   background: var(--surface-3);
-  box-shadow: var(--shadow-overlay);
 }
 
 .lp-push-title {
@@ -701,8 +700,7 @@
 .lp-figure {
   display: grid;
   gap: var(--space-2);
-  padding: var(--space-5) var(--space-5) var(--space-5) 0;
-  border-bottom: 1px solid var(--line);
+  padding: var(--space-5) var(--space-5) 0 0;
 }
 
 /* The numerals of a vitals readout: mono, regular weight, tight. */
@@ -1060,6 +1058,10 @@
   justify-items: start;
 }
 
+.lp-foot {
+  border-top: 1px solid var(--line);
+}
+
 .lp-footer {
   display: flex;
   flex-wrap: wrap;
@@ -1067,7 +1069,6 @@
   justify-content: space-between;
   gap: var(--space-2) var(--space-6);
   padding-block: var(--space-6);
-  border-top: 1px solid var(--line);
   font-size: 12px;
   line-height: 16px;
   color: var(--ink-faint);
