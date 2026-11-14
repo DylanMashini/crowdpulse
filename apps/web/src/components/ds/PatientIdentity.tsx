@@ -43,7 +43,8 @@ export function PatientIdentity({ patient, size = 'md', detail, heading, classNa
     <span className={cx('inline-flex max-w-full min-w-0 items-center', size === 'lg' ? 'gap-4' : 'gap-3', className)}>
       <PatientAvatar patient={patient} size={AVATAR[size]} />
       <span className="flex min-w-0 flex-col">
-        <Name className={cx('truncate font-semibold', NAME[size], !named && 'text-ink-muted')}>{patientLabel(patient)}</Name>
+        {/* A page heading wraps onto a second line; a name in a row or a tile is cut with an ellipsis. */}
+        <Name className={cx(heading ? 'break-words' : 'truncate', 'font-semibold', NAME[size], !named && 'text-ink-muted')}>{patientLabel(patient)}</Name>
         <span className={cx('flex min-w-0 items-center gap-2 text-ink-muted', size === 'lg' ? 'text-[15px] leading-[22px]' : 'text-[13px] leading-[18px]')}>
           {named ? <VisitNumber number={patient.number} /> : <span className="whitespace-nowrap">Name not entered yet</span>}
           {detail ? (

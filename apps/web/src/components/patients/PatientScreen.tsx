@@ -89,7 +89,7 @@ function PatientView({ detail, updatedAt, refreshError, onChanged }: PatientView
   return (
     <>
       <header className="mb-5 flex flex-wrap items-end justify-between gap-x-5 gap-y-3">
-        <div className="flex flex-col gap-2">
+        <div className="flex min-w-0 flex-col gap-2">
           <Link href="/patients" className="type-caption font-medium text-signal underline underline-offset-[3px]">
             All patients
           </Link>

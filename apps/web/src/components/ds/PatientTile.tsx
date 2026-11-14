@@ -25,11 +25,15 @@ export interface PatientTileProps extends WorklistRow {
 export function PatientTile({ patient, reason, ageYears, state, minutes, pulse, breathing, score, source, sourceLabel, measured }: PatientTileProps) {
   return (
     <article className={cx('flex h-full w-full flex-col items-start gap-3 rounded-lg bg-surface-raised', FRAMES[state])}>
-      <header className="flex w-full items-start justify-between gap-2">
-        <PatientIdentity patient={patient} size="md" detail={intakeSummary(ageYears, reason)} />
-        {source ? <ProvenanceTag kind={source}>{sourceLabel}</ProvenanceTag> : null}
+      {/* The name has the tile's full width; the reason for the visit gets two lines of its own. */}
+      <header className="flex w-full min-w-0 flex-col gap-2">
+        <PatientIdentity patient={patient} size="md" detail={intakeSummary(ageYears, null)} />
+        {reason?.trim() ? <p className="line-clamp-2 text-[15px] leading-[20px] break-words">{reason}</p> : null}
       </header>
-      <StatusBadge state={state} minutes={minutes} />
+      <div className="flex w-full flex-wrap items-center justify-between gap-2">
+        <StatusBadge state={state} minutes={minutes} />
+        {source ? <ProvenanceTag kind={source}>{sourceLabel}</ProvenanceTag> : null}
+      </div>
       <dl className="grid w-full grid-cols-1 gap-2">
         <div>
           <dt className="text-[13px] leading-[16px] text-ink-muted">Pulse, bpm</dt>
