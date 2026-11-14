@@ -4,7 +4,7 @@
 
 Every number is measured. Reproduce with `packages/signal-engine/Scripts/reliability.py` (its header lists the commands) and `eval/run_eval.py --rescore`. Parameters were chosen on the UBFC-rPPG tuning set, the owner's sitting and tuning-set negative controls. The held-out set and held-out controls were run once, after the last change to the engine, and nothing was changed afterwards.
 
-This work has not been through QA. Nothing here was run on a phone.
+Sections 1 to 9 are round 1, which QA round 1 (`engine-reliability-qa1.md`) found not ready: section 10 is what was changed in answer, and is current where the two differ. Nothing here was run on a phone.
 
 ## 1. Headline
 
@@ -206,3 +206,114 @@ Reasons on the wire are the same strings. `motion` now means "more than 30% of t
 - **Breathing is untouched**: the owner's sitting still has none, because the chest is barely tracked.
 - **`eval/refusals.py`** still names `maximumMotionShare` in its example; for heart rate the field is now `maximumDisturbedShare`. It was not edited: the shell guard of the session that did this work refused any command containing the path component `eval`, including `git add` of a file there, so no file under `eval/` was changed. Measurement scripts for this work went to `packages/signal-engine/Scripts/` for the same reason.
 - **The held-out controls were run twice with the same files**: once with the scratch version of `reliability.py` when the engine was frozen, and again with the committed script (`controls --set heldOut --seed 770000 --repeats 4`) to confirm it reproduces them, which it does to the digit. Nothing was changed between or after. The first held-out noise draw in section 6 came from the scratch version and cannot be regenerated (its seeds were not fixed); the table's figures come from the committed script.
+
+## 10. Round 2: fixes for QA round 1
+
+14 November 2026, commits `0029fb1` to the head of the branch, by a development agent that did not write round 1. The brief is `engine-reliability-qa1.md`. "Round 1" below is the engine at `8b32a18`, which sections 1 to 9 describe; where those sections and this one differ, this one is current. Not signed off: a QA agent tests it next. Nothing was run on a phone.
+
+Tuned on the UBFC tuning set, the owner's sitting, tuning controls and QA's synthetic controls only. The held-out set was scored once more after the last engine change (section 10.6): that is a second look at it, not an untouched one.
+
+### 10.1 Headline
+
+| | Before round 1 | Round 1 | Round 2 |
+|---|---|---|---|
+| Owner's sitting `a88a50e1` | no heart rate | 101.5 bpm | 101.5 bpm, marked lower confidence (3 valid seconds; whole-sitting evidence 1.77 against 1.3) |
+| Tuning, 12 sound references: coverage / within 5 bpm / MAE | 62.5% / 95.5% / 2.02 | 68.4% / 96.0% / 1.96 | 68.1% / 96.0% / 1.96 |
+| same: sittings with a heart rate (right, wrong) | 11 (10, 1) | 12 (11, 1) | 12 (11, 1), all normal confidence |
+| Held-out, 21: coverage / within 5 bpm / MAE | 59.8% / 88.9% / 2.51 | 62.2% / 88.2% / 2.58 | 60.4% / 89.8% / 2.38 |
+| same: sittings with a heart rate (right, wrong) | 20 (17, 3) | 20 (17, 3) | 20 (17, 3) |
+| Bobbing head, no pulse (QA's 24) ending with a heart rate | 0 | 21 | 0 |
+| Tuning controls (588) ending with a heart rate / seconds with a live reading | 40 / 0.77% | 0 / 0.32% | 0 / 0.23% |
+| Held-out controls (636, the same draw as round 1) | 25 / 0.51% | 1 / 0.22% | 0 / 0.18% |
+| Seconds a rate stays after the face is covered (QA's control) | up to 6 | up to 6 | 1 or 2 |
+| Faint synthetic pulses (QA's 648): end with a rate, wrong | 242, 5 | 210, 0 | 146, 0 (121 of them lower confidence) |
+
+Round 2 gives back 0.3 points of tuning coverage and 1.8 points of held-out coverage, and is more accurate on the held-out set than either earlier engine. What it refuses that round 1 accepted is listed in 10.7.
+
+### 10.2 Finding 1: rhythmic movement (`eba4c36`)
+
+The sitting file carries no face position, only the three regions' colours, so the discriminator has to come from colour. It is this: at the rate a window would report, how far does the regions' **brightness** swing compared with their **pulse signal**? Brightness is the part of a region's change common to the three channels, taken with the same sliding normalisation and the same cuts as the projection (`PulseAnalyzer.brightness`), mixed over the regions with the same weights. Blood barely moves it. A head moving in a rhythm moves it far more than it moves colour.
+
+| Windows | Brightness over pulse signal at the candidate (`brightnessRatio`) |
+|---|---|
+| UBFC tuning set, valid windows (554) | median 0.88, 95th percentile 2.15, 99th 6.5 |
+| Owner's sitting, the 3 valid windows | 0.25 to 0.27 (all 47 analysed windows: at most 3.2, and those are the 44 bpm candidates) |
+| QA's bobbing head, windows round 1 called valid (679) | 1st percentile 3.7, 5th 5.1, median 14 |
+| QA's faint and harmonic pulses, valid windows (407) | at most 0.68 |
+
+A window over **3** is refused as `motion` (gate `rhythmic_movement`) and is not added to the whole-sitting estimate. So is a window whose pulse signal swings by more than **1%** of the regions' colour: the largest real pulse seen is 0.30% (tuning) and 0.26% (owner), and a movement with that much colour in it gets past the ratio.
+
+Two tuning subjects (48 and 49) have a brightness rhythm at their **true** heart rate, ten times the size of the pulse signal, in 18 otherwise correct windows. Refusing them outright cost 2.9 points of tuning coverage. So a window over either limit is kept when a window under both gave a valid reading within 5 bpm no more than 15 s earlier (`steadyRateSeconds`): movement cannot establish a rate, and does not cost one already established. That brought the cost down to 0.3 points. With 5, 15, 30 s and no limit the tuning coverage is 67.5%, 68.1%, 68.4%, 68.4%.
+
+**What the real files say about QA's movement model.** QA's model is synthetic: a colour change of 3% to 20% of the brightness swing, in a random direction per region. The only real windows with a clear brightness rhythm at the candidate (20 windows of subject48, brightness swing over 0.5%) have a pulse signal of 7% to 13% of the brightness swing, the same order as the model. But there the rhythm is at the true heart rate, so part of that pulse signal is blood, and it says nothing about direction. No recording on disk has a person nodding or rocking. So: the real files do not contradict the model's size, and cannot confirm it. A recording of a person rocking, replayed with `engine-cli diagnose`, is still what settles it (needs a person).
+
+**Where it stops.** `reliability.py adversarial`, family `leak`: a bob at 1.3 Hz with the colour part from 5% to 100% of the brightness part. With no pulse, 9 of 72 end with the movement's rate: 8 of the 12 at 1% brightness with a third or more of it in the colour, and 1 of 4 at 3% brightness with a third. That is movement whose colour change is the size of a pulse (0.3% to 1%) with almost no brightness change to give it away; nothing in three colour means separates it from blood. Open.
+
+Also measured: periodic coloured or added white light in the band (QA's `C_` family, a limit that predates round 1) ends with its own rate in 6 of 16 sittings, down from 12, because the stronger ones now trip the ratio.
+
+### 10.3 Findings 2, 3, 4 and 7: the whole-sitting estimate (`0029fb1`)
+
+Round 1 accepted the estimate when four limits each held. On every single one of them the owner's sitting sits inside what controls reach (quality 0.24 against controls up to 0.30, prominence 2.4 against 2.4, support 0.51 against 0.46); only the conjunction separated them, which is why a 20% change in one limit flipped the result. The three measures are now divided by their old limits and multiplied into one figure, `evidence`, and there are two bars:
+
+| Use | Evidence needed | Where controls are (755: 588 tuning controls and QA's no-pulse families) | Where the owner's sitting is |
+|---|---|---|---|
+| Vouching for 3 to 9 valid readings within 5 bpm of its peak | 1.3 | 0.93 at most among those with such readings | 1.77 |
+| Standing alone (fewer than 3 valid readings, and those not disagreeing) | 2.6 | 1.21 at most, readings or not | not needed |
+
+With each of the three reference levels, the two bars, the half-rate limit and the 55 bpm floor moved by 20% either way (24 runs; the floor to 44 and 66), the owner's sitting keeps its 101.5 bpm in every run and no tuning control ends with a heart rate, with two exceptions that are not new: the floor at 44 bpm lets 2 of 588 controls through (46 and 49 bpm), and `minimumUncorroboratedReadings` at 8 lets 1 through. `maximumBrightnessRatio` at 3.6 lets 1 of QA's 24 bobbing sittings through; at 2.4 tuning coverage falls by 0.4 points.
+
+**No rate without live readings looks like any other.** `SittingSummary.heartRateConfidence` is `normal` with ten or more valid readings and `low` when the rate rests on the whole-sitting estimate, vouching or alone. It is on the wire (10.5).
+
+**Doubled rates.** The estimate is not used when the summed spectrum has a clear peak at half its rate (`halfRateProminence` 2.5 or more; real sittings reach 1.7, a doubled rate with a visible fundamental 3.7 to 4.5). Without this the evidence figure would let 5 of QA's 77 harmonic sittings end at double the rate; with it, 3, as in round 1. Those three are a fundamental of 44 to 50 bpm, which the 0.7 Hz band-pass removes, so nothing in the signal says the peak is a harmonic: two of them have ten or more live readings, and the third is QA's own case (44 bpm, 6 readings, vouched for at 88.6). Still open.
+
+**Slow hearts (finding 6).** Lowering the floor to 44 bpm so that the estimate could vouch for a slow heart was measured: 2 of 588 tuning controls then end with a rate (46.3 and 49.0 bpm, 4 and 5 readings) and no harmonic or faint sitting is gained. Not taken. A heart under 55 bpm needs ten valid readings, as in round 1. Open by design.
+
+### 10.4 Finding 5: a covered face (`e465b08`)
+
+The newest 4 s of a window must hold the rhythm at half the size it has over the whole window, as well as scoring 0.4 at it. No valid window of the tuning set or the owner's sitting is under 0.5 (1st percentile 0.59); from the third second after a cover every window is. QA's cover control over eight seeds (32 sittings): 1 or 2 s, never more. The test's hand now has sensor noise and six seeds, and is held to 2 s. Tuning coverage did not move.
+
+### 10.5 Downstream of the engine
+
+- **Wire** (`f8de6f9`): `SittingSummary.heartRateConfidence`, `normal`, `low` or null, optional. Absent reads as normal. `Payloads.swift` sends it (`753601c`, one line, not compiled here).
+- **Server** (`6d08522`, `47053e6`): stored in `sittings.heart_rate_confidence` (migration `0004`), returned with the sitting and its timeline entry. **A low rate is not a baseline.** Everything that reasons from a heart rate reads it through `trustedHeartRate`, which is null for a low one, so it sets no baseline, scores nothing, opens and closes no flag, stays out of the statistics, and the patient stays due for a re-check. Reason: the baseline is what every later sitting is compared with, so a wrong one raises or hides a flag for the rest of the visit, and refusing costs one more minute at the camera. The handoff sentence ends "The latest sitting read pulse 62 bpm with lower confidence; repeat it."
+- **Dashboard** (`d6ed3af`): the check-in page tags the value "Lower confidence" and says "Too little of the sitting gave a clear pulse. Not used for trends or flags. Repeat the sitting." where it said "Median of the sitting"; the patient timeline carries the same tag beside the pulse. Seen in a browser at 1280 and 390 px, light and dark, against a seeded private database, console clean.
+- **Phone** (`e3b28cf`): the camera's summary says "Saved. Repeat the sitting" in place of "Baseline saved", with the same sentence; the nurse's sitting row says "lower-confidence pulse, not used for trends or flags" in place of "pulse read 5% of the time". Unit tests only; not seen in the simulator.
+- **Raw files** (`3c9fc37`, finding 9): a file the server refuses for good (404, 413, 403) is removed after one try; one that could not be sent is offered again when a later file gets through; at most five are kept. The list is in memory, so files kept before the app was closed are not offered again.
+
+### 10.6 Held-out set, second look
+
+Run once, after the last change to the engine; nothing was changed afterwards. It had been run once in round 1.
+
+| | Before round 1 | Round 1 | Round 2 |
+|---|---|---|---|
+| 21 sittings: coverage | 59.8% | 62.2% | 60.4% |
+| readings within 5 bpm / MAE | 88.9% / 2.51 bpm | 88.2% / 2.58 bpm | 89.8% / 2.38 bpm |
+| sittings with a heart rate (within 5 bpm of the mean reference, further off) | 20 (17, 3) | 20 (17, 3) | 20 (17, 3) |
+| 636 controls (seed 770000): ending with a heart rate | 25 | 1 | 0 |
+| control seconds with a live reading | 0.51% | 0.22% | 0.18% |
+| Noise 0.5 counts added: coverage; sittings with a heart rate (right, wrong) | 15.8%; 14 (8, 6) | 13.1%; 9 (6, 3) | 12.3%; 10 (6, 4) |
+| Noise 1.0 counts added | 1.4%; 3 (2, 1) | 0.9%; 1 (0, 1) | 0.8%; 0 |
+
+The harness's own report (`eval/run_eval.py --rescore`): held-out 813 paired readings, MAE 2.4 bpm, bias -1.0 bpm, 90% within 5 bpm, coverage 60%, sitting-summary MAE 1.7 bpm, 95% of summaries within 5 bpm (n=20); without the four subjects seen in earlier development, 17 subjects, 697 readings, MAE 2.3 bpm, 91% within 5 bpm, coverage 61%. Tuning, 16 subjects: 746 readings, MAE 12.3 bpm (the four faulty references), 87% within 5 bpm, coverage 69%.
+
+One figure went the wrong way: with 0.5 counts of noise added, one more held-out sitting ends with a rate than in round 1, and it is a wrong one (4 wrong against 3). It was not looked into, because doing so would be tuning on the held-out set.
+
+### 10.7 What round 2 costs
+
+- **Faint pulses.** Of QA's 648 faint synthetic pulses, 146 end with a rate against round 1's 210 (none wrong either way); 33 of them from the estimate alone, against 103. Real sittings with noise added, tuning: 5 right against 6 at 0.5 counts, 0 against 1 at 1.0. This is the price of asking twice the evidence when there are no live readings.
+- **Movement at the heart's own rate from the start of a sitting** gives no reading until a window without it does (`doesNotEstablishOne` in the tests).
+- **18 correct windows** in two tuning subjects are refused when no steady reading precedes them by 15 s or less (0.3 points).
+
+### 10.8 Open after round 2
+
+- Movement whose colour change is pulse-sized with little brightness change (10.2), and coloured light in the band at small depth: still read as a heart rate.
+- A doubled rate when the fundamental is under about 48 bpm (10.3).
+- Slow hearts under 55 bpm with fewer than ten readings: no rate (10.3).
+- The whole-sitting evidence is not cleared when the face track changes (QA, finding 8, no wrong number seen): not changed.
+- Storing the summary's reason when a sitting ends with no reading; a second extraction method (CHROM); bridging short dropouts: not attempted in this round either.
+- `eval/refusals.py` still names `maximumMotionShare` in its example.
+- The owner's sitting still gives a live reading for 3 of 60 s and now ends "lower confidence", which the station does not use as a baseline. On a recording like it the demo shows a number with a tag and asks for a repeat. The fix is still in capture (section 9).
+
+### 10.9 Reproducing
+
+`reliability.py score`, `controls`, `accepts`, `degrade` as before, and new: `reliability.py adversarial --work <dir> [--weak]` writes and runs QA's controls (`Scripts/adversarial.py` lists the families: noise, flicker, lighting, movement, bobbing, leak, splice, short, dropout, jumps, harmonics, cover, weak). The engine's tests carry the bobbing head (24 sittings), the covered face over six seeds, and the evidence tiers. `swift test`: 180 tests in 45 suites.
