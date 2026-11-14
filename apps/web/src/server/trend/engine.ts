@@ -77,6 +77,13 @@ type FlagState = RuleState<FlagRow> & PatientHistory;
 const FLAG_LOCK = 7401;
 
 /**
+ * Holds the patient's flags for the rest of the transaction: no other request opens or closes
+ * one until it ends. Everything that writes a patient's flags takes it first.
+ */
+export const lockPatientFlags = (tx: Transaction, patientId: string) =>
+  tx.execute(sql`select pg_advisory_xact_lock(${FLAG_LOCK}, hashtext(${patientId}))`);
+
+/**
  * One patient's flags in Postgres. The lock is an advisory lock on the patient, held to the end
  * of a transaction that everything inside it runs on, so the flags a request opens appear to
  * every other request together or not at all.
@@ -84,11 +91,12 @@ const FLAG_LOCK = 7401;
 const flagStore = (patient: PatientRow, settings: Settings, now: Date): RuleStore<FlagState, FlagRow> => ({
   locked: (work) =>
     db.transaction(async (tx) => {
-      await tx.execute(sql`select pg_advisory_xact_lock(${FLAG_LOCK}, hashtext(${patient.id}))`);
-      const [history] = await loadHistories([patient], settings, now, tx);
-      const { snapshot } = history as PatientHistory;
+      await lockPatientFlags(tx, patient.id);
+      // The caller's copy of the patient may be from before a discharge, which closed its flags.
+      const [current] = await tx.select().from(schema.patients).where(eq(schema.patients.id, patient.id));
+      const [history] = current?.status === "waiting" ? await loadHistories([current], settings, now, tx) : [];
       return work(
-        { ...(history as PatientHistory), rules: snapshot.rules },
+        history ? { ...history, rules: history.snapshot.rules } : null,
         {
           // The partial unique index allows one open flag per patient and rule. Nothing else
           // opens flags, so inside the lock this insert cannot conflict; it stays a no-op
@@ -106,7 +114,7 @@ const flagStore = (patient: PatientRow, settings: Settings, now: Date): RuleStor
               .returning();
             return row;
           },
-          // Discharge closes flags without this lock, so the flag may already be closed.
+          // Still a no-op rather than an error if the flag is somehow closed already.
           close: async (flag, at) => {
             const [row] = await tx
               .update(schema.flags)

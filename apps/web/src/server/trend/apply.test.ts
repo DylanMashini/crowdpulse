@@ -20,7 +20,7 @@ const BOTH_TREND_RULES = { score_rise: MET, baseline_shift: MET, overdue: QUIET 
  * and write waits for its turn, and the schedule says which request moves next, so one run is
  * one exact interleaving and every interleaving can be tried.
  */
-function room(rules: Record<FlagRule, RuleStatus>, options: { exclusive: boolean }) {
+function room(rules: Record<FlagRule, RuleStatus>, options: { exclusive: boolean; discharged?: boolean }) {
   const rows: Row[] = [];
   const waiting: { request: string; go: () => void }[] = [];
   let lockHeld = Promise.resolve();
@@ -32,7 +32,7 @@ function room(rules: Record<FlagRule, RuleStatus>, options: { exclusive: boolean
     locked: async (work) => {
       const body = async () => {
         await turn(request);
-        return work(read(), {
+        return work(options.discharged ? null : read(), {
           open: async (rule, at) => {
             await turn(request);
             // The unique index: one open flag per patient and rule.
@@ -154,6 +154,16 @@ describe("applyRules", () => {
     const request = applyRules({ rules: BOTH_TREND_RULES, openFlags: [] as Row[] }, new Date(5), table.store("late"));
     await table.run([request], []);
     assert.deepEqual((await request).changes, []);
+    assert.deepEqual(table.rows, []);
+  });
+
+  it("opens nothing for a patient who was discharged before it got the lock", async () => {
+    // A worklist request read the patient as waiting with both rules met; discharge then closed
+    // the flags. Reading again under the lock, the request must not open them a second time.
+    const table = room(BOTH_TREND_RULES, { exclusive: true, discharged: true });
+    const request = applyRules({ rules: BOTH_TREND_RULES, openFlags: [] as Row[] }, new Date(5), table.store("worklist"));
+    await table.run([request], []);
+    assert.deepEqual(await request, { changes: [], state: null });
     assert.deepEqual(table.rows, []);
   });
 

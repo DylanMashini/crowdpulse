@@ -34,8 +34,10 @@ export type RuleStore<S, F> = {
   /**
    * Runs `work` while no other request can open or close this patient's flags, and hands it the
    * patient's state as it is stored once the lock is held, not as the caller read it earlier.
+   * The state is null when the patient is no longer waiting: discharge has closed its flags,
+   * and none may open after it.
    */
-  locked<T>(work: (state: S, write: RuleWriter<S, F>) => Promise<T>): Promise<T>;
+  locked<T>(work: (state: S | null, write: RuleWriter<S, F>) => Promise<T>): Promise<T>;
 };
 
 export type RuleChange<F> = { type: "opened" | "closed"; flag: F };
@@ -54,7 +56,7 @@ export type RuleChange<F> = { type: "opened" | "closed"; flag: F };
  * `seen` is what the caller has already read. If nothing is due on it, the lock is not taken, so
  * computing a quiet worklist costs no transaction. `state` in the answer is the state the
  * changes were decided on, with the open flags as they now stand; null when the lock was not
- * taken and `seen` still holds.
+ * taken and `seen` still holds, or when the patient turned out to have been discharged.
  */
 export async function applyRules<F extends { rule: FlagRule }, S extends RuleState<F>>(
   seen: S,
@@ -65,6 +67,7 @@ export async function applyRules<F extends { rule: FlagRule }, S extends RuleSta
   if (due.open.length === 0 && due.close.length === 0) return { changes: [], state: null };
 
   return store.locked(async (state, write) => {
+    if (!state) return { changes: [], state: null };
     const plan = planRules(state);
     const changes: RuleChange<F>[] = [];
     let openFlags = state.openFlags;

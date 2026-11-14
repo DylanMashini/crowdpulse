@@ -17,7 +17,7 @@ import { ApiError } from "./http.ts";
 import { decodeCursor, encodeCursor, takePage } from "./pagination.ts";
 import type { PatientRow } from "./serialize.ts";
 import { hasSummary, iso, toPatient, toPatientRef, toSitting } from "./serialize.ts";
-import { syncPatient, patientHandoff } from "./trend/engine.ts";
+import { lockPatientFlags, patientHandoff, syncPatient } from "./trend/engine.ts";
 import { partialScore } from "./trend/rules.ts";
 import { distinctAcknowledgements, orderTimeline } from "./trend/timeline.ts";
 import { historyState } from "./worklist.ts";
@@ -122,6 +122,9 @@ export async function dischargePatient(number: number): Promise<Patient> {
 
   const now = new Date();
   const { row, closed } = await db.transaction(async (tx) => {
+    // A request that is opening this patient's flags finishes first; one that comes after
+    // finds the patient discharged and opens nothing.
+    await lockPatientFlags(tx, patient.id);
     const [updated] = await tx
       .update(schema.patients)
       .set({ status: "discharged", dischargedAt: now })
