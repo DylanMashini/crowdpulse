@@ -1,5 +1,5 @@
 import type { Settings, SettingsResponse, UpdateSettingsRequest } from '@triagecam/contracts';
-import { type ReactNode, useCallback, useState } from 'react';
+import { type ReactNode, useCallback, useRef, useState } from 'react';
 import { Linking, View } from 'react-native';
 
 import { Button } from '@/components/Button';
@@ -32,9 +32,19 @@ export default function You() {
   const [loadFailure, setLoadFailure] = useState<string | null>(null);
   const [saveFailure, setSaveFailure] = useState<string | null>(null);
 
+  // Quick taps send one request each. `saves` counts the ones in the air and `lastSave`
+  // names the newest, so an answer that is already out of date never reaches the screen.
+  const saves = useRef(0);
+  const lastSave = useRef(0);
+  /** The newest answer from the server: what the screen returns to when a save fails. */
+  const confirmed = useRef<SettingsResponse | null>(null);
+
   const load = useCallback(async () => {
     try {
-      setSettings(await api.settings());
+      const answer = await api.settings();
+      confirmed.current = answer;
+      // A save in the air will bring a newer answer than this one.
+      if (saves.current === 0) setSettings(answer);
       setLoadFailure(null);
     } catch (error) {
       setLoadFailure(errorMessage(error));
@@ -44,17 +54,31 @@ export default function You() {
   // The rules are shared: the dashboard or another phone may have changed them.
   useLoadOn(load, revision);
 
-  /** Shows the change at once, then keeps the server's answer, or puts the old value back. */
+  /**
+   * Shows the change at once, then keeps the server's answer to the newest change. When a
+   * save fails the screen goes back to what the server holds, not to a value remembered here.
+   */
   const change = async (changes: UpdateSettingsRequest) => {
-    const before = settings;
-    if (!before) return;
+    if (!settings) return;
+    lastSave.current += 1;
+    const mine = lastSave.current;
+    saves.current += 1;
     setSaveFailure(null);
-    setSettings({ ...before, settings: { ...before.settings, ...changes } });
+    setSettings((current) => (current ? { ...current, settings: { ...current.settings, ...changes } } : current));
+    let failed = false;
     try {
-      setSettings(await api.updateSettings(changes));
+      const answer = await api.updateSettings(changes);
+      confirmed.current = answer;
+      if (lastSave.current === mine) setSettings(answer);
     } catch (error) {
-      setSettings(before);
+      failed = true;
       setSaveFailure(errorMessage(error));
+    } finally {
+      saves.current -= 1;
+    }
+    if (failed && saves.current === 0) {
+      setSettings(confirmed.current);
+      await load();
     }
   };
 
