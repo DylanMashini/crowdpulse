@@ -2,8 +2,6 @@ import { PRIVACY_CAPTURE } from '@triagecam/contracts';
 import { View } from 'react-native';
 import type { ThermalState } from 'triage-capture';
 
-import { fonts } from '@/theme';
-
 import { Icon } from './Icon';
 import { PrivacyNote } from './PrivacyNote';
 import { useScopedTheme } from './ThemeScope';
@@ -29,7 +27,7 @@ type Props = {
 
 /**
  * What the operator needs to trust a sitting, with the privacy line. A value outside its
- * expected range turns `flag` and gains the flag icon.
+ * expected range turns `watch` and gains the flag icon.
  */
 export function CaptureStatus({ fps, dropped, exposureLocked, thermal }: Props) {
   const theme = useScopedTheme();
@@ -50,19 +48,11 @@ export function CaptureStatus({ fps, dropped, exposureLocked, thermal }: Props) 
             accessibilityLabel={`${item.label}: ${item.value}${item.warn ? ', outside the expected range' : ''}`}
             style={{ width: '50%', paddingRight: space.space3 }}
           >
-            <Text style={[theme.type.caption, { lineHeight: 16, color: colors.inkMuted }]}>{item.label}</Text>
+            <Text style={[theme.type.caption, { color: colors.inkFaint }]}>{item.label}</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              {item.warn ? <Icon name="flag" size={16} color={colors.flag} /> : null}
+              {item.warn ? <Icon name="flag" size={16} color={colors.watch} /> : null}
               <Text
-                style={[
-                  theme.type.bodyTouch,
-                  {
-                    flexShrink: 1,
-                    fontFamily: fonts.sans[500],
-                    color: item.warn ? colors.flag : colors.ink,
-                    fontVariant: ['tabular-nums'],
-                  },
-                ]}
+                style={[theme.type.bodyStrong, { flexShrink: 1, color: item.warn ? colors.watch : colors.ink, fontVariant: ['tabular-nums'] }]}
               >
                 {item.value}
               </Text>

@@ -11,6 +11,7 @@ import TriageCapture, {
 
 import { captureErrorMessage } from '@/lib/capture/captureErrors';
 import { sentences } from '@/lib/format';
+import { hairline, weight } from '@/theme';
 
 import { Icon } from './Icon';
 import { Text } from './Text';
@@ -106,7 +107,7 @@ function FlipCameraButton({ camera, disabled, onPress }: FlipProps) {
       accessibilityLabel={`Switch to the ${CAMERA_WORD[next]} camera`}
       accessibilityValue={{ text: `Using the ${CAMERA_WORD[camera]} camera` }}
       accessibilityState={{ disabled }}
-      style={{ alignItems: 'center', gap: theme.space.space1, opacity: disabled ? 0.45 : 1 }}
+      style={{ alignItems: 'center', gap: theme.space.space1, opacity: disabled ? 0.4 : 1 }}
     >
       {({ pressed }) => (
         <>
@@ -117,9 +118,9 @@ function FlipCameraButton({ camera, disabled, onPress }: FlipProps) {
               borderRadius: theme.radius.radiusPill,
               alignItems: 'center',
               justifyContent: 'center',
-              borderWidth: 1,
+              borderWidth: hairline,
               borderColor: colors.lineStrong,
-              backgroundColor: pressed ? colors.surfaceRaised : colors.scrim,
+              backgroundColor: pressed ? colors.surface3 : colors.scrim,
             }}
           >
             <Icon name="flip-camera" size={20} color={colors.ink} />
@@ -128,11 +129,11 @@ function FlipCameraButton({ camera, disabled, onPress }: FlipProps) {
             style={{
               paddingHorizontal: theme.space.space2,
               paddingVertical: 2,
-              borderRadius: theme.radius.radiusPill,
+              borderRadius: theme.radius.radiusSm,
               backgroundColor: colors.scrim,
             }}
           >
-            <Text maxFontSizeMultiplier={1.2} style={[theme.type.label, { color: colors.ink }]}>
+            <Text maxFontSizeMultiplier={1.2} style={[theme.type.caption, { fontWeight: weight.medium, color: colors.ink }]}>
               {camera === 'front' ? 'Front' : 'Rear'}
             </Text>
           </View>

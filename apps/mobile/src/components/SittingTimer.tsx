@@ -1,7 +1,5 @@
 import { View } from 'react-native';
 
-import { fonts } from '@/theme';
-
 import { useScopedTheme } from './ThemeScope';
 import { Text } from './Text';
 
@@ -42,17 +40,22 @@ export function SittingTimer({ elapsed, doneLabel = 'Baseline saved' }: Props) {
           columnGap: theme.space.space3,
         }}
       >
-        <Text style={{ fontFamily: fonts.sans[600], fontSize: 32, lineHeight: 40, color: colors.ink, fontVariant: ['tabular-nums'] }}>
-          {left}
-        </Text>
-        <Text style={[theme.type.bodyTouch, { fontFamily: fonts.sans[600], color: colors.signal }]}>{phaseLabel}</Text>
+        {done ? (
+          <Text style={[theme.type.heading, { color: colors.ink }]}>Done</Text>
+        ) : (
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
+            <Text style={[theme.type.readoutMd, { color: colors.ink }]}>{SITTING_SECONDS - seconds}</Text>
+            <Text style={[theme.type.dense, { color: colors.inkMuted }]}>s left</Text>
+          </View>
+        )}
+        <Text style={[theme.type.dense, { color: colors.inkMuted }]}>{phaseLabel}</Text>
       </View>
       <View
         accessible
         accessibilityRole="progressbar"
         accessibilityLabel={`${left}, ${phaseLabel}`}
         accessibilityValue={{ min: 0, max: SITTING_SECONDS, now: seconds }}
-        style={{ flexDirection: 'row', gap: 3, height: 8 }}
+        style={{ flexDirection: 'row', gap: 2, height: 4 }}
       >
         {PHASES.map((candidate, index) => {
           const from = index === 0 ? 0 : PHASES[index - 1]!.until;
@@ -61,13 +64,7 @@ export function SittingTimer({ elapsed, doneLabel = 'Baseline saved' }: Props) {
           return (
             <View
               key={candidate.label}
-              style={{
-                flexGrow: span,
-                flexBasis: 0,
-                borderRadius: theme.radius.radiusSm,
-                overflow: 'hidden',
-                backgroundColor: colors.line,
-              }}
+              style={{ flexGrow: span, flexBasis: 0, borderRadius: 2, overflow: 'hidden', backgroundColor: colors.lineStrong }}
             >
               <View style={{ width: `${fill * 100}%`, height: '100%', backgroundColor: colors.signal }} />
             </View>
