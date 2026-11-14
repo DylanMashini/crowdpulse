@@ -95,14 +95,21 @@ export function LiveTrace({ kind, rate, seconds, className }: LiveTraceProps) {
         headY = y;
       }
       // The line fades out behind itself: one colour to transparent, never one hue to another.
-      const fade = context.createLinearGradient(0, 0, headX, 0);
-      fade.addColorStop(0, 'transparent');
-      fade.addColorStop(1, line);
-      context.strokeStyle = fade;
+      context.strokeStyle = line;
       context.lineWidth = 1.5;
       context.lineJoin = 'round';
       context.lineCap = 'round';
       context.stroke();
+      // The line fades out behind itself. The fade is a mask over the one colour, never a second hue.
+      const fade = context.createLinearGradient(0, 0, headX, 0);
+      fade.addColorStop(0, 'rgba(0, 0, 0, 0)');
+      fade.addColorStop(0.35, 'rgba(0, 0, 0, 0.55)');
+      fade.addColorStop(1, 'rgba(0, 0, 0, 1)');
+      context.save();
+      context.globalCompositeOperation = 'destination-in';
+      context.fillStyle = fade;
+      context.fillRect(0, 0, width, height);
+      context.restore();
       // The head is one of the two places a glow is allowed.
       context.save();
       context.shadowColor = line;
