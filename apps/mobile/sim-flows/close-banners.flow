@@ -1,0 +1,11 @@
+# Closes the flag banners that are up. A seeded patient goes overdue while a run is under way,
+# and a banner covers the top of whichever tab is showing.
+if "Close this notice" 1
+  tap "Close this notice"
+end
+if "Close this notice" 1
+  tap "Close this notice"
+end
+if "Close this notice" 1
+  tap "Close this notice"
+end

@@ -1,0 +1,10 @@
+{
+  "aps": {
+    "alert": {
+      "title": "Trend flag: Robert Okafor",
+      "body": "Robert Okafor: pulse 82 bpm at check-in, 108 bpm now. Sent by the simulator rig, not by the server."
+    },
+    "sound": "default"
+  },
+  "body": { "flagId": null, "patientNumber": 2 }
+}

@@ -1,0 +1,9 @@
+# Every screen of the nurse role, from a signed-out phone: sign-in, role choice, the four tabs
+# and a patient.
+run sign-in.flow
+run role-nurse.flow
+run nurse-worklist.flow
+run nurse-flags.flow
+run nurse-patients.flow
+run nurse-patient.flow
+run nurse-you.flow

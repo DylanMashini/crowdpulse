@@ -1,0 +1,15 @@
+# Signs in with the seeded staff account, from a signed-out phone. Ends on the role question.
+run open-app.flow
+wait "Create an account" 180
+shot sign-in
+type "Email" "${EMAIL}"
+type "Password" "${PASSWORD}"
+sleep 1
+shot sign-in-filled
+tap "Sign in"
+# iOS offers to keep the password the first time.
+if "Save Password?" 4
+  tap "Not Now"
+end
+wait "What is this phone for?"
+shot role

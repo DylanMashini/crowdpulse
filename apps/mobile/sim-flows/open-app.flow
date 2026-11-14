@@ -1,0 +1,4 @@
+# Starts the development build from cold with a link to the rig's Metro, so the JavaScript is
+# loaded once. (Launching first and opening the link after reloads the app mid-render.)
+terminate
+open "${METRO_URL}"

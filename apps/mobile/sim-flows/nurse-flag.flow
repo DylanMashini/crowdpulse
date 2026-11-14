@@ -1,0 +1,27 @@
+# A trend flag arriving on the nurse phone. Run it right after `sim-qa.sh deteriorate`, with
+# the nurse app open: one deterioration is one banner and one thing to acknowledge.
+activate
+tap "Worklist"
+# Banners queue. Overdue ones may be ahead of the trend flag.
+if "~Overdue:" 2
+  tap "Close this notice"
+end
+if "~Overdue:" 2
+  tap "Close this notice"
+end
+if "~Overdue:" 2
+  tap "Close this notice"
+end
+wait "Trend flag: Sim Deteriorating" 40
+shot flag-banner
+count "Close this notice" 1
+tap "Acknowledge"
+wait "Acknowledged"
+shot flag-banner-acknowledged
+tap "Close this notice"
+sleep 2
+assertNot "Trend flag: Sim Deteriorating"
+tap "Flags"
+wait "~Acknowledged, still open"
+shot flags-after-acknowledge
+tap "Worklist"

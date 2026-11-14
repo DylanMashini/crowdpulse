@@ -1,0 +1,8 @@
+# The Worklist tab, top to bottom.
+run close-banners.flow
+tap "Worklist"
+wait "~Rank 1"
+shot worklist-top
+scroll down
+shot worklist-lower
+scroll up

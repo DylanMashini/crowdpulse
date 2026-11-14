@@ -1,0 +1,8 @@
+# The Flags tab: open alerts, then the recently closed ones.
+run close-banners.flow
+tap "Flags"
+wait "~to acknowledge"
+shot flags-top
+scroll down
+shot flags-lower
+scroll up

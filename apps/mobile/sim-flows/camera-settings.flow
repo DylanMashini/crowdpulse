@@ -1,0 +1,8 @@
+# The camera role's settings screen.
+tap "Settings"
+wait "Role of this phone"
+shot settings
+scrollTo "Sign out"
+shot settings-account
+tap "Back"
+wait "Re-check"

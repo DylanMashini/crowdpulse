@@ -1,0 +1,27 @@
+# The app's URL scheme reaches every route of the nurse role.
+activate
+run close-banners.flow
+open "triagecam://nurse/flags"
+wait "~Acknowledged, still open" 15
+shot link-flags
+open "triagecam://nurse/patients"
+wait "Name, reason or visit number" 15
+shot link-patients
+open "triagecam://nurse/you"
+wait "Flag rules" 15
+shot link-you
+open "triagecam://nurse/patient/3"
+wait "Handoff" 15
+wait "~Priya Raman"
+shot link-patient
+open "triagecam://nurse/patient/9999"
+wait "There is no patient 9999" 15
+shot link-patient-missing
+open "triagecam://nurse"
+wait "~Rank 1" 15
+shot link-worklist
+# A route of the other role is refused: the phone stays in the nurse role.
+open "triagecam://camera"
+sleep 3
+assertNot "Check in a new patient"
+shot link-camera-refused

@@ -1,0 +1,20 @@
+# A re-check for a waiting patient, ended early from the sitting screen.
+# The app is started again first: in the simulator the sitting screen does not open a second
+# time in one run of the app (see "Open bugs" in docs/OVERNIGHT_BACKLOG.md).
+run open-app.flow
+wait "Re-check" 120
+tap "~Maya Chen"
+wait "Start sitting" 60
+tap "Start sitting"
+wait "End sitting now"
+sleep 12
+shot recheck-running
+tap "End sitting now"
+wait "End the sitting now?"
+shot recheck-end-early
+tap "End sitting"
+wait "Sitting summary" 60
+wait "Re-check saved" 60
+shot recheck-summary
+tap "Next patient"
+wait "Re-check"

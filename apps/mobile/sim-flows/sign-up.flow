@@ -1,0 +1,32 @@
+# The signed-out screens: sign-in errors, create an account, check your email.
+# ${UNVERIFIED_EMAIL} is an account the rig script creates through the API and leaves
+# unverified. The rig's server has no email key, so it sends no email and hands the link to
+# the app instead. The form's password is not typed: iOS covers the keyboard of a new-password
+# field with its "Use Strong Password?" sheet, which the driver cannot type through.
+run open-app.flow
+wait "Create an account" 180
+tap "Sign in"
+wait "Enter your work email address"
+shot sign-in-errors
+tap "Create an account"
+wait "Create account"
+shot sign-up
+tap "Create account"
+wait "Use 8 characters or more"
+shot sign-up-errors
+tap "Back"
+wait "Create an account"
+type "Email" "${UNVERIFIED_EMAIL}"
+type "Password" "${PASSWORD}"
+tap "Sign in"
+if "Save Password?" 4
+  tap "Not Now"
+end
+wait "Check your email"
+shot check-email
+tap "Send the email again"
+wait "Development server"
+shot check-email-sent
+tap "Verify this address now"
+wait "Create an account"
+shot sign-in-after-verify

@@ -1,0 +1,9 @@
+# Every screen of the camera role, from a signed-out phone: the signed-out screens, sign-in,
+# role choice, a full check-in sitting, a re-check, face match and settings.
+run sign-up.flow
+run sign-in.flow
+run role-camera.flow
+run camera-sitting.flow
+run camera-recheck.flow
+run camera-match.flow
+run camera-settings.flow

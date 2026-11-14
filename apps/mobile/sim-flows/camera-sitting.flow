@@ -1,0 +1,19 @@
+# A full 60-second check-in sitting for a new patient, from the check-in screen to the summary
+# and back. The simulator build measures a generated signal, not the camera.
+tap "Check in a new patient"
+wait "Use face match for re-checks?"
+shot consent
+tap "No, use my name"
+wait "Start sitting" 60
+shot sitting-framing
+tap "Start sitting"
+wait "End sitting now"
+sleep 25
+shot sitting-running
+wait "Sitting summary" 120
+wait "Baseline saved" 60
+shot summary
+scroll down
+shot summary-lower
+tap "Next patient"
+wait "Re-check"

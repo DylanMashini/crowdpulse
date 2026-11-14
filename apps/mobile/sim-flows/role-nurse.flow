@@ -1,0 +1,10 @@
+# From the role question to the nurse role's worklist.
+tap "~Nurse."
+shot role-nurse-chosen
+tap "Continue as nurse"
+# Asked once per simulator. Allowing it is what lets `xcrun simctl push` show a notification.
+tapSystemOptional "Allow" 8
+wait "Worklist"
+wait "~Rank 1"
+sleep 2
+shot worklist

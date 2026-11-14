@@ -1,0 +1,9 @@
+# Find patient by face. The simulator has no face to show, so the screen ends on its fallback:
+# the waiting-room list.
+tap "Find patient by face"
+wait "Choose from the waiting room instead"
+shot match-looking
+wait "No patient was matched" 40
+shot match-fallback
+tap "Back"
+wait "Re-check"

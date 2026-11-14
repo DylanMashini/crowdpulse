@@ -1,0 +1,8 @@
+# From the role question to the camera role's check-in screen.
+tap "~Camera."
+shot role-camera-chosen
+tap "Continue as camera"
+wait "Check in"
+wait "Re-check"
+sleep 2
+shot check-in

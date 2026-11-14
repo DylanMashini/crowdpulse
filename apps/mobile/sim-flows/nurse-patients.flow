@@ -1,0 +1,19 @@
+# The Patients tab: waiting, discharged, all, and a search with no match.
+run close-banners.flow
+tap "Patients"
+wait "Name, reason or visit number"
+wait "~Maya Chen"
+shot patients-waiting
+tap "Discharged"
+wait "~Elena Sokolova"
+shot patients-discharged
+tap "All"
+wait "~Maya Chen"
+shot patients-all
+type "Name, reason or visit number" "zzz"
+wait "~No patient matches"
+shot patients-no-match
+tap "Clear the search"
+hideKeyboard
+tap "Waiting"
+wait "~Maya Chen"

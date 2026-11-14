@@ -1,0 +1,16 @@
+# One patient's screen, opened from the worklist: the flagged patient, top to bottom.
+run close-banners.flow
+tap "Worklist"
+tap "~Robert Okafor"
+wait "Handoff"
+shot patient-top
+scroll down
+shot patient-2
+scroll down
+shot patient-3
+scroll down
+shot patient-4
+scroll down
+shot patient-5
+tap "Back"
+wait "~Rank 1"

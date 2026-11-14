@@ -1,0 +1,12 @@
+# The You tab: notifications, flag rules, role and account.
+run close-banners.flow
+tap "You"
+wait "Flag rules"
+wait "Re-check interval"
+shot you-top
+scroll down
+shot you-rules
+scrollTo "Sign out"
+shot you-account
+scroll up
+scroll up

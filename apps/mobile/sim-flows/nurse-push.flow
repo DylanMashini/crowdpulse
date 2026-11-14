@@ -1,0 +1,11 @@
+# A notification tapped while the app is in the background opens its patient. The rig script
+# sends apps/mobile/sim-flows/push-flag.apns with `xcrun simctl push` when this flow signals.
+activate
+run close-banners.flow
+home
+signal ready
+tapSystem "~Trend flag: Robert Okafor" 40
+wait "Handoff" 20
+wait "~Robert Okafor"
+shot push-opened-patient
+tap "Back"
