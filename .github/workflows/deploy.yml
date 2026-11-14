@@ -1,0 +1,195 @@
+# Builds the web image, runs the database migrations and deploys to ECS. docs/DEPLOY.md
+# describes what it deploys to; Terraform (infra/) is applied by hand, never from here.
+name: Deploy
+
+on:
+  push:
+    branches: [main, infra/aws-deploy]
+    paths:
+      - apps/web/**
+      - packages/contracts/**
+      - design-system/fonts/**
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - package.json
+      - .dockerignore
+      - .github/workflows/deploy.yml
+  # Redeploys the chosen ref as it is: after a Terraform change, or after filling in a secret.
+  workflow_dispatch:
+
+# One deploy at a time. A second push waits for the first to finish rather than racing it.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # to exchange GitHub's OIDC token for AWS credentials; no AWS keys are stored
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  # Resource names, as infra/ makes them from local.name.
+  CLUSTER: triagecam-prod
+  SERVICE: triagecam-prod-web
+  ECR_REPOSITORY: triagecam-prod-web
+  CONTAINER: web
+  LOG_GROUP: /ecs/triagecam-prod/web
+  TEMPLATE_PARAMETER: /triagecam-prod/deploy/task-definition-template
+
+jobs:
+  deploy:
+    name: Build, migrate, deploy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # The repository is public, and so are these logs: the account id is masked in them.
+      - name: Sign in to AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
+
+      - name: Sign in to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Tags are immutable and one commit is one image, so a re-run reuses what is there.
+      - name: Look for this commit's image
+        id: image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          echo "uri=$REGISTRY/$ECR_REPOSITORY:$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          if aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids "imageTag=$GITHUB_SHA" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "The image for $GITHUB_SHA is already in ECR; not building it again."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Docker Buildx
+        if: steps.image.outputs.exists == 'false'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push the image
+        if: steps.image.outputs.exists == 'false'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.image.outputs.uri }}
+          provenance: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The task definition Terraform manages is the template; the revision that runs is a copy
+      # of it with this commit's image.
+      - name: Register the task definition
+        id: task-definition
+        env:
+          IMAGE: ${{ steps.image.outputs.uri }}
+        run: |
+          template=$(aws ssm get-parameter --name "$TEMPLATE_PARAMETER" --query Parameter.Value --output text)
+          aws ecs describe-task-definition --task-definition "$template" --query taskDefinition > template.json
+          jq --arg image "$IMAGE" --arg container "$CONTAINER" '
+            {family, taskRoleArn, executionRoleArn, networkMode, containerDefinitions, volumes,
+             placementConstraints, requiresCompatibilities, cpu, memory, runtimePlatform}
+            | (.containerDefinitions[] | select(.name == $container) | .image) = $image
+          ' template.json > task-definition.json
+          arn=$(aws ecs register-task-definition --cli-input-json file://task-definition.json \
+            --query taskDefinition.taskDefinitionArn --output text)
+          echo "arn=$arn" >> "$GITHUB_OUTPUT"
+          echo "Registered ${arn##*/} from template ${template##*/}"
+
+      # Before the service changes: the new code never runs against an old schema. Migrations
+      # must therefore stay compatible with the code that is still serving while they run.
+      - name: Run the database migrations
+        env:
+          TASK_DEFINITION: ${{ steps.task-definition.outputs.arn }}
+        run: |
+          network=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+            --query 'services[0].networkConfiguration' --output json)
+          overrides=$(jq -cn --arg container "$CONTAINER" \
+            '{containerOverrides: [{name: $container, command: ["node", "src/db/migrate.mts"]}]}')
+          task=$(aws ecs run-task --cluster "$CLUSTER" --task-definition "$TASK_DEFINITION" \
+            --launch-type FARGATE --network-configuration "$network" --overrides "$overrides" \
+            --started-by "deploy-$GITHUB_RUN_ID" --query 'tasks[0].taskArn' --output text)
+          if [ -z "$task" ] || [ "$task" = "None" ]; then
+            echo "::error::The migration task could not be started."
+            exit 1
+          fi
+          echo "Migration task ${task##*/} started; waiting for it to finish."
+          aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$task"
+
+          echo "::group::Migration output"
+          aws logs get-log-events --log-group-name "$LOG_GROUP" \
+            --log-stream-name "$CONTAINER/$CONTAINER/${task##*/}" --start-from-head \
+            --query 'events[].message' --output text | tr '\t' '\n' || echo "(no log output)"
+          echo "::endgroup::"
+
+          result=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$task" \
+            --query 'tasks[0].{exit: containers[0].exitCode, reason: stoppedReason, container: containers[0].reason}' --output json)
+          if [ "$(jq -r '.exit' <<< "$result")" != "0" ]; then
+            echo "::error::The migration failed, so nothing was deployed: $(jq -c . <<< "$result")"
+            exit 1
+          fi
+          echo "Migrations applied."
+
+      # Blue/green: ECS starts the new task beside the old one, health checks it, moves all
+      # traffic to it at once and stops the old one after the bake time. A task that never
+      # becomes healthy is rolled back, and this step fails.
+      - name: Deploy the service
+        env:
+          TASK_DEFINITION: ${{ steps.task-definition.outputs.arn }}
+        run: |
+          started=$(date -u -d '5 seconds ago' +%Y-%m-%dT%H:%M:%SZ)
+          aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
+            --task-definition "$TASK_DEFINITION" > /dev/null
+
+          deployment=""
+          for attempt in $(seq 1 30); do
+            deployment=$(aws ecs list-service-deployments --cluster "$CLUSTER" --service "$SERVICE" \
+              --created-at "after=$started" \
+              --query 'sort_by(serviceDeployments, &createdAt)[-1].serviceDeploymentArn' --output text)
+            if [ -n "$deployment" ] && [ "$deployment" != "None" ]; then break; fi
+            deployment=""
+            sleep 5
+          done
+          if [ -z "$deployment" ]; then
+            echo "::error::ECS did not start a deployment."
+            exit 1
+          fi
+          echo "Deployment ${deployment##*/} started."
+
+          previous=""
+          deadline=$(( $(date +%s) + 30 * 60 ))
+          while :; do
+            state=$(aws ecs describe-service-deployments --service-deployment-arns "$deployment" \
+              --query 'serviceDeployments[0].{status: status, reason: statusReason, stage: lifecycleStage}' --output json)
+            status=$(jq -r '.status' <<< "$state")
+            line="$status $(jq -r '.stage // ""' <<< "$state")"
+            if [ "$line" != "$previous" ]; then echo "$(date -u +%H:%M:%S) $line"; previous=$line; fi
+            case "$status" in
+              SUCCESSFUL) break ;;
+              STOPPED | ROLLBACK_SUCCESSFUL | ROLLBACK_FAILED)
+                echo "::error::The deployment did not go through ($status): $(jq -r '.reason // "no reason given"' <<< "$state")"
+                exit 1 ;;
+            esac
+            if [ "$(date +%s)" -gt "$deadline" ]; then
+              echo "::error::The deployment was still $status after 30 minutes."
+              exit 1
+            fi
+            sleep 10
+          done
+
+          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
+          {
+            echo "### Deployed"
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- Task definition: \`${TASK_DEFINITION##*/}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
