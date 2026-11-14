@@ -20,6 +20,14 @@ jumps      colour that jumps every 1.85 to 3 s, with no pulse and with a 66 bpm 
 harmonics  pulses of 44 to 172 bpm with the second harmonic at 0.2, 1.0 or 1.5 of the fundamental.
 weak       pulses of 45 to 175 bpm at a third to two thirds of the usual size (648 sittings; `--weak`).
 cover      a 72 bpm person whose regions become pulse-free skin or a hand at 30 s: how long the rate stays.
+
+From QA round 2 (docs/research/engine-reliability-qa2.md), generated as QA's own script did:
+
+sliding    a head that moves so that each region slides over neighbouring skin a few per cent darker
+           (eyebrow, hairline, shadow) at 0.9 to 2.2 Hz, with almost no brightness change. No pulse (48),
+           and the same on top of a 66 or 96 bpm pulse (48). (QA finding W3.)
+stillbeat  a still person with a real pulse of 50 to 110 bpm and a brightness rhythm of 0.1% to 1%
+           locked to the beats, near the rate, or at half, double or a third of it (360). (QA finding W4.)
 """
 import json
 import pathlib
@@ -227,9 +235,67 @@ def families(numpy, weak=False):
                 c[t >= 30] = empty[t >= 30]
                 yield f"{step}_{seed}", t, c, 72
 
+    def qa_times(seconds, fps, seed):
+        generator = np.random.default_rng(seed + 7)
+        count = int(seconds * fps)
+        t = np.arange(count) / fps + 0.05 * generator.normal(size=count) / fps
+        return np.maximum.accumulate(t + np.arange(count) * 1e-9)
+
+    def qa_pulse(t, bpm, harmonic=0.2, seed=0, hrv_ms=30):
+        generator = np.random.default_rng(seed + 11)
+        beats = [0.0]
+        while beats[-1] < t[-1] + 2:
+            beats.append(beats[-1] + 60 / bpm + hrv_ms / 1000 * generator.normal())
+        beats = np.array(beats)
+        index = np.searchsorted(beats, t, side="right") - 1
+        phase = 2 * np.pi * (t - beats[index]) / (beats[index + 1] - beats[index])
+        return np.cos(phase) + harmonic * np.cos(2 * phase), phase
+
+    def sliding():
+        neighbour = np.array([[-1.0, -1.6, -1.5], [-0.6, -1.0, -1.1], [-0.6, -1.0, -1.1]])
+        for with_pulse in (False, True):
+            for hz in (0.9, 1.2, 1.6, 2.2):
+                for travel in (0.2, 0.5, 1.0):
+                    for contrast in (0.02, 0.05):
+                        for seed in (0, 1):
+                            t = qa_times(60, 30, seed)
+                            generator = np.random.default_rng(seed * 7 + int(hz * 10))
+                            c = skin[None] * np.ones((len(t), 1, 1)) + 0.25 * generator.normal(size=(len(t), 3, 3))
+                            bpm = None
+                            if with_pulse:
+                                bpm = 66 if abs(hz * 60 - 66) > 12 else 96
+                                wave, _ = qa_pulse(t, bpm, seed=seed)
+                                c = c + 0.35 * wave[:, None, None] * gains[None, :, None] * signature[None, None, :]
+                            position = np.sin(2 * np.pi * hz * t + 0.3 * np.sin(2 * np.pi * 0.07 * t))
+                            share = travel * 0.5 * (1 + position) * 0.3
+                            c = c * (1 + contrast * share[:, None, None] * neighbour[None])
+                            c = c * (1 + 0.002 * travel * position)[:, None, None]
+                            name = f"{hz}Hz_tr{travel}_k{contrast}_s{seed}" + (f"_hr{bpm}" if with_pulse else "")
+                            yield (name, t, c, bpm) if with_pulse else (name, t, c)
+
+    def stillbeat():
+        for bpm in (50, 60, 72, 90, 110):
+            for size in (0.35, 0.18):
+                for kind, multiple in (("bcg", 1.0), ("near", 0.93), ("near", 1.07), ("half", 0.5), ("double", 2.0),
+                                       ("third", 1 / 3)):
+                    for swing in (0.001, 0.003, 0.01):
+                        for seed in (0, 1):
+                            t = qa_times(60, 30, seed)
+                            generator = np.random.default_rng(seed * 1000 + bpm)
+                            c = skin[None] * np.ones((len(t), 1, 1)) + 0.25 * generator.normal(size=(len(t), 3, 3))
+                            wave, phase = qa_pulse(t, bpm, seed=seed)
+                            c = c + size * wave[:, None, None] * gains[None, :, None] * signature[None, None, :]
+                            if kind == "bcg":
+                                rhythm = np.sin(phase - 0.8) + 0.4 * np.sin(2 * (phase - 0.8))
+                            else:
+                                angle = 2 * np.pi * bpm / 60 * multiple * t + 0.4 * np.sin(2 * np.pi * 0.03 * t)
+                                rhythm = np.sin(angle) + 0.3 * np.sin(2 * angle + 0.5) + 0.15 * np.sin(3 * angle + 1)
+                            c = c * (1 + swing * rhythm / np.abs(rhythm).max())[:, None, None]
+                            yield f"{kind}{multiple:.2f}_hr{bpm}_a{size}_b{swing}_s{seed}", t, c, bpm
+
     listed = {"noise": noise, "flicker": flicker, "lighting": lighting, "movement": movement, "bobbing": bobbing,
               "leak": leak, "splice": splice, "short": short, "dropout": dropout, "jumps": jumps,
-              "harmonics": harmonics, "cover": cover}
+              "harmonics": harmonics, "cover": cover, "sliding": sliding, "stillbeat": stillbeat}
     if weak:
         listed["weak"] = weak_pulses
     return listed

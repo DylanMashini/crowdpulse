@@ -5,6 +5,8 @@
     python3 packages/signal-engine/Scripts/reliability.py accepts  --work <dir> --set tuning
     python3 packages/signal-engine/Scripts/reliability.py degrade  --sittings <dir> --set tuning --work <dir>
     python3 packages/signal-engine/Scripts/reliability.py adversarial --work <dir> [--weak]
+    python3 packages/signal-engine/Scripts/reliability.py dimmed   --sittings <dir> --set tuning --work <dir>
+    python3 packages/signal-engine/Scripts/reliability.py device   --sittings <dir of phone sitting files>
 
 `--sittings` is a folder of sitting files with a `<name>.reference.jsonl` beside each, as the
 evaluation harness leaves them in its output directory (`<out>/ubfc`). `--set` is `tuning` or
@@ -29,6 +31,13 @@ adversarial  writes and runs the synthetic controls of QA round 1 (Scripts/adver
           dropouts, periodic jumps, harmonics and a covered face. For sittings with no pulse it counts
           those that end with a heart rate; for sittings with one, those that end right, at double
           the rate, or otherwise wrong. `--weak` adds 648 faint pulses.
+
+dimmed    QA round 2's model of less light, darker skin or a farther face: every colour of the real
+          sittings times 0.5 (and 0.3) with 0.25 counts of noise added, two draws each, scored as
+          `degrade` is. The pulse shrinks with the light; the noise does not.
+device    sitting files from a phone, with no reference: for each, whether it ends with a heart
+          rate, from where, with what confidence, and what refused its seconds. `--sittings` is a
+          folder; only files whose header says `"source":"camera"` are read.
 
 Controls and degraded sittings are derived from recordings of real people: keep `--work`
 outside the repository. Needs numpy for `controls` and `degrade`.
@@ -261,6 +270,57 @@ def degrade(arguments):
         score_rows(f"noise {sigma} counts", files, run_all(arguments.engine, files, arguments.config), lambda name: True)
 
 
+def dimmed(arguments):
+    import numpy
+    folder = pathlib.Path(arguments.work) / "dimmed" / arguments.set
+    folder.mkdir(parents=True, exist_ok=True)
+    names = [name for name in subjects(arguments) if name not in SUSPECT]
+    for scale in (0.5, 0.3):
+        files = []
+        for number, name in enumerate(names):
+            source = pathlib.Path(arguments.sittings) / f"{name}.jsonl"
+            for draw in (1, 2):
+                target = folder / f"{name}_x{scale}_d{draw}.jsonl"
+                files.append(target)
+                if target.exists():
+                    continue
+                generator = numpy.random.default_rng(arguments.seed + 1000 * number + draw + int(100 * scale))
+                lines = source.read_text().splitlines()
+                out = [lines[0]]
+                for line in lines[1:]:
+                    frame = json.loads(line)
+                    for key in ("forehead", "leftCheek", "rightCheek"):
+                        if frame.get(key):
+                            for channel in "rgb":
+                                frame[key][channel] = max(0.0, frame[key][channel] * scale + 0.25 * generator.normal())
+                    out.append(json.dumps(frame))
+                target.write_text("\n".join(out) + "\n")
+                target.with_name(target.stem + ".reference.jsonl").write_text(
+                    source.with_name(source.stem + ".reference.jsonl").read_text())
+        score_rows(f"dimmed to {scale}, 0.25 counts of noise", files, run_all(arguments.engine, files, arguments.config),
+                   lambda name: True)
+
+
+def device(arguments):
+    files = sorted(path for path in pathlib.Path(arguments.sittings).glob("*.jsonl")
+                   if '"source":"camera"' in path.open().readline())
+    results = run_all(arguments.engine, files, arguments.config)
+    ended = 0
+    print("| Sitting | Seconds | Valid | Heart rate (bpm) | From | Confidence | Whole-sitting peak | Evidence | Stretches | What refused the other seconds |")
+    print("|---|---|---|---|---|---|---|---|---|---|")
+    for path, (ticks, summary) in zip(files, results):
+        value = summary["heartRate"].get("value")
+        ended += value is not None
+        whole = summary.get("wholeSitting") or {}
+        gates = collections.Counter(tick.get("gate") for tick in ticks if tick["state"] != "valid")
+        refused = ", ".join(f"{gate} {count}" for gate, count in gates.most_common())
+        peak = whole.get("heartRate")
+        print(f"| {path.stem[:8]} | {len(ticks)} | {sum(tick['state'] == 'valid' for tick in ticks)} "
+              f"| {'' if value is None else f'{value:.1f}'} | {source_of(summary) or ''} | {summary.get('heartRateConfidence') or ''} "
+              f"| {'' if peak is None else f'{peak:.1f}'} | {whole.get('evidence', 0):.2f} | {whole.get('supportingStretches', 0)} | {refused} |")
+    print(f"\n{ended} of {len(files)} end with a heart rate. No reference was worn: this shows whether a rate comes out, not whether it is right.")
+
+
 def adversarial(arguments):
     import numpy
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -307,7 +367,7 @@ def adversarial(arguments):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("command", choices=["score", "controls", "accepts", "degrade", "adversarial"])
+    parser.add_argument("command", choices=["score", "controls", "accepts", "degrade", "adversarial", "dimmed", "device"])
     parser.add_argument("--sittings")
     parser.add_argument("--set", choices=["tuning", "heldOut"], default="tuning")
     parser.add_argument("--split", default=str(REPO / "eval" / "split.json"))
@@ -321,13 +381,14 @@ def main():
     arguments = parser.parse_args()
     if arguments.command not in ("accepts", "adversarial") and not arguments.sittings:
         sys.exit("--sittings is needed")
-    if arguments.command != "score" and not arguments.work:
+    if arguments.command not in ("score", "device") and not arguments.work:
         sys.exit("--work is needed, and belongs outside the repository")
     if arguments.config:
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as file:
             file.write(arguments.config)
         arguments.config = file.name
-    {"score": score, "controls": controls, "accepts": accepts, "degrade": degrade, "adversarial": adversarial}[arguments.command](arguments)
+    {"score": score, "controls": controls, "accepts": accepts, "degrade": degrade, "adversarial": adversarial,
+     "dimmed": dimmed, "device": device}[arguments.command](arguments)
 
 
 if __name__ == "__main__":
