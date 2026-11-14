@@ -4,8 +4,11 @@ import * as Notifications from 'expo-notifications';
 
 export type PushRegistration =
   | { available: true; token: string }
-  /** `reason` is one sentence for the worklist, saying why and what still works. */
-  | { available: false; reason: string };
+  /**
+   * `reason` is one sentence saying why. `fixInSettings` is set when the person can turn
+   * notifications on for the app in the Settings app.
+   */
+  | { available: false; reason: string; fixInSettings?: boolean };
 
 /** While the app is open the flag is shown by the in-app PushBanner, not by a system banner. */
 export function showFlagsInApp(): void {
@@ -30,7 +33,11 @@ export async function registerForPush(): Promise<PushRegistration> {
       permission = await Notifications.requestPermissionsAsync();
     }
     if (!permission.granted) {
-      return { available: false, reason: 'Notifications are turned off for Triage Cam in the Settings app' };
+      return {
+        available: false,
+        reason: 'Notifications are turned off for Triage Cam in the Settings app',
+        fixInSettings: true,
+      };
     }
     const projectId: unknown = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
     if (typeof projectId !== 'string') {
