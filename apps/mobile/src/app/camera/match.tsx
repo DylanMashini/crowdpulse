@@ -88,7 +88,7 @@ export default function FaceMatch() {
         let permission = await TriageCapture.getCameraPermission();
         if (permission === 'undetermined') permission = await TriageCapture.requestCameraPermission();
         if (permission !== 'granted') {
-          return settle({ step: 'fallback', reason: 'Triage Cam is not allowed to use the camera', cameraDenied: true });
+          return settle({ step: 'fallback', reason: 'Crowdpulse is not allowed to use the camera', cameraDenied: true });
         }
         await TriageCapture.startCapture({ frameRate: 30 });
       } catch (error) {

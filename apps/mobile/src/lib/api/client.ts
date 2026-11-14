@@ -93,10 +93,10 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
   async function failure(response: Response): Promise<ApiError> {
     const parsed = ErrorResponse.safeParse(await response.json().catch(() => null));
     if (!parsed.success) {
-      // A tunnel or proxy answered, not the Triage Cam server.
+      // A tunnel or proxy answered, not the Crowdpulse server.
       return new ApiError(
         'http',
-        `The server at ${baseUrl} answered ${response.status} without a Triage Cam error. Check that the tunnel points at the web server.`,
+        `The server at ${baseUrl} answered ${response.status} without a Crowdpulse error. Check that the tunnel points at the web server.`,
         { status: response.status },
       );
     }

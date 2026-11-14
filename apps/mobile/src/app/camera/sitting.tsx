@@ -118,10 +118,10 @@ function SittingScreen({ patientNumber, kind, enrolFace, deviceId }: Props) {
       <SafeAreaView style={{ flex: 1, justifyContent: 'center', padding: space.space4, backgroundColor: colors.surface0 }}>
         <View style={{ width: '100%', maxWidth: 480, alignSelf: 'center' }}>
           <Notice
-            title={denied ? 'Triage Cam cannot use the camera' : 'The camera did not start'}
+            title={denied ? 'Crowdpulse cannot use the camera' : 'The camera did not start'}
             body={
               denied
-                ? 'Allow camera access for Triage Cam in the Settings app, then come back and try again'
+                ? 'Allow camera access for Crowdpulse in the Settings app, then come back and try again'
                 : (sitting.error ?? 'Try again')
             }
           >

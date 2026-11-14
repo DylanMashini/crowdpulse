@@ -49,7 +49,7 @@ export default function SignIn() {
   };
 
   return (
-    <Screen title="Sign in" subtitle="Triage Cam staff account" lead={<Wordmark />}>
+    <Screen title="Sign in" subtitle="Crowdpulse staff account" lead={<Wordmark />}>
       <View style={{ gap: theme.space.space4 }}>
       <Field
         label="Email"
