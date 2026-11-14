@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react';
-import { KeyboardAvoidingView, ScrollView, Text, View } from 'react-native';
+import { KeyboardAvoidingView, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Icon, type IconName } from './Icon';
 import { useScopedTheme } from './ThemeScope';
 import { Touchable } from './Touchable';
+import { Text } from './Text';
 
 type HeaderAction = { icon: IconName; label: string; onPress: () => void };
 

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Animated, Easing, Text, View } from 'react-native';
+import { Animated, Easing, View } from 'react-native';
 
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { fonts } from '@/theme';
 
 import { useScopedTheme } from './ThemeScope';
 import { Touchable } from './Touchable';
+import { Text } from './Text';
 
 type Props = {
   label: string;

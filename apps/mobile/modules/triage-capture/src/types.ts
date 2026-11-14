@@ -26,9 +26,12 @@ export type ViewfinderState =
 export type Point = { x: number; y: number };
 export type Rect = { x: number; y: number; width: number; height: number };
 
+/** `back` faces the patient when the phone is on its mount. `front` is the screen side. */
+export type CameraFacing = 'back' | 'front';
+
 export type CaptureOptions = {
-  /** Default `back`: the phone is mounted with its rear camera facing the patient. */
-  camera?: 'back' | 'front';
+  /** Default: the camera last chosen with `setCamera`, which is `back` until someone flips it. */
+  camera?: CameraFacing;
   /** Requested frame rate. Default 60; the module falls back to 30 if 60 cannot be held. */
   frameRate?: 30 | 60;
 };
@@ -198,6 +201,16 @@ export interface TriageCapture {
   startCapture(options?: CaptureOptions): Promise<void>;
   /** Stops the camera. A running sitting is abandoned and its file deleted. */
   stopCapture(): Promise<void>;
+
+  /** The camera capture starts on. Kept between launches. */
+  getCamera(): CameraFacing;
+  /**
+   * Chooses the camera and remembers it. While capture runs the module moves to it at once:
+   * frames, exposure, face tracking and the live view carry on from the new camera, and the
+   * face is picked up again under a new track id. The front camera's picture is mirrored in
+   * `CapturePreview` only; frame records, outlines and uploaded frames are as captured.
+   */
+  setCamera(camera: CameraFacing): Promise<void>;
 
   /** Starts the engine and the sitting file on the next frame. onReading begins. */
   startSitting(options: StartSittingOptions): Promise<SittingStarted>;

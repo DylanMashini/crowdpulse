@@ -1,10 +1,11 @@
 import type { TileState } from '@triagecam/contracts';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 
 import { statusText } from '@/lib/nurse/worklistFormat';
 
 import { Icon, type IconName } from './Icon';
 import { useScopedTheme } from './ThemeScope';
+import { Text } from './Text';
 
 const ICONS: Record<TileState, IconName> = {
   observed: 'clock',

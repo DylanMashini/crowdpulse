@@ -1,6 +1,7 @@
 import type { Estimate, EstimateReason } from '@triagecam/contracts';
 
 import type {
+  CameraFacing,
   CaptureSittingSummary,
   CaptureStatusEvent,
   FaceRegionsEvent,
@@ -97,6 +98,8 @@ export class TriageCaptureStub implements TriageCapture {
   private previewTimer: ReturnType<typeof setInterval> | null = null;
   private captureStartedMs = 0;
   private sitting: RunningSitting | null = null;
+  /** The stub has no camera and nowhere to keep the choice: it lasts until the app restarts. */
+  private camera: CameraFacing = 'back';
 
   getSource() {
     return 'stub' as const;
@@ -172,6 +175,14 @@ export class TriageCaptureStub implements TriageCapture {
   }
 
   async deleteSittingFile() {}
+
+  getCamera() {
+    return this.camera;
+  }
+
+  async setCamera(camera: CameraFacing) {
+    this.camera = camera;
+  }
 
   setLandscapeLock() {}
 

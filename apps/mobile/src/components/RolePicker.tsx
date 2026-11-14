@@ -1,17 +1,18 @@
 import type { DeviceRole } from '@triagecam/contracts';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 
 import { fonts } from '@/theme';
 
 import { Icon, type IconName } from './Icon';
 import { useScopedTheme } from './ThemeScope';
 import { Touchable } from './Touchable';
+import { Text } from './Text';
 
 // Each hint says what the phone will do in that role, in one sentence. The patient role of the
 // design system belongs to the video-visit mode, which this pass does not build.
 const ROLES: { id: DeviceRole; icon: IconName; label: string; hint: string }[] = [
   { id: 'camera', icon: 'camera', label: 'Camera', hint: 'Mounted phone. Measures a seated patient.' },
-  { id: 'nurse', icon: 'list', label: 'Nurse', hint: 'Worklist and flag notifications' },
+  { id: 'nurse', icon: 'list', label: 'Nurse', hint: 'Worklist, flags and patient records' },
 ];
 
 type Props = {

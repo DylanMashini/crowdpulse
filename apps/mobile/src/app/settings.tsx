@@ -1,62 +1,34 @@
 import type { DeviceRole, User } from '@triagecam/contracts';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { type ReactNode, useEffect, useState } from 'react';
-import { Alert, Text, View } from 'react-native';
+import { type ReactNode } from 'react';
+import { View } from 'react-native';
 
 import { Button } from '@/components/Button';
 import { Notice } from '@/components/Notice';
 import { RolePicker } from '@/components/RolePicker';
 import { Screen } from '@/components/Screen';
 import { ThemeScope, useScopedTheme } from '@/components/ThemeScope';
-import { api, errorMessage } from '@/lib/api';
+import { api } from '@/lib/api';
 import { useSession } from '@/lib/session/SessionProvider';
-import { useTheme } from '@/theme';
+import { useAccountActions } from '@/lib/session/useAccountActions';
+import { Text } from '@/components/Text';
 
+/** Settings of the camera role, always dark like the rest of it. The nurse role has the You tab. */
 export default function Settings() {
   const { state } = useSession();
-  const device = useTheme();
   if (state.status !== 'signedIn') return null;
-  const role = state.device?.role ?? null;
-  // Opened from the camera role, settings stays dark like the rest of that role.
-  const dark = role === 'camera';
   return (
-    <ThemeScope name={dark ? 'dark' : device.name}>
-      {dark ? <StatusBar style="light" /> : null}
-      <SettingsContent user={state.user} role={role} />
+    <ThemeScope name="dark">
+      <StatusBar style="light" />
+      <SettingsContent user={state.user} role={state.device?.role ?? null} />
     </ThemeScope>
   );
 }
 
 function SettingsContent({ user, role }: { user: User; role: DeviceRole | null }) {
   const router = useRouter();
-  const { chooseRole, signOut } = useSession();
-  const [roleAtOpen] = useState(role);
-  const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
-
-  // A changed role means a different home screen: the anchor route picks it.
-  useEffect(() => {
-    if (role !== roleAtOpen) router.replace('/');
-  }, [role, roleAtOpen, router]);
-
-  const changeRole = async (next: DeviceRole) => {
-    if (next === role) return;
-    setBusy(true);
-    setFailure(null);
-    try {
-      await chooseRole(next);
-    } catch (error) {
-      setFailure(errorMessage(error));
-      setBusy(false);
-    }
-  };
-
-  const confirmSignOut = () =>
-    Alert.alert('Sign out of this phone?', 'The phone stops receiving flags until someone signs in again', [
-      { text: 'Stay signed in', style: 'cancel' },
-      { text: 'Sign out', style: 'destructive', onPress: () => void signOut() },
-    ]);
+  const { busy, failure, changeRole, confirmSignOut } = useAccountActions(role);
 
   return (
     <Screen title="Settings" onBack={() => router.back()}>

@@ -1,12 +1,13 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/Button';
 import { Notice } from '@/components/Notice';
 import { SessionProvider, useSession } from '@/lib/session/SessionProvider';
 import { fonts, useTheme } from '@/theme';
+import { Text } from '@/components/Text';
 
 export default function RootLayout() {
   return (

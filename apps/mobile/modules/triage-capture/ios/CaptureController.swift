@@ -32,6 +32,8 @@ final class CaptureController: FrameSourceDelegate {
   private static let lostSeconds = 10.0
   private static let previewDefaults = PreviewSettings(framesPerSecond: 2, maxLongSide: 480, quality: 0.5)
   private static let previewLimits = PreviewSettings(framesPerSecond: 30, maxLongSide: 640, quality: 1)
+  /// Where the camera choice is kept between launches.
+  private static let cameraKey = "triagecam.capture.camera"
 
   private let queue = DispatchQueue(label: "triagecam.capture.engine", qos: .userInitiated)
   private let source: FrameSource
@@ -54,6 +56,32 @@ final class CaptureController: FrameSourceDelegate {
     sittingsDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
       .appendingPathComponent("TriageCamSittings", isDirectory: true)
     source.delegate = self
+    CapturePreviewHub.source = source
+  }
+
+  // MARK: Camera choice
+
+  /// The camera capture starts on: the last one chosen with `setCamera`, the back one until then.
+  var camera: CameraPosition {
+    UserDefaults.standard.string(forKey: Self.cameraKey).flatMap(CameraPosition.init(rawValue:)) ?? .back
+  }
+
+  /// Remembers the choice and, while capture runs, moves to that camera at once.
+  func setCamera(_ position: CameraPosition, completion: @escaping (Result<Void, CaptureError>) -> Void) {
+    queue.async { [self] in
+      if capturing {
+        do {
+          try source.switchCamera(to: position)
+        } catch {
+          return completion(.failure(error as? CaptureError ?? CaptureError(.cameraUnavailable, "\(error)")))
+        }
+        // What the old camera last saw says nothing about the new one.
+        latest = nil
+        measuredAt = nil
+      }
+      UserDefaults.standard.set(position.rawValue, forKey: Self.cameraKey)
+      completion(.success(()))
+    }
   }
 
   var sourceName: String { source.kind.rawValue }

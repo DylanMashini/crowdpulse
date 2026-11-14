@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreGraphics
 import Foundation
 import SignalEngine
@@ -82,6 +83,18 @@ protocol FrameSource: AnyObject {
   func start(_ settings: CaptureSettings) throws
   func stop()
 
+  /// The camera frames come from. The simulated source keeps the choice and measures nothing with it.
+  var camera: CameraPosition { get }
+  /// Changes camera while capture runs. Frames, exposure and face tracking carry on from the
+  /// new camera; a tracked face is picked up again under a new track id.
+  func switchCamera(to position: CameraPosition) throws
+
+  /// What a `CapturePreviewView` draws: the capture session, or nil where there is no camera
+  /// and the view shows the test pattern instead.
+  var previewSession: AVCaptureSession? { get }
+  /// The device behind `previewSession`, so the view can keep its picture upright.
+  var previewDevice: AVCaptureDevice? { get }
+
   func outlines() -> FaceOutlines
   /// Nil turns the preview off.
   func setPreview(_ settings: PreviewSettings?)
@@ -94,6 +107,24 @@ protocol FrameSourceDelegate: AnyObject {
   func frameSource(_ source: FrameSource, didProduce record: FrameRecord)
   func frameSource(_ source: FrameSource, didEncodePreview image: EncodedImage)
   func frameSource(_ source: FrameSource, didFail error: CaptureError)
+}
+
+/// Where preview views find the frame source. There is one capture module, so one source.
+enum CapturePreviewHub {
+  /// Posted on the main queue when the camera behind the preview started or changed.
+  static let didChange = Notification.Name("TriageCapturePreviewDidChange")
+
+  private static let lock = NSLock()
+  private static weak var current: FrameSource?
+
+  static var source: FrameSource? {
+    get { lock.withLock { current } }
+    set { lock.withLock { current = newValue } }
+  }
+
+  static func changed() {
+    DispatchQueue.main.async { NotificationCenter.default.post(name: didChange, object: nil) }
+  }
 }
 
 enum FrameSources {

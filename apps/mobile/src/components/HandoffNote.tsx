@@ -1,8 +1,9 @@
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 
 import { fonts } from '@/theme';
 
 import { useScopedTheme } from './ThemeScope';
+import { Text } from './Text';
 
 /**
  * The sentence a nurse reads before walking over. It comes from the server's fixed template

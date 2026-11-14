@@ -1,6 +1,7 @@
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 
 import { useScopedTheme } from './ThemeScope';
+import { Text } from './Text';
 
 type Kind = 'live' | 'recording' | 'experimental' | 'ai-draft' | 'reference';
 

@@ -1,6 +1,6 @@
 import type { WorklistItem } from '@triagecam/contracts';
 import { useCallback, useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 
 import { api, errorMessage } from '@/lib/api';
 import { statusText } from '@/lib/nurse/worklistFormat';
@@ -10,6 +10,7 @@ import { Notice } from './Notice';
 import { PatientIdentity } from './PatientIdentity';
 import { useScopedTheme } from './ThemeScope';
 import { Touchable } from './Touchable';
+import { Text } from './Text';
 
 type Props = {
   /** Called with the waiting patient the operator tapped. */

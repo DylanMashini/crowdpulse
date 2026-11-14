@@ -1,9 +1,10 @@
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 import Svg, { Defs, Line, Pattern, Rect } from 'react-native-svg';
 
 import { percent } from '@/lib/format';
 
 import { useScopedTheme } from './ThemeScope';
+import { Text } from './Text';
 
 type Props = {
   /** 0 to 1. */

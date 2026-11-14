@@ -1,8 +1,9 @@
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 
 import { fonts } from '@/theme';
 
 import { useScopedTheme } from './ThemeScope';
+import { Text } from './Text';
 
 export const SITTING_SECONDS = 60;
 

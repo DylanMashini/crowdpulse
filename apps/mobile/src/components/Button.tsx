@@ -1,10 +1,11 @@
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 
 import { fonts } from '@/theme';
 
 import { Icon, type IconName } from './Icon';
 import { useScopedTheme } from './ThemeScope';
 import { Touchable } from './Touchable';
+import { Text } from './Text';
 
 type Props = {
   /** A verb phrase in sentence case. */
@@ -72,7 +73,13 @@ export function Button({ label, onPress, variant = 'secondary', icon, block, dis
         }}
       >
         {icon ? <Icon name={icon} size={20} color={look.text} /> : null}
-        <Text numberOfLines={1} style={[theme.type.bodyTouch, { fontFamily: fonts.sans[600], color: look.text }]}>
+        {/* The control is 48 points tall: the label grows with the text size up to what fits in it. */}
+        <Text
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.7}
+          style={[theme.type.bodyTouch, { flexShrink: 1, fontFamily: fonts.sans[600], color: look.text }]}
+        >
           {label}
         </Text>
       </View>

@@ -1,7 +1,7 @@
 import { useKeepAwake } from 'expo-keep-awake';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect } from 'react';
-import { Alert, Linking, ScrollView, Text, View, useWindowDimensions } from 'react-native';
+import { Alert, Linking, ScrollView, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import TriageCapture from 'triage-capture';
 
@@ -21,6 +21,7 @@ import { type LiveViewState, useSittingController } from '@/lib/capture/useSitti
 import { tidy } from '@/lib/format';
 import { sourceLabel } from '@/lib/nurse/worklistFormat';
 import { useDevice } from '@/lib/session/SessionProvider';
+import { Text } from '@/components/Text';
 
 export default function Sitting() {
   const params = useLocalSearchParams<{ patient: string; kind: string; enrol?: string }>();
@@ -189,6 +190,8 @@ function SittingScreen({ patientNumber, kind, enrolFace, deviceId }: Props) {
     <LiveViewfinder
       state={status?.viewfinder ?? 'searching'}
       message={phase === 'preparing' ? 'Starting the camera' : undefined}
+      // The camera is chosen while framing. Changing it mid-sitting would restart the measurement.
+      flipDisabled={phase !== 'framing'}
     />
   );
 
@@ -196,11 +199,13 @@ function SittingScreen({ patientNumber, kind, enrolFace, deviceId }: Props) {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>
       {landscape ? (
         <View style={{ flex: 1, flexDirection: 'row', gap: space.space4, padding: space.space4 }}>
-          <View style={{ flex: 4 }}>{viewfinder}</View>
-          <View style={{ flex: 5, justifyContent: 'center' }}>{patientPanel}</View>
-          {/* The column's share is set on a plain View: a ScrollView given flex: 4 is laid out as flex: 1. */}
-          <View style={{ flex: 4 }}>
-            <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}>{operatorPanel}</ScrollView>
+          {/* The picture gets the room; the readouts and controls share one column beside it. */}
+          <View style={{ flex: 1 }}>{viewfinder}</View>
+          <View style={{ width: Math.min(360, Math.round(width * 0.42)) }}>
+            <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', gap: space.space5 }}>
+              {patientPanel}
+              {operatorPanel}
+            </ScrollView>
           </View>
         </View>
       ) : (

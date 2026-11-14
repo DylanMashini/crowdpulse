@@ -52,7 +52,7 @@ public class TriageCaptureModule: Module {
 
     AsyncFunction("startCapture") { (options: CaptureOptionsRecord?, promise: Promise) in
       var settings = CaptureSettings()
-      if let camera = options?.camera.flatMap(CameraPosition.init(rawValue:)) { settings.camera = camera }
+      settings.camera = options?.camera.flatMap(CameraPosition.init(rawValue:)) ?? self.controller.camera
       if options?.frameRate == 30 { settings.frameRate = 30 }
       self.controller.startCapture(settings) { result in
         switch result {
@@ -125,6 +125,22 @@ public class TriageCaptureModule: Module {
       }
     }
 
+    Function("getCamera") { () -> String in
+      self.controller.camera.rawValue
+    }
+
+    AsyncFunction("setCamera") { (camera: String, promise: Promise) in
+      guard let position = CameraPosition(rawValue: camera) else {
+        return promise.reject(CaptureError(.cameraUnavailable, "There is no \(camera) camera"))
+      }
+      self.controller.setCamera(position) { result in
+        switch result {
+        case .success: promise.resolve(nil)
+        case .failure(let error): promise.reject(error)
+        }
+      }
+    }
+
     Function("setLandscapeLock") { (locked: Bool) in
       DispatchQueue.main.async { OrientationLock.set(landscapeOnly: locked) }
     }
@@ -132,6 +148,10 @@ public class TriageCaptureModule: Module {
     OnDestroy {
       self.controller.shutdown()
     }
+
+    // The live picture under the viewfinder's outlines. It has no props: it shows whatever the
+    // capture source is producing.
+    View(CapturePreviewView.self) {}
   }
 }
 

@@ -1,6 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Text } from 'react-native';
 
 import { Button } from '@/components/Button';
 import { Notice } from '@/components/Notice';
@@ -8,6 +7,7 @@ import { Screen } from '@/components/Screen';
 import { api, errorMessage } from '@/lib/api';
 import { clockTime } from '@/lib/format';
 import { useTheme } from '@/theme';
+import { Text } from '@/components/Text';
 
 type Progress =
   | { step: 'idle' }

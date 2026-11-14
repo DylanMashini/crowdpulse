@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSyncExternalStore } from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 
 import { Button } from '@/components/Button';
 import type { IconName } from '@/components/Icon';
@@ -16,6 +16,7 @@ import { type FinishedSitting, finishedSitting } from '@/lib/capture/sittingSess
 import type { UploadState } from '@/lib/capture/uploadQueue';
 import { sentences } from '@/lib/format';
 import { sourceLabel } from '@/lib/nurse/worklistFormat';
+import { Text } from '@/components/Text';
 
 export default function Summary() {
   const router = useRouter();

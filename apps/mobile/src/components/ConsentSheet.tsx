@@ -1,5 +1,5 @@
 import { PRIVACY_FACE } from '@triagecam/contracts';
-import { Modal, Text, View } from 'react-native';
+import { Modal, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useReducedMotion } from '@/hooks/useReducedMotion';
@@ -8,6 +8,7 @@ import { Button } from './Button';
 import { Icon, type IconName } from './Icon';
 import { PrivacyNote } from './PrivacyNote';
 import { useScopedTheme } from './ThemeScope';
+import { Text } from './Text';
 
 type Props = {
   visible: boolean;

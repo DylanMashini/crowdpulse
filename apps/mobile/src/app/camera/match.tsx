@@ -1,7 +1,7 @@
 import type { PatientRef } from '@triagecam/contracts';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Linking, Text, View } from 'react-native';
+import { Linking, View } from 'react-native';
 import TriageCapture, { type ViewfinderState } from 'triage-capture';
 
 import { Button } from '@/components/Button';
@@ -14,6 +14,7 @@ import { PatientPicker } from '@/components/PatientPicker';
 import { api, errorMessage, isApiError } from '@/lib/api';
 import { sentences } from '@/lib/format';
 import { captureErrorCode, captureErrorMessage } from '@/lib/capture/captureErrors';
+import { Text } from '@/components/Text';
 
 /** How long to wait for a face before offering the list of waiting patients. */
 const FACE_WAIT_MS = 15_000;
@@ -88,7 +89,7 @@ export default function FaceMatch() {
         if (permission !== 'granted') {
           return settle({ step: 'fallback', reason: 'Triage Cam is not allowed to use the camera', cameraDenied: true });
         }
-        await TriageCapture.startCapture({ camera: 'back', frameRate: 30 });
+        await TriageCapture.startCapture({ frameRate: 30 });
       } catch (error) {
         settle({ step: 'fallback', reason: captureErrorMessage(error) });
       }
@@ -113,6 +114,7 @@ export default function FaceMatch() {
             <LiveViewfinder
               state={viewfinder}
               message={match.step === 'matching' ? 'Checking for a matching patient. Keep still.' : undefined}
+              flipDisabled={match.step === 'matching'}
             />
           </View>
           <Text style={[theme.type.caption, { color: theme.colors.inkMuted }]}>
@@ -149,7 +151,15 @@ export default function FaceMatch() {
 
       {match.step === 'fallback' ? (
         <>
-          <Notice title="No patient was matched" body={sentences(match.reason, 'Choose the patient from the waiting room to carry on')}>
+          <Notice
+            title="No patient was matched"
+            // Some of the server's reasons already end by saying what to do.
+            body={
+              /choose the patient/i.test(match.reason)
+                ? match.reason
+                : sentences(match.reason, 'Choose the patient from the waiting room to carry on')
+            }
+          >
             {match.cameraDenied ? (
               <Button variant="secondary" block label="Open the Settings app" onPress={() => void Linking.openSettings()} />
             ) : null}

@@ -1,12 +1,13 @@
 import { patientLabel, routes, type PatientRef } from '@triagecam/contracts';
 import { useState } from 'react';
-import { Image, Text, View } from 'react-native';
+import { Image, View, useWindowDimensions } from 'react-native';
 
 import { api, authHeaders } from '@/lib/api';
 import { fonts } from '@/theme';
 
 import { Icon } from './Icon';
 import { useScopedTheme } from './ThemeScope';
+import { Text } from './Text';
 
 type Size = 'sm' | 'md' | 'lg' | 'xl';
 
@@ -74,6 +75,8 @@ type Props = {
 export function PatientIdentity({ patient, size = 'md', detail }: Props) {
   const theme = useScopedTheme();
   const { colors } = theme;
+  // At the larger accessibility sizes one line holds a few letters: the name gets two.
+  const lines = useWindowDimensions().fontScale > 1.3 ? 2 : 1;
   const named = Boolean(patient.name?.trim());
   const name = {
     sm: { fontFamily: fonts.sans[600], fontSize: 16, lineHeight: 20 },
@@ -90,10 +93,10 @@ export function PatientIdentity({ patient, size = 'md', detail }: Props) {
     >
       <PatientAvatar patient={patient} size={size} />
       <View style={{ flexShrink: 1 }}>
-        <Text numberOfLines={1} style={[name, { color: named ? colors.ink : colors.inkMuted }]}>
+        <Text numberOfLines={lines} style={[name, { color: named ? colors.ink : colors.inkMuted }]}>
           {patientLabel(patient)}
         </Text>
-        <Text numberOfLines={1} style={[theme.type.caption, { color: colors.inkMuted, fontVariant: ['tabular-nums'] }]}>
+        <Text numberOfLines={lines} style={[theme.type.caption, { color: colors.inkMuted, fontVariant: ['tabular-nums'] }]}>
           {second}
         </Text>
       </View>

@@ -341,7 +341,8 @@ async function beginCapture(): Promise<{ phase: SittingPhase; error: string | nu
     let permission = await TriageCapture.getCameraPermission();
     if (permission === 'undetermined') permission = await TriageCapture.requestCameraPermission();
     if (permission !== 'granted') return { phase: 'permission_denied', error: null };
-    await TriageCapture.startCapture({ camera: 'back', frameRate: 60 });
+    // No camera is named: capture starts on the one last chosen with the flip control.
+    await TriageCapture.startCapture({ frameRate: 60 });
     return { phase: 'framing', error: null };
   } catch (failure) {
     return {

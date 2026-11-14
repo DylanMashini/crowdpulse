@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 
 import { tidy } from '@/lib/format';
 
 import { useScopedTheme } from './ThemeScope';
+import { Text } from './Text';
 
 type Props = {
   /** What happened. */

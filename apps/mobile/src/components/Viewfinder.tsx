@@ -1,12 +1,14 @@
-import { useState } from 'react';
-import { type LayoutRectangle, Text, View } from 'react-native';
+import { type ReactNode, useState } from 'react';
+import { type LayoutRectangle, StyleSheet, View } from 'react-native';
 import Svg, { Ellipse, Path, Polygon, Rect, Text as SvgText } from 'react-native-svg';
 import type { FaceRegionsEvent, Point, ViewfinderState } from 'triage-capture';
 
+import { coverFrame, placePoint, placeRect } from '@/lib/capture/viewfinderGeometry';
 import { fonts } from '@/theme';
 
 import { Icon } from './Icon';
 import { useScopedTheme } from './ThemeScope';
+import { Text } from './Text';
 
 const MESSAGES: Record<ViewfinderState, string> = {
   searching: 'Looking for a face. Sit 0.6 to 0.9 m from the phone.',
@@ -17,44 +19,55 @@ const MESSAGES: Record<ViewfinderState, string> = {
 
 type Props = {
   state: ViewfinderState;
-  /** Outlines from the capture module, in 0 to 1 coordinates of the upright frame. */
+  /** Outlines from the capture module, in 0 to 1 coordinates of the upright frame as captured. */
   regions: FaceRegionsEvent | null;
   /** Replaces the default sentence for the state. */
   message?: string;
+  /**
+   * The live picture, filling the frame behind the outlines (`CapturePreview`). Left out, the
+   * outlines are drawn on a dark field and the caption says that no picture is shown.
+   */
+  picture?: ReactNode;
+  /** The picture is mirrored (the front camera), so the outlines are mirrored to match it. */
+  mirrored?: boolean;
+  /** A small control in the top right corner, such as the camera flip. */
+  control?: ReactNode;
 };
 
 const CORNER = 28;
 const INSET = 12;
 
 /**
- * The framing view: outlines of what is measured on a dark field, never the picture. The
- * regions are drawn where the capture module says they are; nothing here renders a frame.
+ * The framing view: the live picture with the framing template and the outlines of what is
+ * measured drawn over it. The picture fills the box and its overflow is cropped; the outlines
+ * are placed with the same arithmetic, so they sit on the face they belong to.
  */
-export function Viewfinder({ state, regions, message }: Props) {
+export function Viewfinder({ state, regions, message, picture, mirrored = false, control }: Props) {
   const theme = useScopedTheme();
   const { colors, space } = theme;
   const [box, setBox] = useState<LayoutRectangle | null>(null);
   const lost = state === 'lost';
   const tracking = (state === 'measuring' || state === 'locking') && regions?.face != null;
+  const hasPicture = picture != null;
 
-  // The camera frame, fitted inside the art area the way the picture would be.
-  const frame = fitFrame(box, regions?.aspectRatio ?? 3 / 4);
-  const px = (point: Point) => `${frame.x + point.x * frame.width},${frame.y + point.y * frame.height}`;
-  const polygon = (points: Point[] | null | undefined) => (points ? points.map(px).join(' ') : null);
+  const frame = coverFrame(box, regions?.aspectRatio ?? 16 / 9);
+  const at = (point: Point) => placePoint(point, frame, mirrored);
+  const polygon = (points: Point[] | null | undefined) =>
+    points ? points.map((point) => `${at(point).x},${at(point).y}`).join(' ') : null;
   const labelAt = (points: Point[] | null | undefined) => {
     if (!points || points.length === 0) return null;
-    const right = Math.max(...points.map((p) => p.x));
-    const middle = points.reduce((sum, p) => sum + p.y, 0) / points.length;
-    return { x: frame.x + right * frame.width + 8, y: frame.y + middle * frame.height + 5 };
+    const placed = points.map(at);
+    const right = Math.max(...placed.map((point) => point.x));
+    const middle = placed.reduce((sum, point) => sum + point.y, 0) / placed.length;
+    return { x: right + 8, y: middle + 5 };
   };
 
   const forehead = polygon(regions?.forehead);
-  const leftCheek = polygon(regions?.leftCheek);
-  const rightCheek = polygon(regions?.rightCheek);
-  const chest = regions?.chest;
+  const cheeks = [polygon(regions?.leftCheek), polygon(regions?.rightCheek)];
+  const chest = regions?.chest ? placeRect(regions.chest, frame, mirrored) : null;
   const foreheadLabel = labelAt(regions?.forehead);
-  const cheekLabel = labelAt(regions?.rightCheek);
-  const labelStyle = { fill: colors.inkMuted, fontSize: 13, fontFamily: fonts.sans[400] };
+  // The label goes beside whichever cheek is on the right of the screen.
+  const cheekLabel = labelAt(mirrored ? regions?.leftCheek : regions?.rightCheek);
 
   return (
     <View
@@ -65,9 +78,14 @@ export function Viewfinder({ state, regions, message }: Props) {
         backgroundColor: colors.surfaceSunken,
       }}
     >
-      <View style={{ flex: 1 }} onLayout={(event) => setBox(event.nativeEvent.layout)}>
+      <View style={{ flex: 1, overflow: 'hidden' }} onLayout={(event) => setBox(event.nativeEvent.layout)}>
+        {hasPicture ? (
+          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+            {picture}
+          </View>
+        ) : null}
         {box ? (
-          <Svg width={box.width} height={box.height}>
+          <Svg width={box.width} height={box.height} style={StyleSheet.absoluteFill}>
             <Path
               d={cornerPath(box.width, box.height)}
               fill="none"
@@ -77,12 +95,13 @@ export function Viewfinder({ state, regions, message }: Props) {
             />
             {tracking ? (
               <>
-                {[forehead, leftCheek, rightCheek].map((points, index) =>
+                {[forehead, ...cheeks].map((points, index) =>
                   points ? (
                     <Polygon
                       key={index}
                       points={points}
-                      fill={colors.signalSoft}
+                      // Over the picture the skin stays visible; on the dark field the regions are filled.
+                      fill={hasPicture ? 'none' : colors.signalSoft}
                       stroke={colors.signal}
                       strokeWidth={2}
                       strokeLinejoin="round"
@@ -90,92 +109,78 @@ export function Viewfinder({ state, regions, message }: Props) {
                   ) : null,
                 )}
                 {chest ? (
-                  <Rect
-                    x={frame.x + chest.x * frame.width}
-                    y={frame.y + chest.y * frame.height}
-                    width={chest.width * frame.width}
-                    height={chest.height * frame.height}
-                    rx={6}
-                    fill="none"
-                    stroke={colors.signal}
-                    strokeWidth={2}
-                    strokeDasharray="6 4"
-                  />
+                  <Rect {...chest} rx={6} fill="none" stroke={colors.signal} strokeWidth={2} strokeDasharray="6 4" />
                 ) : null}
-                {foreheadLabel ? (
-                  <SvgText {...foreheadLabel} {...labelStyle}>
-                    Forehead
-                  </SvgText>
-                ) : null}
-                {cheekLabel ? (
-                  <SvgText {...cheekLabel} {...labelStyle}>
-                    Cheeks
-                  </SvgText>
-                ) : null}
+                {foreheadLabel ? <Label {...foreheadLabel} text="Forehead" halo={hasPicture} /> : null}
+                {cheekLabel ? <Label {...cheekLabel} text="Cheeks" halo={hasPicture} /> : null}
                 {chest ? (
-                  <SvgText
-                    x={frame.x + (chest.x + chest.width / 2) * frame.width}
-                    y={Math.min(frame.y + (chest.y + chest.height) * frame.height + 18, box.height - 6)}
-                    textAnchor="middle"
-                    {...labelStyle}
-                  >
-                    Chest motion
-                  </SvgText>
+                  <Label
+                    x={chest.x + chest.width / 2}
+                    y={Math.min(chest.y + chest.height + 18, box.height - 6)}
+                    text="Chest motion"
+                    anchor="middle"
+                    halo={hasPicture}
+                  />
                 ) : null}
               </>
             ) : (
+              // The framing template: where the face should be.
               <Ellipse
                 cx={box.width / 2}
                 cy={box.height * 0.4}
                 rx={Math.min(box.width, box.height) * 0.2}
                 ry={Math.min(box.width, box.height) * 0.26}
                 fill="none"
-                stroke={colors.lineStrong}
+                stroke={hasPicture ? colors.ink : colors.lineStrong}
                 strokeWidth={2}
                 strokeDasharray="6 6"
               />
             )}
           </Svg>
         ) : null}
+        {/* Tucked inside the elbow of the corner mark. */}
+        {control ? <View style={{ position: 'absolute', top: INSET + 6, right: INSET + 6 }}>{control}</View> : null}
       </View>
-      <Text
-        accessibilityLiveRegion="polite"
-        style={[
-          theme.type.bodyTouch,
-          {
-            paddingHorizontal: space.space4,
-            paddingTop: space.space2,
-            textAlign: 'center',
-            fontFamily: fonts.sans[600],
-            color: lost ? colors.flag : colors.ink,
-          },
-        ]}
-      >
-        {message ?? MESSAGES[state]}
-      </Text>
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: space.space2,
-          paddingHorizontal: space.space4,
-          paddingTop: space.space2,
-          paddingBottom: space.space3,
-        }}
-      >
-        <Icon name="eye-off" size={16} color={colors.inkMuted} />
-        <Text style={[theme.type.caption, { color: colors.inkMuted }]}>Outlines only. This screen shows no picture.</Text>
+      {/* The words sit under the picture, not on it: nothing covers the chest region. */}
+      <View style={{ gap: space.space1, paddingHorizontal: space.space4, paddingTop: space.space2, paddingBottom: space.space3 }}>
+        <Text
+          accessibilityLiveRegion="polite"
+          style={[
+            theme.type.bodyTouch,
+            { textAlign: 'center', fontFamily: fonts.sans[600], color: lost ? colors.flag : colors.ink },
+          ]}
+        >
+          {message ?? MESSAGES[state]}
+        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space.space2 }}>
+          <Icon name={hasPicture ? 'video' : 'eye-off'} size={16} color={colors.inkMuted} />
+          <Text style={[theme.type.caption, { flexShrink: 1, color: colors.inkMuted }]}>
+            {hasPicture ? 'Live picture. Video is not stored.' : 'Outlines only. This screen shows no picture.'}
+          </Text>
+        </View>
       </View>
     </View>
   );
 }
 
-function fitFrame(box: LayoutRectangle | null, aspectRatio: number) {
-  if (!box || box.width === 0 || box.height === 0) return { x: 0, y: 0, width: 0, height: 0 };
-  const width = Math.min(box.width, box.height * aspectRatio);
-  const height = width / aspectRatio;
-  return { x: (box.width - width) / 2, y: (box.height - height) / 2, width, height };
+type LabelProps = { x: number; y: number; text: string; anchor?: 'start' | 'middle'; halo: boolean };
+
+/** A region's name. Over the picture it is drawn twice, the first time as a dark edge to read against. */
+function Label({ x, y, text, anchor = 'start', halo }: LabelProps) {
+  const { colors } = useScopedTheme();
+  const common = { x, y, textAnchor: anchor, fontSize: 13, fontFamily: fonts.sans[halo ? 600 : 400] };
+  return (
+    <>
+      {halo ? (
+        <SvgText {...common} fill="none" stroke={colors.surfaceSunken} strokeWidth={3} strokeLinejoin="round">
+          {text}
+        </SvgText>
+      ) : null}
+      <SvgText {...common} fill={halo ? colors.ink : colors.inkMuted}>
+        {text}
+      </SvgText>
+    </>
+  );
 }
 
 function cornerPath(width: number, height: number): string {

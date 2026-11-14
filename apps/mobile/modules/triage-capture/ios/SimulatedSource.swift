@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import QuartzCore
 import SignalEngine
@@ -34,8 +35,22 @@ final class SimulatedSource: FrameSource {
   private var facePresent = false
   private var preview: PreviewSettings?
   private var lastPreviewAt = -Double.infinity
+  private var position = CameraPosition.back
 
   var frameRate: Double { lock.withLock { rate } }
+
+  var camera: CameraPosition { lock.withLock { position } }
+
+  /// There is no session: the preview view draws the test pattern.
+  var previewSession: AVCaptureSession? { nil }
+  var previewDevice: AVCaptureDevice? { nil }
+
+  /// The generator has one "camera". The choice is kept so the flip control and the mirrored
+  /// preview can be exercised on the simulator.
+  func switchCamera(to position: CameraPosition) throws {
+    lock.withLock { self.position = position }
+    CapturePreviewHub.changed()
+  }
 
   func permission() -> PermissionStatus { .granted }
 
@@ -49,6 +64,7 @@ final class SimulatedSource: FrameSource {
       lock.withLock {
         rate = settings.frameRate
         facePresent = false
+        position = settings.camera
       }
       startedAt = CACurrentMediaTime()
       blockIndex = 0
@@ -62,6 +78,7 @@ final class SimulatedSource: FrameSource {
       timer.resume()
       self.timer = timer
     }
+    CapturePreviewHub.changed()
   }
 
   func stop() {
@@ -167,10 +184,16 @@ enum TestPattern {
   private static let greys: [CGFloat] = [0.16, 0.24, 0.32, 0.40, 0.48, 0.56]
 
   static func jpeg(size: CGSize, elapsed: Double?, quality: Double) -> EncodedImage? {
+    guard let data = image(size: size, elapsed: elapsed).jpegData(compressionQuality: quality) else { return nil }
+    return EncodedImage(jpeg: data, width: Int(size.width), height: Int(size.height))
+  }
+
+  /// `elapsed` nil leaves the moving marker out: a still, for the face crop and the on-phone preview.
+  static func image(size: CGSize, elapsed: Double?) -> UIImage {
     let format = UIGraphicsImageRendererFormat()
     format.scale = 1
     format.opaque = true
-    let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
+    return UIGraphicsImageRenderer(size: size, format: format).image { context in
       let barWidth = size.width / CGFloat(greys.count)
       for (index, grey) in greys.enumerated() {
         UIColor(white: grey, alpha: 1).setFill()
@@ -191,7 +214,5 @@ enum TestPattern {
       UIColor.white.setFill()
       context.fill(CGRect(x: position, y: size.height - 6, width: max(4, size.width / 40), height: 6))
     }
-    guard let data = image.jpegData(compressionQuality: quality) else { return nil }
-    return EncodedImage(jpeg: data, width: Int(size.width), height: Int(size.height))
   }
 }
