@@ -8,7 +8,7 @@ import { useLive, useLiveEvents } from '@/components/app/live';
 import { PatientIdentity, PrivacyNote, ProvenanceTag, buttonClass, intakeSummary } from '@/components/ds';
 import { IntakeForm } from '@/components/patients/IntakeForm';
 import { LiveStatus } from '@/components/ui/LiveStatus';
-import { PageHeader, Panel } from '@/components/ui/Panel';
+import { PageHeader, Section } from '@/components/ui/Panel';
 import { StateMessage } from '@/components/ui/StateMessage';
 import { api } from '@/lib/api';
 import { useNow } from '@/lib/clock';
@@ -45,8 +45,8 @@ export function CheckInScreen() {
   const selected = cameras.find((device) => device.id === chosen) ?? cameras.find((device) => device.liveAt !== null) ?? cameras.find(isOnline) ?? null;
 
   const picker = (
-    <Panel heading="Camera phone">
-      <div role="radiogroup" aria-label="Camera phone" className="flex flex-col gap-2">
+    <Section heading="Camera phone" className="max-xl:order-4">
+      <div role="radiogroup" aria-label="Camera phone" className="-mx-2 flex flex-col gap-[2px]">
         {cameras.map((device) => {
           const on = device.id === selected?.id;
           const seenMinutes = Math.max(0, Math.floor((serverNow - new Date(device.lastSeenAt).getTime()) / 60_000));
@@ -58,27 +58,33 @@ export function CheckInScreen() {
               aria-checked={on}
               onClick={() => setChosen(device.id)}
               className={cx(
-                'flex w-full cursor-pointer items-center gap-3 rounded-md text-left transition-colors duration-[120ms] ease-out',
-                on ? 'border-2 border-signal bg-signal-soft px-[11px] py-[7px]' : 'border border-line-strong px-3 py-2 hover:bg-surface-sunken',
+                'flex h-row w-full cursor-pointer items-center gap-3 rounded-md px-2 text-left transition-colors',
+                on ? 'bg-surface-3 shadow-[inset_0_1px_0_var(--line)]' : 'hover:bg-surface-2',
               )}
             >
+              <span
+                aria-hidden
+                className={cx('grid size-[14px] flex-none place-items-center rounded-pill border', on ? 'border-signal' : 'border-line-hover')}
+              >
+                {on ? <span className="size-[6px] rounded-pill bg-signal" /> : null}
+              </span>
               <span className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate font-semibold">{device.label}</span>
-                <span className="type-caption text-ink-muted">
+                <span className="truncate type-label text-ink">{device.label}</span>
+                <span className="type-caption text-ink-faint">
                   {device.liveAt ? 'Camera on' : isOnline(device) ? 'Online, camera idle' : `Offline, last seen ${minutesAgo(seenMinutes)}`}
                 </span>
               </span>
-              <span aria-hidden className={cx('size-[20px] flex-none rounded-full', on ? 'border-[6px] border-signal' : 'border-2 border-line-strong')} />
+              {device.liveAt ? <span aria-hidden className="size-[6px] flex-none rounded-pill bg-signal glow-live" /> : null}
             </button>
           );
         })}
       </div>
       {devices.error ? (
-        <p role="alert" className="mt-3 type-caption font-medium text-flag">
+        <p role="alert" className="mt-3 type-caption text-watch">
           The list could not be refreshed: {devices.error.message}
         </p>
       ) : null}
-    </Panel>
+    </Section>
   );
 
   return (
@@ -103,16 +109,21 @@ export function CheckInScreen() {
         <Station key={selected.id} device={selected} serverOffsetMs={serverOffsetMs} serverNow={serverNow} picker={picker} />
       ) : null}
       {cameras.length > 0 && !selected ? (
-        <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_400px]">
+        <div className={columns}>
           <StateMessage kind="empty" title="No camera phone is online">
             Choose a phone from the list to follow it anyway, or open the app on the phone. A phone is online when the server heard from it in the last 2 minutes.
           </StateMessage>
-          {picker}
+          <div className={side}>{picker}</div>
         </div>
       ) : null}
     </>
   );
 }
+
+// Two columns ruled apart on a wide screen. Below that the columns dissolve into one run, ordered
+// so the picture comes first and the form right under it; the device list goes last.
+const columns = 'grid flex-1 content-start xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] xl:content-stretch';
+const side = 'flex min-w-0 flex-col border-line max-xl:contents xl:border-l';
 
 interface StationProps {
   device: Device;
@@ -159,27 +170,10 @@ function Station({ device, serverOffsetMs, serverNow, picker }: StationProps) {
 
   const newPatient = sitting?.kind === 'check_in';
 
-  // Two columns on a wide screen. Below that the columns dissolve into one run, ordered so the
-  // picture comes first and the form right under it; the device list goes last.
   return (
-    <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_400px]">
-      <div className="flex min-w-0 flex-col gap-5 max-xl:contents">
-        <Panel
-          className="max-xl:order-1"
-          heading="Camera"
-          aside={
-            cameraLive ? (
-              <span className="flex items-center gap-3">
-                {feed ? (
-                  <span className="font-mono text-[13px] text-ink-muted tabular-nums">
-                    {rate(feed.fps)} fps{feed.delayMs === null ? '' : ` · ${milliseconds(feed.delayMs)}`}
-                  </span>
-                ) : null}
-                <ProvenanceTag kind="live">Live</ProvenanceTag>
-              </span>
-            ) : null
-          }
-        >
+    <div className={columns}>
+      <div className="flex min-w-0 flex-col max-xl:contents">
+        <Section className="max-xl:order-1">
           <div className="flex flex-col gap-3">
             {cameraLive ? (
               <LiveFeed
@@ -188,18 +182,29 @@ function Station({ device, serverOffsetMs, serverNow, picker }: StationProps) {
                 serverOffsetMs={serverOffsetMs}
                 onStats={setFeed}
                 className="aspect-auto h-[clamp(240px,44vh,480px)]"
-              />
+              >
+                <div className="absolute inset-x-3 top-3 flex items-center justify-between gap-3">
+                  <ProvenanceTag kind="live" reading className="bg-surface-0/70">
+                    Live
+                  </ProvenanceTag>
+                  {feed ? (
+                    <span className="rounded-sm bg-surface-0/70 px-2 py-[2px] type-readout-sm text-[12px] text-ink-muted">
+                      {rate(feed.fps)} fps{feed.delayMs === null ? '' : `, ${milliseconds(feed.delayMs)}`}
+                    </span>
+                  ) : null}
+                </div>
+              </LiveFeed>
             ) : (
-              <div role="status" className="flex h-[clamp(160px,24vh,240px)] w-full flex-col items-center justify-center gap-1 rounded-md border border-dashed border-line-strong bg-surface-sunken p-4 text-center">
-                <p className="type-subheading">The camera on {device.label} is idle</p>
-                <p className="max-w-[420px] type-caption text-ink-muted">Start a check-in or a re-check on the phone. Its picture appears here the moment the camera starts.</p>
+              <div role="status" className="flex h-[clamp(160px,24vh,240px)] w-full flex-col items-center justify-center gap-1 rounded-lg border border-line bg-surface-0 p-4 text-center">
+                <p className="type-subheading text-ink">The camera on {device.label} is idle</p>
+                <p className="max-w-[420px] type-dense text-ink-muted">Start a check-in or a re-check on the phone. Its picture appears here the moment the camera starts.</p>
               </div>
             )}
             <PrivacyNote icon="video">{PRIVACY_CAPTURE}</PrivacyNote>
           </div>
-        </Panel>
+        </Section>
 
-        <div className="flex min-w-0 flex-col gap-5 empty:hidden max-xl:order-3">
+        <div className="flex min-w-0 flex-col empty:hidden max-xl:order-3">
           {followed.phase === 'searching' ? <StateMessage kind="loading" title={`Looking for a sitting on ${device.label}`} /> : null}
           {followed.error ? (
             <StateMessage kind="error" title="The sitting could not be loaded" onRetry={followed.retry}>
@@ -210,8 +215,8 @@ function Station({ device, serverOffsetMs, serverNow, picker }: StationProps) {
         </div>
       </div>
 
-      <div className="flex min-w-0 flex-col gap-5 max-xl:contents">
-        <Panel
+      <div className={side}>
+        <Section
           className="max-xl:order-2"
           heading={sitting ? (newPatient ? 'New patient' : 'Patient') : 'Intake'}
           aside={
@@ -223,9 +228,9 @@ function Station({ device, serverOffsetMs, serverNow, picker }: StationProps) {
           }
         >
           {patientRef === null ? (
-            <div className="flex flex-col gap-1">
-              <p className="type-subheading">Waiting for the next patient</p>
-              <p className="text-ink-muted">When a check-in starts on {device.label}, this form opens for their name, the reason for the visit and the rest of intake. Fill it in while the camera measures.</p>
+            <div className="flex max-w-[480px] flex-col gap-1">
+              <p className="type-label text-ink">Waiting for the next patient</p>
+              <p className="type-dense text-ink-muted">When a check-in starts on {device.label}, this form opens for their name, the reason for the visit and the rest of intake. Fill it in while the camera measures.</p>
             </div>
           ) : patient ? (
             <div className="flex flex-col gap-4">
@@ -242,14 +247,14 @@ function Station({ device, serverOffsetMs, serverNow, picker }: StationProps) {
               />
             </div>
           ) : record.error ? (
-            <StateMessage kind="error" title="The patient could not be loaded" onRetry={record.reload}>
+            <StateMessage kind="error" flush title="The patient could not be loaded" onRetry={record.reload}>
               {record.error.message}
             </StateMessage>
           ) : (
-            <StateMessage kind="loading" title="Opening the intake form" />
+            <StateMessage kind="loading" flush title="Opening the intake form" />
           )}
-        </Panel>
-        <div className="min-w-0 max-xl:order-4">{picker}</div>
+        </Section>
+        {picker}
       </div>
     </div>
   );

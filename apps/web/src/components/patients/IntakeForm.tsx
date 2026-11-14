@@ -3,7 +3,8 @@
 import { EARLIEST_DATE_OF_BIRTH, INTAKE_LIMITS, type Patient, type PatientSex, type UpdatePatientRequest } from '@triagecam/contracts';
 import { useCallback, useEffect, useId, useRef, useState, type FocusEvent } from 'react';
 
-import { Button, Field, PatientAvatar } from '@/components/ds';
+import { Button, Field, PatientAvatar, fieldLabel, fieldWell, fieldWellIdle } from '@/components/ds';
+import { segmentClass, segmentedWell } from '@/components/ui/Segmented';
 import { api, errorMessage } from '@/lib/api';
 import { clockTime } from '@/lib/format';
 import { cx } from '@/lib/cx';
@@ -200,7 +201,7 @@ export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoF
   return (
     <form className="flex flex-col gap-4" onSubmit={(event) => event.preventDefault()} noValidate>
       <div className="flex items-center gap-4">
-        <PatientAvatar patient={{ number, name: text('name') || null, photoUpdatedAt: patient.photoUpdatedAt }} size="xl" />
+        <PatientAvatar patient={{ number, name: text('name') || null, photoUpdatedAt: patient.photoUpdatedAt }} size="lg" />
         <div className="flex min-w-0 flex-col items-start gap-2">
           <p className="type-caption text-ink-muted">
             {patient.photoUpdatedAt
@@ -228,7 +229,7 @@ export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoF
             ) : null}
           </div>
           {photo.error ? (
-            <p role="alert" className="type-caption font-medium text-critical">
+            <p role="alert" className="type-caption text-urgent">
               {photo.error}
             </p>
           ) : null}
@@ -276,11 +277,11 @@ export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoF
           onFocus={onFocus}
           onBlur={onBlur}
         />
-        <div className="flex flex-col gap-1">
-          <span id={sexId} className="type-label">
+        <div className="flex flex-col gap-[6px]">
+          <span id={sexId} className={fieldLabel}>
             Sex
           </span>
-          <div role="radiogroup" aria-labelledby={sexId} className="inline-flex h-control-md items-stretch rounded-md border border-line-strong bg-surface-raised p-[2px]">
+          <div role="radiogroup" aria-labelledby={sexId} className={segmentedWell}>
             {SEXES.map((option) => {
               const on = sex === option.value;
               return (
@@ -291,10 +292,7 @@ export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoF
                   aria-checked={on}
                   // Picking the chosen one again clears it: the box may be left empty.
                   onClick={() => change('sex', on ? null : option.value, true)}
-                  className={cx(
-                    'cursor-pointer rounded-sm px-3 text-[15px] whitespace-nowrap transition-colors duration-[120ms] ease-out',
-                    on ? 'bg-signal-soft font-semibold text-ink' : 'text-ink-muted hover:text-ink',
-                  )}
+                  className={segmentClass(on)}
                 >
                   {option.label}
                 </button>
@@ -304,11 +302,11 @@ export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoF
         </div>
       </div>
 
-      <div className="flex flex-col gap-1">
-        <span id={painId} className="type-label">
+      <div className="flex flex-col gap-[6px]">
+        <span id={painId} className={fieldLabel}>
           Pain, 0 to 10
         </span>
-        <div role="radiogroup" aria-labelledby={painId} className="grid grid-cols-11 gap-[2px] rounded-md border border-line-strong bg-surface-raised p-[2px]">
+        <div role="radiogroup" aria-labelledby={painId} className="grid grid-cols-11 gap-[2px] rounded-md border border-line bg-surface-0 p-[2px]">
           {PAIN.map((score) => {
             const on = pain === score;
             return (
@@ -320,8 +318,8 @@ export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoF
                 aria-label={`${score} out of 10`}
                 onClick={() => change('painScore', on ? null : score, true)}
                 className={cx(
-                  'h-[30px] cursor-pointer rounded-sm font-mono text-[14px] tabular-nums transition-colors duration-[120ms] ease-out',
-                  on ? 'bg-signal-soft font-semibold text-ink' : 'text-ink-muted hover:bg-surface-sunken hover:text-ink',
+                  'h-[26px] cursor-pointer rounded-sm type-readout-sm transition-colors',
+                  on ? 'bg-surface-3 text-ink shadow-[inset_0_1px_0_var(--line-strong)]' : 'text-ink-muted hover:bg-surface-2 hover:text-ink',
                 )}
               >
                 {score}
@@ -329,7 +327,7 @@ export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoF
             );
           })}
         </div>
-        <p className="type-caption text-ink-muted">As the patient reports it. 0 is none, 10 the worst imaginable.</p>
+        <p className="type-caption text-ink-faint">As the patient reports it. 0 is none, 10 the worst imaginable.</p>
       </div>
 
       <Field
@@ -345,8 +343,8 @@ export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoF
         onBlur={onBlur}
       />
 
-      <div className="flex flex-col gap-1">
-        <label htmlFor={notesId} className="type-label">
+      <div className="flex flex-col gap-[6px]">
+        <label htmlFor={notesId} className={fieldLabel}>
           Notes
         </label>
         <textarea
@@ -359,12 +357,17 @@ export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoF
           name="notes"
           onFocus={onFocus}
           onBlur={onBlur}
-          className="min-h-[84px] w-full resize-y rounded-md border border-line-strong bg-surface-raised px-3 py-2 font-sans text-[15px] leading-[22px] text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+          className={cx(
+            'min-h-[72px] w-full resize-y px-[10px] py-[6px] type-dense text-ink placeholder:text-ink-faint focus-visible:outline-none',
+            'focus:border-signal focus:shadow-[0_0_0_3px_var(--signal-soft)]',
+            fieldWell,
+            fieldWellIdle,
+          )}
         />
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-line pt-4">
-        <p role="status" className={cx('type-caption', save.kind === 'error' ? 'font-medium text-critical' : 'text-ink-muted')}>
+        <p role="status" className={cx('type-caption tabular-nums', save.kind === 'error' ? 'text-urgent' : 'text-ink-faint')}>
           {save.kind === 'error'
             ? `Not saved: ${save.message}`
             : save.kind === 'saving'
@@ -375,7 +378,7 @@ export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoF
         </p>
         {complete ? (
           <div className="flex items-center gap-2">
-            <span className="type-caption text-ink-muted">Intake completed at {clockTime(patient.intakeCompletedAt as string)}</span>
+            <span className="type-caption text-ink-faint tabular-nums">Intake completed at {clockTime(patient.intakeCompletedAt as string)}</span>
             <Button variant="quiet" disabled={completing} onClick={() => void setComplete(false)}>
               Reopen
             </Button>
@@ -383,7 +386,7 @@ export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoF
         ) : (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {named ? null : (
-              <span id={nameHintId} className="type-caption text-ink-muted">
+              <span id={nameHintId} className="type-caption text-ink-faint">
                 Enter the patient&apos;s name to complete intake
               </span>
             )}

@@ -15,13 +15,13 @@ export function LiveStatus({ updatedAt }: { updatedAt: number | null }) {
 
   if (status === 'reconnecting') {
     return (
-      <p role="status" className="type-caption font-medium text-flag">
+      <p role="status" className="type-caption text-watch">
         Reconnecting. Showing data from {clockTime(updatedAt)}.
       </p>
     );
   }
   return (
-    <p className="type-caption text-ink-muted tabular-nums">
+    <p className="type-caption text-ink-faint tabular-nums">
       {status === 'connecting' ? 'Connecting to live updates. ' : ''}Last updated {secondsAgo(updatedAt, now)}
     </p>
   );

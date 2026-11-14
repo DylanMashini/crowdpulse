@@ -40,23 +40,23 @@ export function ConfirmDialog({ open, title, children, confirmLabel, cancelLabel
         event.preventDefault();
         if (!busy) onCancel();
       }}
-      className="m-auto w-[min(520px,calc(100vw-32px))] rounded-lg border border-line bg-surface-raised p-0 text-ink shadow-overlay backdrop:bg-scrim"
+      className="m-auto w-[min(440px,calc(100vw-32px))] rounded-xl border border-line-strong bg-surface-3 p-0 text-ink shadow-overlay backdrop:bg-scrim"
     >
-      <div className="flex flex-col gap-3 p-5">
+      <div className="flex flex-col p-5">
         <h2 id={titleId} className="type-heading">
           {title}
         </h2>
-        <div className="rounded-md bg-critical-soft p-3 text-ink">{children}</div>
+        <div className="mt-2 type-dense text-ink-muted">{children}</div>
         {error ? (
-          <p role="alert" className="text-[13px] leading-[18px] font-medium text-critical">
+          <p role="alert" className="mt-3 type-caption text-urgent">
             {error}
           </p>
         ) : null}
-        <div className="mt-2 flex flex-wrap justify-end gap-2">
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
           <Button autoFocus onClick={onCancel} disabled={busy}>
             {cancelLabel}
           </Button>
-          <Button variant="danger" icon="trash" onClick={onConfirm} disabled={busy}>
+          <Button variant="danger" onClick={onConfirm} disabled={busy}>
             {busy && busyLabel ? busyLabel : confirmLabel}
           </Button>
         </div>

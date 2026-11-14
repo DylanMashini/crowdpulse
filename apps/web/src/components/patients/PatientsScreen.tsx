@@ -5,13 +5,14 @@ import Link from 'next/link';
 import { useState } from 'react';
 
 import { useLive, useLiveEvents } from '@/components/app/live';
-import { Button, PatientIdentity, StatusBadge, TableFrame, tableCell, tableHeadCell } from '@/components/ds';
+import { Button, PatientIdentity, StatusBadge, TableFrame, tableCell, tableHeadCell, tableRow } from '@/components/ds';
 import { LiveStatus } from '@/components/ui/LiveStatus';
 import { PageHeader } from '@/components/ui/Panel';
 import { Segmented } from '@/components/ui/Segmented';
 import { StateMessage } from '@/components/ui/StateMessage';
 import { api, errorMessage, type PatientStatusFilter } from '@/lib/api';
 import { ageText, dayTime } from '@/lib/format';
+import { rowSeverity } from '@/lib/mapping';
 import { useResource } from '@/lib/use-resource';
 
 const EMPTY: Record<PatientStatusFilter, { title: string; text: string }> = {
@@ -59,7 +60,7 @@ export function PatientsScreen() {
 
   return (
     <>
-      <PageHeader title="Patients" description="Everyone checked in, newest first.">
+      <PageHeader title="Patients" description="Everyone checked in, newest first">
         <LiveStatus updatedAt={first.updatedAt} />
         <Segmented
           label="Status"
@@ -87,7 +88,7 @@ export function PatientsScreen() {
 
       {items.length > 0 ? (
         <TableFrame label="Patients">
-          <table className="w-full border-collapse text-[15px]">
+          <table className="w-full border-collapse">
             <thead>
               <tr>
                 <th scope="col" className={tableHeadCell}>
@@ -99,10 +100,10 @@ export function PatientsScreen() {
                 <th scope="col" className={tableHeadCell}>
                   Status
                 </th>
-                <th scope="col" className={tableHeadCell}>
+                <th scope="col" className={`${tableHeadCell} text-right`}>
                   Checked in
                 </th>
-                <th scope="col" className={tableHeadCell}>
+                <th scope="col" className={`${tableHeadCell} text-right`}>
                   Discharged
                 </th>
               </tr>
@@ -111,35 +112,37 @@ export function PatientsScreen() {
               {items.map((patient) => {
                 const item = states.get(patient.number);
                 return (
-                  <tr key={patient.number} className="relative hover:[&>td]:bg-surface">
-                    <td className={tableCell}>
+                  <tr key={patient.number} className={`relative ${tableRow}`}>
+                    <td className={`${tableCell} max-w-0 min-w-[220px]`}>
                       <Link
                         href={`/patients/${patient.number}`}
                         aria-label={`Open ${patientLabel(patient)}`}
                         className="flex rounded-sm after:absolute after:inset-0 after:content-['']"
                       >
-                        <PatientIdentity patient={patient} size="sm" detail={ageText(patient.dateOfBirth)} />
+                        <PatientIdentity patient={patient} size="sm" detail={ageText(patient.dateOfBirth)} quiet={patient.status === 'discharged'} />
                       </Link>
                     </td>
-                    <td className={`${tableCell} max-w-[360px]`}>
+                    <td className={`${tableCell} w-[36%] max-w-0`}>
                       {patient.reasonForVisit ? (
-                        <span className="line-clamp-2">{patient.reasonForVisit}</span>
+                        <span className="block truncate" title={patient.reasonForVisit}>
+                          {patient.reasonForVisit}
+                        </span>
                       ) : (
-                        <span className="text-ink-muted">{patient.intakeCompletedAt ? 'Not given' : 'Intake not finished'}</span>
+                        <span className="text-ink-faint">{patient.intakeCompletedAt ? 'Not given' : 'Intake not finished'}</span>
                       )}
                     </td>
                     <td className={tableCell}>
                       {patient.status === 'discharged' ? (
-                        <span className="text-ink-muted">Discharged</span>
+                        <span className="text-ink-faint">Discharged</span>
                       ) : item ? (
-                        <StatusBadge state={item.state} minutes={item.minutesSinceObserved} />
+                        <StatusBadge state={item.state} severity={rowSeverity(item)} minutes={item.minutesSinceObserved} />
                       ) : (
                         'Waiting'
                       )}
                     </td>
-                    <td className={`${tableCell} whitespace-nowrap tabular-nums`}>{dayTime(patient.createdAt)}</td>
-                    <td className={`${tableCell} whitespace-nowrap tabular-nums`}>
-                      {patient.dischargedAt ? dayTime(patient.dischargedAt) : <span className="text-ink-muted">Still waiting</span>}
+                    <td className={`${tableCell} text-right whitespace-nowrap tabular-nums`}>{dayTime(patient.createdAt)}</td>
+                    <td className={`${tableCell} text-right whitespace-nowrap tabular-nums`}>
+                      {patient.dischargedAt ? dayTime(patient.dischargedAt) : <span className="text-ink-faint">Still waiting</span>}
                     </td>
                   </tr>
                 );
@@ -150,12 +153,12 @@ export function PatientsScreen() {
       ) : null}
 
       {nextCursor ? (
-        <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 p-5">
           <Button onClick={loadMore} disabled={loadingMore.busy}>
             {loadingMore.busy ? 'Loading' : 'Show earlier patients'}
           </Button>
           {loadingMore.error ? (
-            <p role="alert" className="font-medium text-critical">
+            <p role="alert" className="type-caption text-urgent">
               {loadingMore.error}
             </p>
           ) : null}

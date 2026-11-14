@@ -5,16 +5,7 @@ import { ScoreChip } from './ScoreChip';
 import { StatusBadge } from './StatusBadge';
 import { PatientIdentity, intakeSummary } from './PatientIdentity';
 import { TrendValue } from './TrendValue';
-import type { TileState, WorklistRow } from './types';
-
-// The state is carried by the outline: 2px in the state's colour, or dashed for no reading.
-// The padding gives back the extra pixel so every tile's content sits on the same lines.
-const FRAMES: Record<TileState, string> = {
-  observed: 'border border-line p-4',
-  flag: 'border-2 border-flag p-[15px]',
-  overdue: 'border-2 border-ink p-[15px]',
-  'no-reading': 'border border-dashed border-line-strong p-4',
-};
+import type { WorklistRow } from './types';
 
 export interface PatientTileProps extends WorklistRow {
   /** How many of the seven NEWS2 parameters the score rests on. */
@@ -22,33 +13,45 @@ export interface PatientTileProps extends WorklistRow {
 }
 
 /** One waiting patient for the wall view: who they are, then how they are doing. */
-export function PatientTile({ patient, reason, ageYears, state, minutes, pulse, breathing, score, source, sourceLabel, measured }: PatientTileProps) {
+export function PatientTile({ patient, reason, ageYears, state, severity, minutes, pulse, breathing, score, source, sourceLabel, measured }: PatientTileProps) {
+  const urgent = severity === 'urgent';
   return (
-    <article className={cx('flex h-full w-full flex-col items-start gap-3 rounded-lg bg-surface-raised', FRAMES[state])}>
-      {/* The name has the tile's full width; the reason for the visit gets two lines of its own. */}
+    <article
+      className={cx(
+        'flex h-full w-full flex-col gap-4 rounded-lg border p-4 transition-colors',
+        // Only an urgent tile is tinted. No reading keeps its dashed outline; the chip says the rest.
+        urgent
+          ? 'border-urgent-line bg-urgent-soft group-hover:bg-urgent-soft-hover'
+          : cx('bg-surface-2 group-hover:bg-surface-3', state === 'no-reading' ? 'border-dashed border-line-strong' : 'border-line'),
+      )}
+    >
       <header className="flex w-full min-w-0 flex-col gap-2">
-        <PatientIdentity patient={patient} size="md" detail={intakeSummary(ageYears, null)} />
-        {reason?.trim() ? <p className="line-clamp-2 text-[15px] leading-[20px] break-words">{reason}</p> : null}
+        <PatientIdentity patient={patient} size="md" detail={intakeSummary(ageYears, null)} bright={urgent} />
+        {reason?.trim() ? <p className="line-clamp-2 type-dense break-words text-ink-muted">{reason}</p> : null}
       </header>
-      <div className="flex w-full flex-wrap items-center justify-between gap-2">
-        <StatusBadge state={state} minutes={minutes} />
-        {source ? <ProvenanceTag kind={source}>{sourceLabel}</ProvenanceTag> : null}
-      </div>
-      <dl className="grid w-full grid-cols-1 gap-2">
+      <dl className="grid w-full grid-cols-2 gap-4">
         <div>
-          <dt className="text-[13px] leading-[16px] text-ink-muted">Pulse</dt>
-          <dd>
-            <TrendValue trend={pulse} unit="bpm" notMeasuredYet={!source} />
+          <dt className="type-caption text-ink-muted">Pulse</dt>
+          <dd className="mt-1">
+            <TrendValue trend={pulse} unit="bpm" notMeasuredYet={!source} severity={severity} />
           </dd>
         </div>
         <div>
-          <dt className="text-[13px] leading-[16px] text-ink-muted">Breathing</dt>
-          <dd>
-            <TrendValue trend={breathing} unit="/min" notMeasuredYet={!source} />
+          <dt className="type-caption text-ink-muted">Breathing</dt>
+          <dd className="mt-1">
+            <TrendValue trend={breathing} unit="/min" notMeasuredYet={!source} severity={severity} />
           </dd>
         </div>
       </dl>
-      {score != null ? <ScoreChip score={score} measured={measured} /> : null}
+      <footer className="mt-auto flex w-full flex-wrap items-center gap-x-3 gap-y-2">
+        <StatusBadge state={state} severity={severity} minutes={minutes} />
+        {score != null ? <ScoreChip score={score} measured={measured} /> : null}
+        {source ? (
+          <ProvenanceTag kind={source} plain className="ml-auto">
+            {sourceLabel}
+          </ProvenanceTag>
+        ) : null}
+      </footer>
     </article>
   );
 }

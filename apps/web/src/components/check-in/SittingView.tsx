@@ -4,8 +4,8 @@ import type { Estimate, PatientRef, Sitting, StoredReading, SummaryValue } from 
 import Link from 'next/link';
 import { useMemo } from 'react';
 
-import { PatientIdentity, QualityMeter, Readout, SittingChart, buttonClass, type IconName, type ReadoutState } from '@/components/ds';
-import { Panel } from '@/components/ui/Panel';
+import { LiveTrace, PatientIdentity, QualityMeter, Readout, SittingChart, buttonClass, type IconName, type ReadoutState } from '@/components/ds';
+import { Section } from '@/components/ui/Panel';
 import { clockTime, rate, reasonText, seconds, secondsAgo } from '@/lib/format';
 import { provenanceOf } from '@/lib/mapping';
 
@@ -74,11 +74,23 @@ function summaryContent(value: SummaryValue, endedAt: string): ReadoutContent {
     : { state: 'valid', value: rate(value.value), age: `Median of the sitting that ended at ${clockTime(endedAt)}`, coverage: value.coverage };
 }
 
-function Vital({ label, icon, unit, content, tag }: { label: string; icon: IconName; unit: string; content: ReadoutContent; tag: ReturnType<typeof provenanceOf> }) {
+interface VitalProps {
+  label: string;
+  icon: IconName;
+  unit: string;
+  kind: 'pulse' | 'breath';
+  content: ReadoutContent;
+  tag: ReturnType<typeof provenanceOf>;
+  /** The sitting is running: the numerals take the accent and the trace draws at the reading's rate. */
+  live: boolean;
+}
+
+function Vital({ label, icon, unit, kind, content, tag, live }: VitalProps) {
+  const reading = live && content.state === 'valid' && content.value !== undefined;
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-w-0 flex-col gap-3 p-4">
       <Readout
-        size="xl"
+        size="lg"
         label={label}
         icon={icon}
         unit={unit}
@@ -88,7 +100,10 @@ function Vital({ label, icon, unit, content, tag }: { label: string; icon: IconN
         reason={content.reason}
         tag={tag.kind}
         tagLabel={tag.label}
-      />
+        live={live}
+      >
+        {live ? <LiveTrace kind={kind} rate={reading ? Number(content.value) : null} className="mt-3" /> : null}
+      </Readout>
       <QualityMeter value={content.coverage} label="Coverage, share of seconds with a reading" />
     </div>
   );
@@ -130,15 +145,15 @@ export function SittingView({ sitting, patient, readings, serverNow }: SittingVi
   const summary = sitting.summary;
 
   return (
-    <div className="flex flex-col gap-5">
-      <Panel>
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-x-5 gap-y-2">
+    <>
+      <Section>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-x-5 gap-y-2">
           <PatientIdentity
             patient={patient}
             size="md"
             detail={
               <span className="tabular-nums">
-                {sitting.kind === 'check_in' ? 'Check-in' : 'Re-check'}, {running ? `running for ${seconds(elapsed)}` : `${seconds(elapsed)}, finished at ${clockTime(endMs)}`}
+                {sitting.kind === 'check_in' ? 'check-in' : 're-check'}, {running ? `running for ${seconds(elapsed)}` : `${seconds(elapsed)}, finished at ${clockTime(endMs)}`}
               </span>
             }
           />
@@ -147,13 +162,15 @@ export function SittingView({ sitting, patient, readings, serverNow }: SittingVi
           </Link>
         </div>
 
-        <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2">
-          <Vital label="Heart rate" icon="pulse" unit="bpm" content={heart} tag={tag} />
-          <Vital label="Breathing rate" icon="breath" unit="breaths per min" content={breathing} tag={tag} />
+        {/* The two readings share one well, ruled down the middle: an instrument, not two cards. */}
+        <div className="grid rounded-lg border border-line bg-surface-0 max-sm:divide-y sm:grid-cols-2 sm:divide-x divide-line">
+          <Vital label="Heart rate" icon="pulse" unit="bpm" kind="pulse" content={heart} tag={tag} live={running} />
+          <Vital label="Breathing rate" icon="breath" unit="breaths per min" kind="breath" content={breathing} tag={tag} live={running} />
         </div>
+        {running ? <p className="mt-2 type-caption text-ink-faint">Each trace is drawn at the rate being read, not from the camera&apos;s raw signal.</p> : null}
 
         {summary ? (
-          <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-line pt-4 lg:grid-cols-4">
+          <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 lg:grid-cols-4">
             <Readout size="md" label="RMSSD" tag="experimental" unit="ms" value={summary.rmssd.value == null ? undefined : rate(summary.rmssd.value)} state={summary.rmssd.value == null ? 'none' : 'valid'} reason="Too few clean beat intervals" />
             <Readout size="md" label="SDNN" tag="experimental" unit="ms" value={summary.sdnn.value == null ? undefined : rate(summary.sdnn.value)} state={summary.sdnn.value == null ? 'none' : 'valid'} reason="Too few clean beat intervals" />
             <Readout
@@ -167,9 +184,11 @@ export function SittingView({ sitting, patient, readings, serverNow }: SittingVi
             <Readout size="md" label="Longest dropout" unit="s" value={rate(summary.longestDropoutSeconds)} />
           </div>
         ) : null}
-      </Panel>
+      </Section>
 
-      <SittingChart values={heartRates} minSeconds={60} />
-    </div>
+      <Section>
+        <SittingChart values={heartRates} minSeconds={60} />
+      </Section>
+    </>
   );
 }

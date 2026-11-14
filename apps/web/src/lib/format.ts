@@ -143,6 +143,11 @@ export function ruleText(rule: FlagRule): string {
   return RULES[rule];
 }
 
+/** The rules one alert tripped, as one phrase: "Partial score rose from check-in, moved from the check-in baseline". */
+export function rulesText(rules: readonly FlagRule[]): string {
+  return rules.map((rule, index) => (index === 0 ? RULES[rule] : RULES[rule].charAt(0).toLowerCase() + RULES[rule].slice(1))).join(', ');
+}
+
 /** Whole years since a YYYY-MM-DD date of birth, in the browser's zone. Null when it is not known. */
 export function ageInYears(dateOfBirth: string | null, now = new Date()): number | null {
   if (!dateOfBirth) return null;

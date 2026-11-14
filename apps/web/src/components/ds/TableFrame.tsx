@@ -2,11 +2,15 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
-export const tableHeadCell = 'bg-surface-sunken px-2 py-2 text-left type-label whitespace-nowrap text-ink-muted first:pl-3 last:pr-3';
-export const tableCell = 'border-t border-line px-2 py-3 align-middle first:pl-3 last:pr-3';
-const tableFrame = 'w-full overflow-x-auto rounded-lg border border-line bg-surface-raised';
+// No outline and no header fill: the table is ruled with hairlines and sits straight on the page,
+// running to its edges. The first and last cells carry the page gutter.
+export const tableHeadCell = 'border-b border-line px-[10px] py-2 text-left type-caption font-normal whitespace-nowrap text-ink-faint first:pl-5 last:pr-5';
+export const tableCell = 'h-row border-b border-line px-[10px] align-middle type-dense text-ink-muted first:pl-5 last:pr-5';
+/** A row that can be opened: a surface step under the pointer, in 120ms. */
+export const tableRow = 'transition-colors hover:bg-surface-2';
+const tableFrame = 'w-full overflow-x-auto';
 
-const edgeFade = 'pointer-events-none absolute inset-y-px w-5 from-surface-raised to-transparent';
+const edgeFade = 'pointer-events-none absolute inset-y-0 w-6 from-surface-1 to-transparent';
 
 export interface TableFrameProps {
   /** What the table holds, for the name of the scrolling region: "Waiting-room worklist". */
@@ -15,9 +19,9 @@ export interface TableFrameProps {
 }
 
 /**
- * The card around a table. A table wider than the card scrolls sideways inside it; when it does,
- * the cut edge fades, a line under the card says so, and the card takes keyboard focus so the
- * arrow keys scroll it. Nothing is added while every column fits.
+ * The region around a table. A table wider than the page scrolls sideways inside it; when it does,
+ * the cut edge fades, a line under it says so, and the region takes keyboard focus so the arrow
+ * keys scroll it. Nothing is added while every column fits.
  */
 export function TableFrame({ label, children }: TableFrameProps) {
   const frame = useRef<HTMLDivElement>(null);
@@ -55,10 +59,10 @@ export function TableFrame({ label, children }: TableFrameProps) {
         >
           {children}
         </div>
-        {hidden.left ? <span aria-hidden className={`${edgeFade} left-px rounded-l-lg bg-linear-to-r`} /> : null}
-        {hidden.right ? <span aria-hidden className={`${edgeFade} right-px rounded-r-lg bg-linear-to-l`} /> : null}
+        {hidden.left ? <span aria-hidden className={`${edgeFade} left-0 bg-linear-to-r`} /> : null}
+        {hidden.right ? <span aria-hidden className={`${edgeFade} right-0 bg-linear-to-l`} /> : null}
       </div>
-      {scrolls ? <p className="mt-1 type-caption text-ink-muted">Scroll sideways for more columns</p> : null}
+      {scrolls ? <p className="px-5 pt-2 type-caption text-ink-faint">Scroll sideways for more columns</p> : null}
     </div>
   );
 }
