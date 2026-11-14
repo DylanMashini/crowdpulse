@@ -12,11 +12,17 @@ struct BreathingTracker {
   /// Roll-off outside the breathing band, in Hz.
   static let transitionHz = 0.03
   static let spectrumSize = 4096
+  /// Slowest frequency the drift check looks at, as a multiple of the window's frequency
+  /// resolution. Below two resolutions a Hann-windowed spectrum cannot tell a component
+  /// from the constant term.
+  static let slowestResolvedResolutions = 2.0
 
   private var times: [Double] = []
   private var positions: [Double] = []
   private var motion: [Bool] = []
   private var position = 0.0
+  /// True when the frame before this one was a fast move.
+  private var afterFastMove = false
   private var warmUpReason = EstimateReason.warmingUp
   private var gate: AgreementGate
   private var acceptedSinceReset = false
@@ -42,8 +48,13 @@ struct BreathingTracker {
     }
     guard let displacement = frame.chestMotion, let interval else { return }
     if !times.isEmpty, !isTracking(at: frame.t) { restart() }
-    // A fast move is the body shifting, not a breath: it is counted but not integrated.
-    let inMotion = abs(displacement) / interval > configuration.motionChestSpeed
+    // A fast move is the body shifting, not a breath: it is counted but not integrated. The
+    // frame after it is left out with it. A tracking glitch moves the chest one way and
+    // straight back, and leaving out only the first half would keep the second as a step the
+    // size of the glitch, which is a third of a breath or more.
+    let fast = abs(displacement) / interval > configuration.motionChestSpeed
+    let inMotion = fast || afterFastMove
+    afterFastMove = fast
     if !times.isEmpty, !inMotion { position += displacement }
     times.append(frame.t)
     positions.append(position)
@@ -62,6 +73,7 @@ struct BreathingTracker {
     positions.removeAll()
     motion.removeAll()
     position = 0
+    afterFastMove = false
     acceptedSinceReset = false
     gate.reset()
   }
@@ -98,7 +110,7 @@ struct BreathingTracker {
     }
 
     switch analyse(range) {
-    case .flat, .flicker:
+    case .flat, .flicker, .drift:
       gate.push(nil)
       return .withheld(.none, .lowQuality)
     case .bandEdge(let quality):
@@ -125,19 +137,32 @@ struct BreathingTracker {
     let uniform = DSP.resample(
       times: times, values: positions, range: range,
       start: end - Double(count - 1) / rate, rate: rate, count: count)
+    let detrended = DSP.detrend(uniform)
     let filtered = fourier.bandPass(
-      DSP.detrend(uniform), rate: rate, band: configuration.breathingBandHz,
+      detrended, rate: rate, band: configuration.breathingBandHz,
       transitionHz: BreathingTracker.transitionHz)
     guard DSP.rootMeanSquare(filtered) > 0 else { return .flat }
-    let windowed = vDSP.multiply(filtered, DSP.hann(count))
+    let window = DSP.hann(count)
     let size = max(BreathingTracker.spectrumSize, DSP.powerOfTwo(atLeast: count))
-    let spectrum = PowerSpectrum(fourier.forward(windowed, size: size, rate: rate))
+    let spectrum = PowerSpectrum(fourier.forward(vDSP.multiply(filtered, window), size: size, rate: rate))
     let resolution = rate / Double(count)
-    return spectrum.strongestPeak(
+    let halfWidthHz = configuration.breathingQualityHalfWidthResolutions * resolution
+    let outcome = spectrum.strongestPeak(
       PeakSearch(
         rangeHz: configuration.breathingBandHz,
         edgeMarginHz: configuration.breathingBandEdgeMarginPerMin / 60,
         tieRatio: configuration.harmonicTieRatio,
-        qualityHalfWidthHz: configuration.breathingQualityHalfWidthResolutions * resolution))
+        qualityHalfWidthHz: halfWidthHz))
+    guard case .peak(let hz, _) = outcome else { return outcome }
+
+    // The same chest position with nothing filtered away. It is only ever used to overrule a
+    // peak, never to report one. A chest that drifts, or is shifted in steps, has more power
+    // the slower the frequency, all the way down, and the band-pass cuts a peak out of that
+    // slope at the lower edge of the band. A breath is a peak of its own: nothing slower than
+    // it is stronger than it.
+    let open = PowerSpectrum(fourier.forward(vDSP.multiply(detrended, window), size: size, rate: rate))
+    let slowest = BreathingTracker.slowestResolvedResolutions * resolution
+    if open.hasStrongerComponent(below: hz, from: slowest, clearanceHz: halfWidthHz) { return .drift }
+    return outcome
   }
 }

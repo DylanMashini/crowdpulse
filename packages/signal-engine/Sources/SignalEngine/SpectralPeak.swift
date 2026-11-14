@@ -46,11 +46,14 @@ enum PeakOutcome: Equatable {
   /// The strongest peak is where lamp flicker would appear at this frame rate, so there is
   /// no candidate that can be trusted.
   case flicker
+  /// The peak was cut by the band-pass out of a spectrum that keeps rising below it: drift,
+  /// not a rhythm.
+  case drift
 
   var quality: Double {
     switch self {
     case .peak(_, let quality), .bandEdge(let quality): return quality
-    case .flat, .flicker: return 0
+    case .flat, .flicker, .drift: return 0
     }
   }
 }
@@ -104,6 +107,16 @@ extension PowerSpectrum {
     let high = min(power.count - 1, Int((band.upperBound / binHz).rounded(.down)))
     guard low <= high, let noise = DSP.median(Array(power[low...high])) else { return false }
     return power[fundamental] >= floor * power[harmonic] && power[fundamental] >= noiseRatio * noise
+  }
+
+  /// Whether anything from `from` up to `clearanceHz` short of `frequency` is at least as
+  /// strong as the strongest bin within `clearanceHz` of `frequency`.
+  func hasStrongerComponent(below frequency: Double, from: Double, clearanceHz: Double) -> Bool {
+    guard let peak = strongestBin(near: frequency, toleranceHz: clearanceHz) else { return false }
+    let low = max(1, Int((from / binHz).rounded(.up)))
+    let high = min(power.count - 1, Int(((frequency - clearanceHz) / binHz).rounded(.down)))
+    guard low <= high, let slower = power[low...high].max() else { return false }
+    return slower >= power[peak]
   }
 
   private func strongestBin(near frequency: Double, toleranceHz: Double) -> Int? {
