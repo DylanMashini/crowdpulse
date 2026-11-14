@@ -1,4 +1,4 @@
-import type { RateDistribution } from "@triagecam/contracts";
+import { type Flag, type FlagRule, flagAlerts, type RateDistribution, type Statistics } from "@triagecam/contracts";
 
 export const mean = (values: number[]): number | null =>
   values.length === 0 ? null : values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -80,4 +80,36 @@ export function minutesBetweenObservations(
     if (counts(later)) gaps.push((later.endedAt.getTime() - earlier.endedAt.getTime()) / 60_000);
   }
   return gaps;
+}
+
+const MINUTE_MS = 60_000;
+
+/**
+ * How flags were handled, counted the way the worklist, the patient page and the nurse app
+ * count them: in alerts (`flagAlerts`). One deterioration that trips both trend rules is one
+ * raised and, once a nurse has acknowledged it, one acknowledged. `byRule` alone counts single
+ * flags, because it reports which rules fire.
+ *
+ * `raised` are the flags opened in the range, `openNow` every flag that is open.
+ */
+export function flagStatistics(raised: Flag[], openNow: Flag[]): Statistics["flags"] {
+  const byRule: Record<FlagRule, number> = { score_rise: 0, baseline_shift: 0, overdue: 0 };
+  for (const flag of raised) byRule[flag.rule] += 1;
+
+  const alerts = flagAlerts(raised);
+  // An alert was acknowledged when someone acknowledged any of its flags: one acknowledgement
+  // covers the alert, and a flag that had closed by then has nothing left to acknowledge.
+  const minutesToAcknowledge = alerts.flatMap((alert) => {
+    const times = alert.flags.flatMap((flag) => (flag.acknowledgedAt === null ? [] : [Date.parse(flag.acknowledgedAt)]));
+    return times.length === 0 ? [] : [Math.max(0, Math.min(...times) - Date.parse(alert.lead.openedAt)) / MINUTE_MS];
+  });
+  const open = flagAlerts(openNow);
+  return {
+    raised: alerts.length,
+    byRule,
+    acknowledged: minutesToAcknowledge.length,
+    medianMinutesToAcknowledge: median(minutesToAcknowledge),
+    openNow: open.length,
+    unacknowledgedNow: open.filter((alert) => alert.waiting.length > 0).length,
+  };
 }

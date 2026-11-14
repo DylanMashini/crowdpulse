@@ -1,13 +1,15 @@
-import type { FlagRule, PatientStatistics, Statistics, TileState } from "@triagecam/contracts";
-import { and, asc, gte, inArray, isNull, lt, ne, or } from "drizzle-orm";
+import { flagAlerts, type PatientStatistics, type Statistics, type TileState } from "@triagecam/contracts";
+import { and, asc, eq, gte, inArray, isNull, lt, ne, or } from "drizzle-orm";
 
 import { db, schema } from "../db/client.ts";
+import { flagsToWire } from "./flags.ts";
 import { hasSummary, iso, isoOrNull, type SittingRow, toPatientRef } from "./serialize.ts";
 import { getSettings } from "./settings.ts";
 import {
   BREATHING_RATE_BINS,
   HEART_RATE_BINS,
   distribution,
+  flagStatistics,
   highest,
   mean,
   median,
@@ -44,21 +46,26 @@ export async function statistics(range: { from?: string; to?: string }): Promise
 
   // First, so the overdue flags are up to date before any flag is counted.
   const histories = await syncWaitingPatients({ now });
-  const [patients, flags, openFlags, settings] = await Promise.all([
+  const flagsWithPatient = () =>
+    db
+      .select({ flag: schema.flags, patient: schema.patients })
+      .from(schema.flags)
+      .innerJoin(schema.patients, eq(schema.patients.id, schema.flags.patientId));
+  const [patients, raisedRows, openRows, settings] = await Promise.all([
     // Everyone who was in the waiting room at some moment of the range.
     db
       .select()
       .from(schema.patients)
       .where(and(lt(schema.patients.createdAt, to), or(isNull(schema.patients.dischargedAt), gte(schema.patients.dischargedAt, from))))
       .orderBy(asc(schema.patients.createdAt)),
-    db.select().from(schema.flags).where(and(gte(schema.flags.openedAt, from), lt(schema.flags.openedAt, to))),
-    db.select({ id: schema.flags.id }).from(schema.flags).where(isNull(schema.flags.closedAt)),
+    flagsWithPatient().where(and(gte(schema.flags.openedAt, from), lt(schema.flags.openedAt, to))),
+    flagsWithPatient().where(isNull(schema.flags.closedAt)),
     getSettings(),
   ]);
 
   const patientIds = patients.map((patient) => patient.id);
-  const flagIds = [...new Set([...flags, ...openFlags].map((flag) => flag.id))];
-  const [sittings, acknowledgements] = await Promise.all([
+  // As the API sends them, so they are grouped into alerts exactly as every screen groups them.
+  const [sittings, raised, openNow] = await Promise.all([
     patientIds.length === 0
       ? []
       : db
@@ -66,25 +73,9 @@ export async function statistics(range: { from?: string; to?: string }): Promise
           .from(schema.sittings)
           .where(and(inArray(schema.sittings.patientId, patientIds), lt(schema.sittings.startedAt, to), ne(schema.sittings.source, "stub")))
           .orderBy(asc(schema.sittings.startedAt)),
-    flagIds.length === 0
-      ? []
-      : db
-          .select({ flagId: schema.acknowledgements.flagId, at: schema.acknowledgements.at })
-          .from(schema.acknowledgements)
-          .where(inArray(schema.acknowledgements.flagId, flagIds))
-          .orderBy(asc(schema.acknowledgements.at)),
+    flagsToWire(raisedRows),
+    flagsToWire(openRows),
   ]);
-
-  const firstAcknowledgement = new Map<string, Date>();
-  for (const row of acknowledgements) {
-    if (!firstAcknowledgement.has(row.flagId)) firstAcknowledgement.set(row.flagId, row.at);
-  }
-  const minutesToAcknowledge = flags.flatMap((flag) => {
-    const at = firstAcknowledgement.get(flag.id);
-    return at ? [minutesBetween(flag.openedAt, at)] : [];
-  });
-  const byRule: Record<FlagRule, number> = { score_rise: 0, baseline_shift: 0, overdue: 0 };
-  for (const flag of flags) byRule[flag.rule] += 1;
 
   const stateNow = new Map<string, TileState>(histories.map((history) => [history.patient.id, historyState(history)]));
   const byState: Record<TileState, number> = { observed: 0, flag: 0, overdue: 0, "no-reading": 0 };
@@ -129,7 +120,7 @@ export async function statistics(range: { from?: string; to?: string }): Promise
       breathing: snapshot.breathing,
       heartRates: observations.flatMap((sitting) => sitting.heartRate ?? []),
       score: snapshot.score,
-      flags: flags.filter((flag) => flag.patientId === patient.id).length,
+      flags: flagAlerts(raised.filter((flag) => flag.patientNumber === patient.number)).length,
     };
   });
 
@@ -175,14 +166,7 @@ export async function statistics(range: { from?: string; to?: string }): Promise
       finishedInRange.flatMap((sitting) => sitting.breathingRate ?? []),
       BREATHING_RATE_BINS,
     ),
-    flags: {
-      raised: flags.length,
-      byRule,
-      acknowledged: minutesToAcknowledge.length,
-      medianMinutesToAcknowledge: median(minutesToAcknowledge),
-      openNow: openFlags.length,
-      unacknowledgedNow: openFlags.filter((flag) => !firstAcknowledgement.has(flag.id)).length,
-    },
+    flags: flagStatistics(raised, openNow),
     perPatient: rows.sort((a, b) => waitingFirst(a) - waitingFirst(b) || b.minutesInRoom - a.minutesInRoom),
   };
 }

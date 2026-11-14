@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { BREATHING_RATE_BINS, HEART_RATE_BINS, distribution, mean, median, minutesBetweenObservations } from "./summary.ts";
+import type { Flag, FlagRule } from "@triagecam/contracts";
+
+import { BREATHING_RATE_BINS, HEART_RATE_BINS, distribution, flagStatistics, mean, median, minutesBetweenObservations } from "./summary.ts";
 
 test("mean and median of nothing are null, never 0", () => {
   assert.equal(mean([]), null);
@@ -83,4 +85,65 @@ test("gaps between consecutive observations, in minutes", () => {
     minutesBetweenObservations(observations, (later) => later.startedAt >= at(30)),
     [30],
   );
+});
+
+const flagAt = (minute: number) => `2026-11-14T10:${String(minute).padStart(2, "0")}:00.000Z`;
+let flagCount = 0;
+const flag = (rule: FlagRule, alertId: string, openedMinute: number, over: Partial<Flag> = {}): Flag => ({
+  id: `00000000-0000-4000-8000-${String((flagCount += 1)).padStart(12, "0")}`,
+  patientNumber: 14,
+  patient: { number: 14, name: "Maya Chen", photoUpdatedAt: null },
+  rule,
+  openedAt: flagAt(openedMinute),
+  closedAt: null,
+  detail: { pulse: { base: 82, now: 108 }, breathing: { base: 16, now: 24 }, scoreAtCheckIn: 0, scoreNow: 2, minutesSinceCheckIn: 26, minutesSinceObserved: null },
+  acknowledgedAt: null,
+  acknowledgedBy: null,
+  handoff: "Maya Chen: pulse 82 bpm at check-in, 108 bpm now.",
+  alertId,
+  ...over,
+});
+const acknowledged = (minute: number) => ({ acknowledgedAt: flagAt(minute), acknowledgedBy: "nurse@ward.test" });
+
+test("one deterioration acknowledged once is one flag raised and one acknowledged (BUG-9)", () => {
+  // Both trend rules tripped on one sitting; the nurse's one acknowledgement covered both flags.
+  const both = [flag("score_rise", "trend-14-1", 0, acknowledged(6)), flag("baseline_shift", "trend-14-1", 0, acknowledged(6))];
+  assert.deepEqual(flagStatistics(both, both), {
+    raised: 1,
+    byRule: { score_rise: 1, baseline_shift: 1, overdue: 0 },
+    acknowledged: 1,
+    medianMinutesToAcknowledge: 6,
+    openNow: 1,
+    unacknowledgedNow: 0,
+  });
+});
+
+test("flag statistics count alerts; only the by-rule numbers count single flags", () => {
+  const trend = [flag("score_rise", "trend-14-1", 0), flag("baseline_shift", "trend-14-1", 0)];
+  const later = flag("score_rise", "trend-15-2", 10, acknowledged(14));
+  const overdue = flag("overdue", "overdue-1", 20, { closedAt: flagAt(30) });
+  const result = flagStatistics([...trend, later, overdue], [...trend, later]);
+  assert.equal(result.raised, 3);
+  assert.deepEqual(result.byRule, { score_rise: 2, baseline_shift: 1, overdue: 1 });
+  assert.equal(result.acknowledged, 1);
+  assert.equal(result.medianMinutesToAcknowledge, 4);
+  assert.equal(result.openNow, 2);
+  assert.equal(result.unacknowledgedNow, 1);
+
+  // An alert one of whose flags closed before anyone looked still counts as acknowledged once
+  // the open one is, from when it opened to that first acknowledgement.
+  const half = [flag("score_rise", "trend-14-3", 0, { closedAt: flagAt(2) }), flag("baseline_shift", "trend-14-3", 0, acknowledged(8))];
+  const halfResult = flagStatistics(half, [half[1] as Flag]);
+  assert.equal(halfResult.acknowledged, 1);
+  assert.equal(halfResult.medianMinutesToAcknowledge, 8);
+  assert.equal(halfResult.unacknowledgedNow, 0);
+
+  assert.deepEqual(flagStatistics([], []), {
+    raised: 0,
+    byRule: { score_rise: 0, baseline_shift: 0, overdue: 0 },
+    acknowledged: 0,
+    medianMinutesToAcknowledge: null,
+    openNow: 0,
+    unacknowledgedNow: 0,
+  });
 });

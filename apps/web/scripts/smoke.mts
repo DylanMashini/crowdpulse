@@ -605,10 +605,13 @@ assert.equal(
 );
 assert.ok(stats.heartRate.bins.some((bin) => bin.from === 51) && stats.heartRate.bins.some((bin) => bin.to === 90));
 assert.ok(stats.flags.raised >= 2 && stats.flags.acknowledged >= 1 && stats.flags.medianMinutesToAcknowledge !== null);
-assert.equal(stats.flags.raised, stats.flags.byRule.score_rise + stats.flags.byRule.baseline_shift + stats.flags.byRule.overdue);
-assert.ok(stats.flags.unacknowledgedNow <= stats.flags.openNow);
+// Statistics count alerts, as every other screen does; only byRule counts one flag per rule.
+const tripped = stats.flags.byRule.score_rise + stats.flags.byRule.baseline_shift + stats.flags.byRule.overdue;
+assert.ok(stats.flags.raised < tripped, "a deterioration that tripped both trend rules is one flag raised");
+assert.ok(stats.flags.acknowledged <= stats.flags.raised && stats.flags.unacknowledgedNow <= stats.flags.openNow);
 const mine = stats.perPatient.find((row) => row.patientNumber === number);
 assert.equal(mine?.sittings, 6);
+assert.equal(mine?.flags, 1, "the patient's two trend flags from one sitting are one flag in statistics");
 assert.ok(mine && mine.observations < mine.sittings && mine.heartRates.length === mine.observations);
 assert.equal(mine?.patient.number, number);
 assert.equal(
