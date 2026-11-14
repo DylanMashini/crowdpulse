@@ -218,7 +218,7 @@ One line per polish made after the backlog ran out: what, where, why, commit, sc
 
 Newest first. One entry per iteration: date and time, item, commit range, what was verified, what was not, what is open.
 
-- 2026-11-14 07:05 EST. **Fix round 2: BUG-5, BUG-6, BUG-7.** Development agent (Fable 5.2). Not signed off: a QA agent re-checks, and the three bugs stay unticked until it has.
+- 2026-11-14 06:45 EST. **Fix round 2: BUG-5, BUG-6, BUG-7.** Development agent (Fable 5.2). Not signed off: a QA agent re-checks, and the three bugs stay unticked until it has.
   - **Commits:** `576d875..13b09c3` on `main` (11 commits), plus this entry. `c9436c9` before them records the QA re-check of fix round 1. Local only; there is no remote.
   - **The decision (BUG-4, BUG-5 and BUG-6 are one question): what is one deterioration.** The server answers it and puts the answer on the wire; nobody else groups flags.
     - An **alert** is the trend flags that one sitting raised for a patient (same patient, same `openedAt`, which is how `applyRules` opens them). A trend flag raised by a later sitting is another alert, because it carries numbers the nurse has not been shown. An overdue flag is always its own alert.
