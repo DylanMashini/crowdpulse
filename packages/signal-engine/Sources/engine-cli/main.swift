@@ -21,6 +21,7 @@ let usage = """
         --flicker <hz> <depth>           --face-loss <from> <to>
         --motion <from> <to>             --gap <from> <to>
         --drop <probability>             --beat-deviation <ms>
+        --harmonic <second harmonic of the pulse, relative to the fundamental; 0.2>
   """
 
 func fail(_ message: String) -> Never {
@@ -117,6 +118,7 @@ func synth(arguments: [String]) throws {
     case "--seed": sitting.seed = UInt64(number(flag))
     case "--noise": sitting.noise = number(flag)
     case "--amplitude": sitting.pulseAmplitude = number(flag)
+    case "--harmonic": sitting.pulseHarmonic = number(flag)
     case "--subject":
       guard let subject = options.next().flatMap(SyntheticSitting.Subject.init(rawValue:)) else {
         fail("--subject is person, wall or noise")
