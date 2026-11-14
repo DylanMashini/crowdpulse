@@ -2,6 +2,7 @@ import { patientLabel, type PatientRef } from '@triagecam/contracts';
 import type { ReactNode } from 'react';
 
 import { cx } from '@/lib/cx';
+import { years } from '@/lib/format';
 
 import { PatientAvatar, type AvatarSize } from './PatientAvatar';
 
@@ -61,6 +62,6 @@ export function PatientIdentity({ patient, size = 'md', detail, heading, classNa
 
 /** "34 y · Twisted ankle" from whatever intake has so far. Null when there is nothing to say. */
 export function intakeSummary(ageYears: number | null | undefined, reason: string | null | undefined): string | null {
-  const parts = [ageYears == null ? null : `${ageYears} y`, reason?.trim() || null].filter(Boolean);
+  const parts = [ageYears == null ? null : years(ageYears), reason?.trim() || null].filter(Boolean);
   return parts.length ? parts.join(' · ') : null;
 }

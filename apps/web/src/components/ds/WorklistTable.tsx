@@ -37,10 +37,10 @@ export function WorklistTable({ rows, selected, onSelect }: WorklistTableProps) 
               State
             </th>
             <th scope="col" className={tableHeadCell}>
-              Pulse, bpm
+              Pulse
             </th>
             <th scope="col" className={tableHeadCell}>
-              Breathing, per min
+              Breathing
             </th>
             <th scope="col" className={tableHeadCell}>
               Partial score
@@ -78,10 +78,10 @@ export function WorklistTable({ rows, selected, onSelect }: WorklistTableProps) 
                   <StatusBadge state={row.state} minutes={row.minutes} />
                 </td>
                 <td className={tableCell}>
-                  <TrendValue trend={row.pulse} notMeasuredYet={!row.source} />
+                  <TrendValue trend={row.pulse} unit="bpm" notMeasuredYet={!row.source} />
                 </td>
                 <td className={tableCell}>
-                  <TrendValue trend={row.breathing} notMeasuredYet={!row.source} />
+                  <TrendValue trend={row.breathing} unit="/min" notMeasuredYet={!row.source} />
                 </td>
                 <td className={tableCell}>
                   {row.score != null ? (

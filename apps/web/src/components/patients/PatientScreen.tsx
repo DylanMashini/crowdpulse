@@ -10,7 +10,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { LiveStatus } from '@/components/ui/LiveStatus';
 import { StateMessage } from '@/components/ui/StateMessage';
 import { api, errorMessage } from '@/lib/api';
-import { ageInYears, calendarDate, clockTime, ruleText } from '@/lib/format';
+import { ageInYears, breathingRate, calendarDate, clockTime, heartRate, minutes, rate, ruleText, years } from '@/lib/format';
 import { toTimelineItems } from '@/lib/mapping';
 import { useResource } from '@/lib/use-resource';
 
@@ -64,7 +64,7 @@ function PatientView({ detail, updatedAt, refreshError, onChanged }: PatientView
   const patient = saved && saved.at > (updatedAt ?? 0) ? saved.patient : detail.patient;
   const [editing, setEditing] = useState(false);
   const age = ageInYears(patient.dateOfBirth);
-  const facts = [age === null ? null : `${age} y`, patient.sex ? SEX[patient.sex] : null].filter(Boolean).join(' · ');
+  const facts = [age === null ? null : years(age), patient.sex ? SEX[patient.sex] : null].filter(Boolean).join(' · ');
   const { worklist } = useLive();
   const waiting = patient.status === 'waiting';
   // The patient itself does not say how long ago it was observed; its worklist row does.
@@ -139,7 +139,7 @@ function PatientView({ detail, updatedAt, refreshError, onChanged }: PatientView
                   <dt className="text-ink-muted">Reason for visit</dt>
                   <dd className="font-medium">{patient.reasonForVisit ?? <Missing />}</dd>
                   <dt className="text-ink-muted">Date of birth</dt>
-                  <dd>{patient.dateOfBirth ? `${calendarDate(patient.dateOfBirth)}${age === null ? '' : ` (${age} y)`}` : <Missing />}</dd>
+                  <dd>{patient.dateOfBirth ? `${calendarDate(patient.dateOfBirth)}${age === null ? '' : ` (${years(age)})`}` : <Missing />}</dd>
                   <dt className="text-ink-muted">Sex</dt>
                   <dd>{patient.sex ? SEX[patient.sex] : <Missing />}</dd>
                   <dt className="text-ink-muted">Pain</dt>
@@ -247,12 +247,12 @@ function Missing() {
 function flagNumbers(flag: Flag): string {
   const { pulse, breathing, scoreAtCheckIn, scoreNow, minutesSinceCheckIn, minutesSinceObserved } = flag.detail;
   if (flag.rule === 'overdue') {
-    return minutesSinceObserved == null ? 'No observation since check-in' : `No observation for ${Math.round(minutesSinceObserved)} min when the flag opened`;
+    return minutesSinceObserved == null ? 'No observation since check-in' : `No observation for ${minutes(minutesSinceObserved)} when the flag opened`;
   }
-  const change = (name: string, unit: string, base: number | null, now: number | null) =>
-    base == null || now == null ? `${name} had no reading` : `${name} ${base} to ${now} ${unit}`;
+  const change = (name: string, base: number | null, now: number | null, withUnit: (value: number) => string) =>
+    base == null || now == null ? `${name} had no reading` : `${name} ${rate(base)} to ${withUnit(now)}`;
   const score = scoreAtCheckIn != null && scoreNow != null ? `, partial score ${scoreAtCheckIn} to ${scoreNow}` : '';
-  return `${change('Pulse', 'bpm', pulse.base, pulse.now)}, ${change('breathing', 'breaths per min', breathing.base, breathing.now)}${score}, ${Math.round(minutesSinceCheckIn)} min after check-in`;
+  return `${change('Pulse', pulse.base, pulse.now, heartRate)}, ${change('breathing', breathing.base, breathing.now, breathingRate)}${score}, ${minutes(minutesSinceCheckIn)} after check-in`;
 }
 
 function FlagItem({ flag, onChanged }: { flag: Flag; onChanged: () => void }) {

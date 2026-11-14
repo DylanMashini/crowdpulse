@@ -36,15 +36,15 @@ export function PatientTile({ patient, reason, ageYears, state, minutes, pulse, 
       </div>
       <dl className="grid w-full grid-cols-1 gap-2">
         <div>
-          <dt className="text-[13px] leading-[16px] text-ink-muted">Pulse, bpm</dt>
+          <dt className="text-[13px] leading-[16px] text-ink-muted">Pulse</dt>
           <dd>
-            <TrendValue trend={pulse} notMeasuredYet={!source} />
+            <TrendValue trend={pulse} unit="bpm" notMeasuredYet={!source} />
           </dd>
         </div>
         <div>
-          <dt className="text-[13px] leading-[16px] text-ink-muted">Breathing, per min</dt>
+          <dt className="text-[13px] leading-[16px] text-ink-muted">Breathing</dt>
           <dd>
-            <TrendValue trend={breathing} notMeasuredYet={!source} />
+            <TrendValue trend={breathing} unit="/min" notMeasuredYet={!source} />
           </dd>
         </div>
       </dl>

@@ -13,7 +13,7 @@ import { StateMessage } from '@/components/ui/StateMessage';
 import { api } from '@/lib/api';
 import { useNow } from '@/lib/clock';
 import { cx } from '@/lib/cx';
-import { minutesAgo } from '@/lib/format';
+import { milliseconds, minutesAgo, rate } from '@/lib/format';
 import { useResource } from '@/lib/use-resource';
 
 import { LiveFeed, type FeedStats } from './LiveFeed';
@@ -172,7 +172,7 @@ function Station({ device, serverOffsetMs, serverNow, picker }: StationProps) {
               <span className="flex items-center gap-3">
                 {feed ? (
                   <span className="font-mono text-[13px] text-ink-muted tabular-nums">
-                    {feed.fps} fps{feed.delayMs === null ? '' : ` · ${feed.delayMs} ms`}
+                    {rate(feed.fps)} fps{feed.delayMs === null ? '' : ` · ${milliseconds(feed.delayMs)}`}
                   </span>
                 ) : null}
                 <ProvenanceTag kind="live">Live</ProvenanceTag>

@@ -1,4 +1,5 @@
 import { cx } from '@/lib/cx';
+import { rate } from '@/lib/format';
 
 import { ProvenanceTag } from './ProvenanceTag';
 import { ScoreChip } from './ScoreChip';
@@ -9,7 +10,7 @@ export interface TimelineItem {
   /** Clock time in 24-hour form. */
   time: string;
   title: string;
-  /** Present, even when both values are null, for an entry that is a sitting. */
+  /** Present, even when both values are null, for an entry that is a sitting. Rounded when shown. */
   vitals?: { pulse: number | null; breathing: number | null };
   score?: ScoreValue | null;
   state?: TileState;
@@ -62,7 +63,7 @@ function TimelineValue({ value, unit, missing }: { value: number | null; unit: s
   if (value == null) return <span>{missing}</span>;
   return (
     <span>
-      <b className="font-mono text-[17px] font-semibold text-ink tabular-nums">{value}</b> {unit}
+      <b className="font-mono text-[17px] font-semibold text-ink tabular-nums">{rate(value)}</b> {unit}
     </span>
   );
 }
