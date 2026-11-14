@@ -230,13 +230,13 @@ private let search = PulseAnalyzer(configuration: .default, fourier: Fourier()).
   @Test func theSubharmonicCheckNeedsAPeakThatStandsOutOfTheNoise() {
     let band = 0.35...3.0
     let clean = spectrum([(1.0, 0.3), (2.0, 1)])
-    #expect(clean.hasSubharmonic(of: 2.0, toleranceHz: 0.06, floor: 0.02, noiseRatio: 16, band: band))
+    #expect(clean.hasSubharmonic(of: 2.0, toleranceHz: 0.06, floor: 0.02, noiseRatio: 16, band: band, lobeHalfWidthHz: 0.2))
     // Nothing at half the frequency.
-    #expect(!spectrum([(2.0, 1)]).hasSubharmonic(of: 2.0, toleranceHz: 0.06, floor: 0.02, noiseRatio: 16, band: band))
+    #expect(!spectrum([(2.0, 1)]).hasSubharmonic(of: 2.0, toleranceHz: 0.06, floor: 0.02, noiseRatio: 16, band: band, lobeHalfWidthHz: 0.2))
     // A peak near, but not at, half the frequency.
-    #expect(!spectrum([(1.2, 0.3), (2.0, 1)]).hasSubharmonic(of: 2.0, toleranceHz: 0.06, floor: 0.02, noiseRatio: 16, band: band))
+    #expect(!spectrum([(1.2, 0.3), (2.0, 1)]).hasSubharmonic(of: 2.0, toleranceHz: 0.06, floor: 0.02, noiseRatio: 16, band: band, lobeHalfWidthHz: 0.2))
     // Too weak to be told from a side lobe.
-    #expect(!spectrum([(1.0, 0.05), (2.0, 1)]).hasSubharmonic(of: 2.0, toleranceHz: 0.06, floor: 0.02, noiseRatio: 16, band: band))
+    #expect(!spectrum([(1.0, 0.05), (2.0, 1)]).hasSubharmonic(of: 2.0, toleranceHz: 0.06, floor: 0.02, noiseRatio: 16, band: band, lobeHalfWidthHz: 0.2))
   }
 
   @Test func aHarmonicRelationOnlyBreaksATie() {

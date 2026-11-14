@@ -19,6 +19,9 @@ struct PulseAnalyzer {
   static let projectionWindowSeconds = 1.6
   /// Spectra are zero-padded to this size so bins are under 1 bpm apart at 60 Hz.
   static let spectrumSize = 4096
+  /// Half-width of the main lobe of a Hann-windowed peak, as a multiple of the window's
+  /// frequency resolution (1 / window length).
+  static let mainLobeResolutions = 2.0
 
   struct Outcome {
     var peak: PeakOutcome
@@ -158,7 +161,8 @@ struct PulseAnalyzer {
       rate: rate)
     let found = wide.hasSubharmonic(
       of: hz, toleranceHz: search.qualityHalfWidthHz / 2, floor: configuration.subharmonicPowerFloor,
-      noiseRatio: configuration.subharmonicNoiseRatio, band: open)
+      noiseRatio: configuration.subharmonicNoiseRatio, band: open,
+      lobeHalfWidthHz: PulseAnalyzer.mainLobeResolutions * rate / Double(count))
     guard found else { return Outcome(peak: peak, weights: weights) }
 
     // The peak is a second harmonic. The heart rate is half of it, scored like any other

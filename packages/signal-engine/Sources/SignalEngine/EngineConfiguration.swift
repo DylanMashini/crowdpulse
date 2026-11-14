@@ -50,7 +50,8 @@ public struct EngineConfiguration: Codable, Sendable, Equatable {
   /// frequency with at least this share of its power. The search for that peak reaches
   /// below `heartRateBandHz`, down to half its lower edge.
   public var subharmonicPowerFloor: Double = 0.02
-  /// That peak must also stand this many times above the median power of the spectrum.
+  /// That peak must also stand this many times above the noise: the median power of the
+  /// spectrum away from the two peaks.
   public var subharmonicNoiseRatio: Double = 16
   /// Frequencies lamps flicker at, in Hz: mains (50 or 60) and twice mains.
   public var flickerFrequenciesHz: [Double] = [50, 60, 100, 120]

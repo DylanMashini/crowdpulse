@@ -92,11 +92,16 @@ extension PowerSpectrum {
   /// Whether the spectrum has a peak of its own within `toleranceHz` of half of `frequency`.
   /// A heart has no component at half its rate, so a peak there means `frequency` is the
   /// second harmonic of a pulse whose fundamental is weaker than the harmonic, or was
-  /// filtered away. The peak has to stand `noiseRatio` times above the median power in
-  /// `band`, which is what noise alone rarely does, and hold at least `floor` times the
-  /// power at `frequency`, which a side lobe of a clean peak never does.
+  /// filtered away. The peak has to stand `noiseRatio` times above the noise, which is what
+  /// noise alone rarely does, and hold at least `floor` times the power at `frequency`,
+  /// which a side lobe of a clean peak never does.
+  ///
+  /// The noise is the median power in `band` away from the two peaks: bins within
+  /// `lobeHalfWidthHz` of either are left out. In a short window the two main lobes cover
+  /// much of the band, and a median taken over them measures the signal, not the noise.
   func hasSubharmonic(
-    of frequency: Double, toleranceHz: Double, floor: Double, noiseRatio: Double, band: ClosedRange<Double>
+    of frequency: Double, toleranceHz: Double, floor: Double, noiseRatio: Double, band: ClosedRange<Double>,
+    lobeHalfWidthHz: Double
   ) -> Bool {
     guard let harmonic = strongestBin(near: frequency, toleranceHz: toleranceHz),
       let fundamental = strongestBin(near: frequency / 2, toleranceHz: toleranceHz),
@@ -105,7 +110,10 @@ extension PowerSpectrum {
     else { return false }
     let low = max(1, Int((band.lowerBound / binHz).rounded(.up)))
     let high = min(power.count - 1, Int((band.upperBound / binHz).rounded(.down)))
-    guard low <= high, let noise = DSP.median(Array(power[low...high])) else { return false }
+    guard low <= high else { return false }
+    let lobe = Int((lobeHalfWidthHz / binHz).rounded(.up))
+    let away = (low...high).filter { abs($0 - harmonic) > lobe && abs($0 - fundamental) > lobe }
+    guard let noise = DSP.median(away.map { power[$0] }) else { return false }
     return power[fundamental] >= floor * power[harmonic] && power[fundamental] >= noiseRatio * noise
   }
 
