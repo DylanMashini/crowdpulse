@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { TextInput, View } from 'react-native';
 
+import { hairline } from '@/theme';
+
 import { Icon } from './Icon';
 import { MAX_TEXT_SCALE } from './Text';
 import { useScopedTheme } from './ThemeScope';
@@ -20,22 +22,20 @@ export function SearchField({ label, value, onChange }: Props) {
   const [focused, setFocused] = useState(false);
   return (
     <View
-      style={[
-        {
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: space.space2,
-          minHeight: theme.size.controlTouch,
-          paddingLeft: space.space3,
-          borderWidth: 1,
-          borderColor: colors.lineStrong,
-          borderRadius: theme.radius.radiusMd,
-          backgroundColor: colors.surfaceRaised,
-        },
-        focused && { outlineColor: colors.focus, outlineWidth: 2, outlineOffset: 2, outlineStyle: 'solid' },
-      ]}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: space.space2,
+        minHeight: theme.size.controlTouch,
+        paddingLeft: space.space3,
+        borderWidth: focused ? 1 : hairline,
+        borderColor: focused ? colors.signal : colors.lineStrong,
+        borderRadius: theme.radius.radiusLg,
+        backgroundColor: colors.surface0,
+        boxShadow: focused ? `0 0 0 3px ${colors.signalSoft}` : undefined,
+      }}
     >
-      <Icon name="search" size={20} color={colors.inkMuted} />
+      <Icon name="search" size={20} color={colors.inkFaint} />
       <TextInput
         value={value}
         onChangeText={onChange}
@@ -43,9 +43,10 @@ export function SearchField({ label, value, onChange }: Props) {
         onBlur={() => setFocused(false)}
         accessibilityLabel={label}
         placeholder={label}
-        placeholderTextColor={colors.inkMuted}
+        placeholderTextColor={colors.inkFaint}
         maxFontSizeMultiplier={MAX_TEXT_SCALE}
         selectionColor={colors.signal}
+        keyboardAppearance="dark"
         autoCapitalize="none"
         autoCorrect={false}
         returnKeyType="search"
@@ -61,13 +62,14 @@ export function SearchField({ label, value, onChange }: Props) {
           onPress={() => onChange('')}
           accessibilityRole="button"
           accessibilityLabel="Clear the search"
-          style={{
+          style={({ pressed }) => ({
             width: theme.size.controlTouch,
             height: theme.size.controlTouch,
             alignItems: 'center',
             justifyContent: 'center',
-            borderRadius: theme.radius.radiusMd,
-          }}
+            borderRadius: theme.radius.radiusLg,
+            opacity: pressed ? 0.6 : 1,
+          })}
         >
           <Icon name="close" size={18} color={colors.inkMuted} />
         </Touchable>

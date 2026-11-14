@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Animated, Easing, View } from 'react-native';
 
 import { useReducedMotion } from '@/hooks/useReducedMotion';
-import { fonts } from '@/theme';
+import { hairline, motion, weight } from '@/theme';
 
 import { useScopedTheme } from './ThemeScope';
 import { Touchable } from './Touchable';
@@ -17,10 +17,11 @@ type Props = {
   disabled?: boolean;
 };
 
-const TRACK_WIDTH = 76;
+const TRACK_WIDTH = 64;
 const TRACK_HEIGHT = 32;
 const THUMB = 24;
-const TRAVEL = 44;
+const INSET = (TRACK_HEIGHT - THUMB) / 2;
+const TRAVEL = TRACK_WIDTH - THUMB - INSET * 2;
 
 /** On or off, taking effect at once. The track prints the state, so it never rests on colour alone. */
 export function Switch({ label, hint, checked, onChange, disabled }: Props) {
@@ -36,8 +37,8 @@ export function Switch({ label, hint, checked, onChange, disabled }: Props) {
     }
     Animated.timing(position, {
       toValue: checked ? 1 : 0,
-      duration: 120,
-      easing: Easing.out(Easing.quad),
+      duration: motion.durationFast,
+      easing: Easing.bezier(...motion.easeOut),
       useNativeDriver: true,
     }).start();
   }, [checked, position, reducedMotion]);
@@ -54,14 +55,14 @@ export function Switch({ label, hint, checked, onChange, disabled }: Props) {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        gap: theme.space.space5,
+        gap: theme.space.space4,
         minHeight: theme.size.controlTouch,
         borderRadius: theme.radius.radiusMd,
-        opacity: disabled ? 0.5 : 1,
+        opacity: disabled ? 0.4 : 1,
       }}
     >
-      <View style={{ flex: 1 }}>
-        <Text style={[theme.type.bodyTouch, { fontFamily: fonts.sans[600], color: colors.ink }]}>{label}</Text>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={[theme.type.subheading, { color: colors.ink }]}>{label}</Text>
         {hint ? <Text style={[theme.type.caption, { color: colors.inkMuted }]}>{hint}</Text> : null}
       </View>
       <View
@@ -69,17 +70,18 @@ export function Switch({ label, hint, checked, onChange, disabled }: Props) {
           width: TRACK_WIDTH,
           height: TRACK_HEIGHT,
           borderRadius: theme.radius.radiusPill,
-          borderWidth: 1,
-          borderColor: checked ? colors.signal : colors.lineStrong,
-          backgroundColor: checked ? colors.signal : colors.surfaceSunken,
+          borderWidth: hairline,
+          borderColor: checked ? colors.signalStrong : colors.lineStrong,
+          backgroundColor: checked ? colors.signalStrong : colors.surface0,
           justifyContent: 'center',
         }}
       >
         <Text
+          maxFontSizeMultiplier={1.1}
           style={[
-            theme.type.label,
-            { position: 'absolute', color: checked ? colors.onSignal : colors.ink },
-            checked ? { left: 12 } : { right: 10 },
+            theme.type.caption,
+            { position: 'absolute', fontWeight: weight.medium, color: checked ? colors.onSignal : colors.inkMuted },
+            checked ? { left: 10 } : { right: 9 },
           ]}
         >
           {checked ? 'On' : 'Off'}
@@ -87,11 +89,11 @@ export function Switch({ label, hint, checked, onChange, disabled }: Props) {
         <Animated.View
           style={{
             position: 'absolute',
-            left: 3,
+            left: INSET - hairline,
             width: THUMB,
             height: THUMB,
             borderRadius: THUMB / 2,
-            backgroundColor: checked ? colors.onSignal : colors.lineStrong,
+            backgroundColor: checked ? colors.onSignal : colors.inkMuted,
             transform: [{ translateX: position.interpolate({ inputRange: [0, 1], outputRange: [0, TRAVEL] }) }],
           }}
         />

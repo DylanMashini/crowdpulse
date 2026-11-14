@@ -1,6 +1,11 @@
+import { StyleSheet } from 'react-native';
+
 import { type ThemeName, colors, radius, shadow, size, space, type } from './tokens';
 
 export * from './tokens';
+
+/** The width of every divider and outline: one device pixel, in the `line` colours. */
+export const hairline = StyleSheet.hairlineWidth;
 
 export type Theme = {
   name: ThemeName;
