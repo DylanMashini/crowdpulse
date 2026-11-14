@@ -60,7 +60,7 @@ Triage Cam is a contact-free vitals station and a waiting-room worklist. One sys
 
 - Use `Icon`: 21 line glyphs on a 24px grid at 1.5 stroke, in the colour of the text beside them. Sizes are 16, 18 or 20.
 - Status and provenance marks always pair the icon with its word.
-- There is no logo. Set the name "Triage Cam" in `font-sans` at weight 600.
+- The mark is the pulse trace on a `signal` tile, the same as the favicon, flat and in one colour. Beside it the name "Triage Cam" is set in `font-sans` at weight 600. On the web it is `BrandLockup`.
 
 ## The three surfaces
 
