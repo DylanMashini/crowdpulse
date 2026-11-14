@@ -1,4 +1,4 @@
-# Triage Cam contracts
+# Crowdpulse contracts
 
 The fixed interfaces between the capture module, the signal engine, the mobile screens, the API and the dashboard. Code against this document and the source files it names. Where the two disagree, the source file is right and this document has a bug: report it.
 

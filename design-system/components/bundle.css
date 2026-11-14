@@ -1,4 +1,4 @@
-/* Triage Cam components, Night Shift. Every colour, space and radius is a token from tokens.json.
+/* Crowdpulse components, Night Shift. Every colour, space and radius is a token from tokens.json.
    A structural reference for the shipped components in apps/web/src/components/ds and
    apps/mobile/src/components; the look is specified in README.md and the Night Shift spec page. */
 body { margin: 0; font-family: var(--font-sans); font-size: 14px; line-height: 22px; background: var(--surface-0); color: var(--ink); -webkit-font-smoothing: antialiased; }

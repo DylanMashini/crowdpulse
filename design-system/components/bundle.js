@@ -169,7 +169,7 @@
   /* ---------- Dashboard ---------- */
   function SideNav(props) {
     return h('nav', { className: 'tc-nav', 'aria-label': 'Dashboard' },
-      h('div', { className: 'tc-nav-name' }, props.title || 'Triage Cam'),
+      h('div', { className: 'tc-nav-name' }, props.title || 'Crowdpulse'),
       h('ul', null, (props.items || []).map(function (it) {
         var on = it.id === props.active;
         return h('li', { key: it.id }, h('button', {

@@ -1,6 +1,6 @@
 # Production hosting
 
-Triage Cam runs on AWS in `us-east-1` and is served at `https://crowdpulse.care` through Cloudflare. Everything in AWS and the DNS records are Terraform (`infra/`), applied by hand. Deploys of the app are a GitHub Actions workflow (`.github/workflows/deploy.yml`) that runs on every push to `main` that touches the web app, or the same steps run by hand (`infra/deploy.sh`, see "Deploying by hand") when Actions is not available.
+Crowdpulse runs on AWS in `us-east-1` and is served at `https://crowdpulse.care` through Cloudflare. Everything in AWS and the DNS records are Terraform (`infra/`), applied by hand. Deploys of the app are a GitHub Actions workflow (`.github/workflows/deploy.yml`) that runs on every push to `main` that touches the web app, or the same steps run by hand (`infra/deploy.sh`, see "Deploying by hand") when Actions is not available.
 
 The repository is public. Account ids, zone ids, ARNs and IP addresses are kept out of it: they live in git-ignored `infra/terraform.tfvars` and `infra/backend.hcl`, in the Terraform state, and in GitHub Actions secrets.
 
@@ -259,7 +259,7 @@ The task gets each JSON key as an environment variable of the same name when it 
 ```bash
 aws secretsmanager put-secret-value --secret-id triagecam-prod/app --secret-string '{
   "RESEND_API_KEY": "re_...",
-  "RESEND_FROM": "Triage Cam <no-reply@crowdpulse.care>",
+  "RESEND_FROM": "Crowdpulse <no-reply@crowdpulse.care>",
   "EMAIL_FROM": "",
   "EXPO_ACCESS_TOKEN": ""
 }'
