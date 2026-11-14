@@ -13,6 +13,8 @@ export interface TrendValueProps {
   notMeasuredYet?: boolean;
   /** Puts the baseline under the value, for tables that have no width to spare. */
   stacked?: boolean;
+  /** Lets the baseline drop under the value, and break between words, when the box is narrower than the line. */
+  wraps?: boolean;
 }
 
 /**
@@ -20,7 +22,7 @@ export interface TrendValueProps {
  * baseline is the check-in's unless it says otherwise ("10:42 re-check"). A lower-confidence
  * pulse is printed muted with its tag and is compared with nothing.
  */
-export function TrendValue({ trend, unit, notMeasuredYet, stacked }: TrendValueProps) {
+export function TrendValue({ trend, unit, notMeasuredYet, stacked, wraps }: TrendValueProps) {
   if (trend && trend.now == null && trend.lowConfidence != null) {
     return (
       <span className={cx('inline-flex whitespace-nowrap', stacked ? 'flex-col items-start gap-1' : 'flex-wrap items-center gap-2')}>
@@ -39,8 +41,8 @@ export function TrendValue({ trend, unit, notMeasuredYet, stacked }: TrendValueP
   const change = trend.base != null ? rateChange(trend.base, trend.now) : null;
   const reCheck = trend.baseAt ? `${clockTime(trend.baseAt)} re-check` : null;
   return (
-    <span className={cx('inline-flex whitespace-nowrap', stacked ? 'flex-col' : 'items-baseline gap-2')}>
-      <span className="inline-flex items-baseline gap-1">
+    <span className={cx('inline-flex', wraps ? 'max-w-full flex-wrap' : 'whitespace-nowrap', stacked ? 'flex-col' : 'items-baseline gap-x-2')}>
+      <span className="inline-flex items-baseline gap-1 whitespace-nowrap">
         <span className="type-readout-md">{rate(trend.now)}</span>
         <span className="text-[13px] text-ink-muted">{unit}</span>
       </span>
