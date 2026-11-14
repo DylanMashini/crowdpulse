@@ -2,17 +2,19 @@
  * The evaluation figures behind the landing page. The JSON is generated from the harness's
  * outputs (eval/out, gitignored) and checked in:
  *
- *   uv run eval/run_eval.py mcd            # and ubfc: writes eval/out/<dataset>.json
+ *   uv run eval/run_eval.py --rescore      # writes eval/out/ubfc.json and eval/out/report.md
  *   node apps/web/scripts/build-landing-eval.mjs
  *
- * Nothing on the page states an accuracy figure that is not read from here.
+ * Nothing on the page states an accuracy figure that is not read from here. The only published
+ * dataset is UBFC-rPPG and the only published set is its held-out set: the script refuses
+ * anything else. Wherever a figure is shown, `provenance` (dataset, set, n, date) goes beside it.
  */
 import data from './eval-data.json';
 
+/** Pooled figures over scored recordings of one set. */
 export interface EvalSummary {
-  recordings: number;
-  failed: number;
   subjects: number;
+  recordings: number;
   /** Recordings in which the engine gave at least one reading that could be paired. */
   withReading: number;
   /** One-second readings paired with the reference. */
@@ -21,20 +23,12 @@ export interface EvalSummary {
   biasBpm: number | null;
   /** Share of paired readings within 5 bpm of the reference, 0 to 1. */
   within5: number | null;
-  /** Mean share of seconds with a reading, 0 to 1. */
+  /**
+   * In each recording, the share of one-second ticks, warm-up included, in which the engine gave
+   * a heart rate; then the mean over recordings, each counting equally. 0 to 1.
+   */
   coverage: number | null;
-  perRecordingMaeBpm: number | null;
-  perRecordingWithin5: number | null;
-  recordingsWithSummary: number;
   medianTimeToFirstS: number | null;
-}
-
-export interface EvalGroup extends EvalSummary {
-  id: string;
-  camera: string;
-  cameraLabel: string;
-  condition: string;
-  conditionLabel: string;
 }
 
 export interface EvalDataset {
@@ -43,17 +37,23 @@ export interface EvalDataset {
   video: string;
   reference: string;
   source: string;
-  /** Subjects in the published dataset, where the harness ran on a subset of them. */
-  totalSubjects?: number;
-  all: EvalSummary;
-  groups: EvalGroup[];
+  /** Subjects in the published dataset, both sets together. */
+  totalSubjects: number;
 }
 
-export const evaluatedOn: string | null = data.evaluatedOn;
+export const evaluatedOn: string = data.evaluatedOn;
 export const pairing: string = data.pairing;
-export const datasets: EvalDataset[] = data.datasets;
-
-export const dataset = (id: string): EvalDataset | undefined => datasets.find((d) => d.id === id);
+export const dataset: EvalDataset = data.dataset;
+/** How the dataset's subjects were divided. Only the held-out set is published. */
+export const split: { set: string; seed: number; heldOutSubjects: number; tuningSubjects: number } = data.split;
+/** The published figures: the whole held-out set. */
+export const heldOut: EvalSummary = data.heldOut;
+/** Held-out subjects the engine had been checked against before the split was drawn. */
+export const seenInDevelopment: number = data.seenInDevelopment;
+/** The held-out figures without those subjects, for the disclosure. Null when there are none. */
+export const heldOutWithoutSeen: EvalSummary | null = data.heldOutWithoutSeen;
+/** Held-out reference files by the independent copy they were checked against. */
+export const referenceChecks: { authorsFile: number; otherCopies: number } = data.referenceChecks;
 
 /** One decimal, as eval/out/report.md prints it. */
 export const bpm = (value: number | null): string => (value == null ? 'n/a' : value.toFixed(1));
@@ -70,3 +70,9 @@ export function longDate(iso: string | null): string | null {
   const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   return `${day} ${months[month - 1]} ${year}`;
 }
+
+const readings = (s: EvalSummary) => `${s.pairedReadings.toLocaleString('en-US')} one-second readings`;
+
+/** Dataset, set, n and date: the line that goes beside every published figure. */
+export const provenance = (s: EvalSummary = heldOut): string =>
+  `${dataset.title} public dataset, held-out set: ${s.subjects} subjects, ${readings(s)}, evaluated ${longDate(evaluatedOn) ?? evaluatedOn}`;

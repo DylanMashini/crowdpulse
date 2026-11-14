@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { Icon, type IconName } from '@/components/ds';
 
 import { Accuracy } from './Accuracy';
-import { bpm, dataset } from './eval-data';
+import { bpm, heldOut, provenance } from './eval-data';
 import { Viability } from './Viability';
 import { Viewfinder } from './Viewfinder';
 import { WorklistPreview } from './WorklistPreview';
@@ -30,7 +30,6 @@ const STEPS: Array<{ icon: IconName; title: string; body: string }> = [
 ];
 
 export function LandingPage({ signedIn }: { signedIn: boolean }) {
-  const rest = dataset('mcd')?.groups.find((g) => g.id === 'front-rest');
   const primary = signedIn ? { href: '/waiting-room', label: 'Open the dashboard' } : { href: '/sign-up', label: 'Create an account' };
 
   return (
@@ -79,12 +78,10 @@ export function LandingPage({ signedIn }: { signedIn: boolean }) {
                   See how it works
                 </a>
               </div>
-              {rest ? (
-                <p className="lp-hero-proof">
-                  On public recordings of people at rest facing a camera, its heart rate came within {bpm(rest.maeBpm)} bpm of a contact
-                  sensor on average whenever it gave a reading. <a href="#accuracy">Read the evaluation</a>
-                </p>
-              ) : null}
+              <p className="lp-hero-proof">
+                On public recordings of people seated facing a camera, its heart rate came within {bpm(heldOut.maeBpm)} bpm of a fingertip
+                oximeter on average whenever it gave a reading. {provenance()}. <a href="#accuracy">Read the evaluation</a>
+              </p>
             </div>
             <Viewfinder />
           </div>
