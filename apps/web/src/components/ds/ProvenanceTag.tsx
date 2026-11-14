@@ -9,7 +9,6 @@ const KINDS: Record<Provenance, { word: string; className: string }> = {
   recording: { word: 'Recording', className: 'border-dashed border-line-strong text-ink' },
   experimental: { word: 'Experimental', className: 'border-dashed border-line-strong text-ink-muted' },
   'ai-draft': { word: 'AI draft', className: 'border-transparent bg-surface-sunken text-ink' },
-  reference: { word: 'Reference', className: 'border-dashed border-line-strong text-ink' },
 };
 
 export interface ProvenanceTagProps {
