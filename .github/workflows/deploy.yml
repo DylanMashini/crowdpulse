@@ -36,7 +36,9 @@ jobs:
   deploy:
     name: Build, migrate, deploy
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    # Above the script's own worst case (30 minutes of migration, 30 of deployment, 10 of
+    # settling) plus the build, so the script's message is what ends a stuck deploy.
+    timeout-minutes: 90
     steps:
       # Actions are pinned to commits, not to tags that can be moved: this job can assume the
       # deploy role. Update a pin by looking up the commit of the new version's tag.
