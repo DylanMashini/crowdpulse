@@ -607,10 +607,11 @@ The design-system README's line "No surface shows a face or a video frame" is ov
 | Web QA | 3100 | `NEXT_DIST_DIR=.next-3100 PORT=3100 pnpm dev:web` |
 | API | 3101 | `NEXT_DIST_DIR=.next-3101 PORT=3101 pnpm dev:web` |
 | Dashboard | 3102 | `NEXT_DIST_DIR=.next-3102 PORT=3102 pnpm dev:web` |
-| Mobile QA | 3200 | `NEXT_DIST_DIR=.next-3200 PORT=3200 pnpm dev:web`, then `ngrok http 3200` and put the https URL in `apps/mobile/.env.local` as `EXPO_PUBLIC_API_URL` |
+| Mobile QA | 3200 | In the simulators: `apps/mobile/scripts/sim-qa.sh`, which starts this server itself on its own database `triagecam_simqa` (see `apps/mobile/sim-flows/README.md`). On a real phone: `NEXT_DIST_DIR=.next-3200 PORT=3200 pnpm dev:web`, then `ngrok http 3200` and put the https URL in `apps/mobile/.env.local` as `EXPO_PUBLIC_API_URL` |
 
 - Always set `NEXT_DIST_DIR` with `PORT`: two dev servers sharing a dist dir corrupt each other. `apps/web/tsconfig.json` already lists these four dist dirs, so Next does not rewrite it. Delete your `.next-<port>` directory when you are done; disk space is short.
 - `APP_URL` defaults to `http://localhost:3100`. Set it to your own origin when you test verification links.
 - All dev servers share the one `triagecam` database unless `DATABASE_URL` says otherwise.
 - `pnpm typecheck` (all packages), `pnpm test` (contracts tests and `swift test`), `swift build` and `swift test` in `packages/signal-engine`.
 - Metro for the mobile app: 8081 by default; pass `--port` to `expo start` if another agent holds it.
+- The simulators reach the Mac as `localhost`, so the rig needs no tunnel. It points the app at its server with `EXPO_PUBLIC_SIM_API_URL` in Metro's environment, which `apps/mobile/src/config.ts` reads before `EXPO_PUBLIC_API_URL`: in a development bundle Expo lets `.env.local` win over the shell, so the usual variable cannot be overridden for one run. `EXPO_PUBLIC_SIM_API_URL` never goes into an `.env` file.

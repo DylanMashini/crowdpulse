@@ -39,3 +39,26 @@ Docs: https://docs.expo.dev/eas/index.md
 - If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.
 - Expo Go only includes its bundled native modules. After adding a library with native code, the app needs a development build: `npx expo run:ios|android` locally, or `eas build --profile development`.
 - Prefer recommended Expo modules over third-party libraries, and check your available skills before adding dependencies. Docs: https://docs.expo.dev/versions/latest/index.md
+
+## Simulator rig
+
+The app is run and checked in two slim iOS simulators, "TriageCam Camera" and "TriageCam Nurse",
+without a person. One script does it all; `sim-flows/README.md` has the detail, the flow
+language and the traps.
+
+```bash
+apps/mobile/scripts/sim-qa.sh                # up, every flow in both roles, down; screenshots and logs in apps/mobile/.sim-qa/latest
+apps/mobile/scripts/sim-qa.sh up             # leave it running: server on 3200, Metro on 8081, both simulators booted, app installed
+apps/mobile/scripts/sim-qa.sh flow nurse nurse-flags.flow    # one flow against a rig that is up
+apps/mobile/scripts/sim-qa.sh deteriorate    # raise a trend flag through the API
+apps/mobile/scripts/sim-qa.sh down           # stop what the rig started and shut the simulators down
+```
+
+- The rig has its own database (`triagecam_simqa`, dropped and seeded by `up`) and its own
+  server on port 3200 with `.next-3200`. It does not touch the shared `triagecam` database,
+  `.env.local`, or a simulator it did not create.
+- `SIMQA_SKIP_BUILD=1` reuses the last app build when only JavaScript changed. A native change
+  (anything under `modules/`, a new native dependency) needs the build, which the script does.
+- Look at the screenshots. A flow passing only means the texts it waited for appeared.
+- The UI driver is the XCUITest bundle in `sim-driver/`, not Maestro. New screens get a flow in
+  `sim-flows/`, added to `camera.flow` or `nurse.flow`.
