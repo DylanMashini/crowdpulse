@@ -151,7 +151,15 @@ export default function FaceMatch() {
 
       {match.step === 'fallback' ? (
         <>
-          <Notice title="No patient was matched" body={sentences(match.reason, 'Choose the patient from the waiting room to carry on')}>
+          <Notice
+            title="No patient was matched"
+            // Some of the server's reasons already end by saying what to do.
+            body={
+              /choose the patient/i.test(match.reason)
+                ? match.reason
+                : sentences(match.reason, 'Choose the patient from the waiting room to carry on')
+            }
+          >
             {match.cameraDenied ? (
               <Button variant="secondary" block label="Open the Settings app" onPress={() => void Linking.openSettings()} />
             ) : null}
