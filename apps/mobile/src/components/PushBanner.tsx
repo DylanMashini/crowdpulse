@@ -2,9 +2,10 @@ import type { PatientRef } from '@triagecam/contracts';
 import { View } from 'react-native';
 
 import { sentences } from '@/lib/format';
-import { fonts } from '@/theme';
+import { hairline } from '@/theme';
 
 import { Button } from './Button';
+import { Icon } from './Icon';
 import { PatientAvatar } from './PatientIdentity';
 import { useScopedTheme } from './ThemeScope';
 import { Touchable } from './Touchable';
@@ -15,6 +16,8 @@ type Props = {
   patient: PatientRef;
   /** "Trend flag: Maya Chen": the same words as the system push. */
   title: string;
+  /** The heading takes the flag's severity colour. An overdue re-check stays `ink`. */
+  severity: 'watch' | 'urgent' | 'overdue';
   /** Clock time the flag opened. */
   time: string;
   /** The templated handoff sentence. */
@@ -28,52 +31,60 @@ type Props = {
   onDismiss: () => void;
 };
 
-/** A flag arriving on the nurse phone. A prompt to walk over, not an alarm. */
+/**
+ * A flag arriving on the nurse phone: an overlay, the highest surface with the one shadow in the
+ * app. A prompt to walk over, not an alarm, so the card itself is never red.
+ */
 export function PushBanner(props: Props) {
   const theme = useScopedTheme();
   const { colors, space } = theme;
   const { acknowledged } = props;
+  const heading = { urgent: colors.urgent, watch: colors.watch, overdue: colors.ink }[props.severity];
   return (
     <View
       accessibilityRole="alert"
       style={{
         padding: space.space4,
-        gap: space.space2,
+        gap: space.space3,
         borderRadius: theme.radius.radiusXl,
-        borderWidth: 1,
-        borderColor: colors.line,
-        backgroundColor: colors.surfaceRaised,
+        borderWidth: hairline,
+        borderColor: colors.lineStrong,
+        backgroundColor: colors.surface3,
         boxShadow: theme.shadow.shadowOverlay,
       }}
     >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.space2 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.space3 }}>
         <PatientAvatar patient={props.patient} size="sm" />
-        <Text style={[theme.type.bodyTouch, { flex: 1, fontFamily: fonts.sans[600], color: colors.ink }]}>
-          {props.title}
-        </Text>
-        <Text style={[theme.type.caption, { color: colors.inkMuted }]}>{props.time}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={[theme.type.subheading, { color: heading }]}>{props.title}</Text>
+          <Text style={[theme.type.caption, { color: colors.inkFaint, fontVariant: ['tabular-nums'] }]}>{props.time}</Text>
+        </View>
         <Touchable
           onPress={props.onDismiss}
           accessibilityRole="button"
           accessibilityLabel="Close this notice"
-          hitSlop={{ top: 16, bottom: 16, left: 4, right: 4 }}
-          style={{ minWidth: theme.size.controlTouch, alignItems: 'flex-end', borderRadius: theme.radius.radiusMd }}
+          hitSlop={8}
+          style={({ pressed }) => ({
+            width: theme.size.controlMd,
+            height: theme.size.controlMd,
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: theme.radius.radiusLg,
+            backgroundColor: pressed ? colors.surface4 : 'transparent',
+          })}
         >
-          <Text style={[theme.type.label, { color: colors.signal }]}>Close</Text>
+          <Icon name="close" size={18} color={colors.inkMuted} />
         </Touchable>
       </View>
       <Text style={[theme.type.bodyTouch, { color: colors.ink }]}>{props.body}</Text>
       {props.error ? (
-        <Text style={[theme.type.caption, { color: colors.ink }]}>{sentences('Not acknowledged', props.error)}</Text>
+        <Text style={[theme.type.caption, { color: colors.urgent }]}>{sentences('Not acknowledged', props.error)}</Text>
       ) : null}
-      <View
-        style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space.space2, marginTop: space.space2 }}
-      >
+      <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space.space2 }}>
         {acknowledged ? (
-          <View style={{ height: theme.size.controlTouch, justifyContent: 'center', paddingHorizontal: space.space3 }}>
-            <Text style={[theme.type.bodyTouch, { fontFamily: fonts.sans[600], color: colors.inkMuted }]}>
-              Acknowledged
-            </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.space2, height: theme.size.controlTouch, paddingRight: space.space3 }}>
+            <Icon name="check" size={18} color={colors.inkMuted} />
+            <Text style={[theme.type.subheading, { color: colors.inkMuted }]}>Acknowledged</Text>
           </View>
         ) : (
           <Button

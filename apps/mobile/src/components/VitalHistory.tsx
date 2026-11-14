@@ -17,8 +17,8 @@ type Props = {
   points: VitalPoint[];
 };
 
-const HEIGHT = 56;
-const PAD = 6;
+const HEIGHT = 48;
+const PAD = 4;
 /** The line never exaggerates a change smaller than this many units of the vital. */
 const MIN_SPAN = 12;
 
@@ -35,9 +35,11 @@ export function VitalHistory({ label, icon, unit, points }: Props) {
 
   if (!first || !last) {
     return (
-      <View style={{ gap: space.space1 }}>
+      <View style={{ gap: space.space2 }}>
         <Heading label={label} icon={icon} />
-        <Text style={[theme.type.body, { color: colors.inkMuted }]}>No reading yet</Text>
+        <View style={{ minHeight: theme.type.readoutLg.lineHeight, justifyContent: 'center' }}>
+          <Text style={[theme.type.heading, { color: colors.inkMuted }]}>No reading yet</Text>
+        </View>
       </View>
     );
   }
@@ -58,14 +60,16 @@ export function VitalHistory({ label, icon, unit, points }: Props) {
     <View
       accessible
       accessibilityLabel={`${label}: ${wholeNumber(last.value)} ${unit}. ${change}. ${points.length} readings.`}
-      style={{ gap: space.space1 }}
+      style={{ gap: space.space2 }}
     >
       <Heading label={label} icon={icon} />
-      <View style={{ flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', columnGap: space.space2 }}>
-        <Text style={[theme.type.readoutLg, { color: colors.ink }]}>{wholeNumber(last.value)}</Text>
-        <Text style={[theme.type.caption, { color: colors.inkMuted }]}>{unit}</Text>
+      <View>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', columnGap: 6 }}>
+          <Text style={[theme.type.readoutLg, { color: colors.ink }]}>{wholeNumber(last.value)}</Text>
+          <Text style={[theme.type.dense, { color: colors.inkMuted }]}>{unit}</Text>
+        </View>
+        <Text style={[theme.type.caption, { color: colors.inkFaint, fontVariant: ['tabular-nums'] }]}>{change}</Text>
       </View>
-      <Text style={[theme.type.caption, { color: colors.inkMuted, fontVariant: ['tabular-nums'] }]}>{change}</Text>
       {points.length > 1 ? (
         <View style={{ height: HEIGHT }} onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
           {width > 0 ? (
@@ -75,29 +79,32 @@ export function VitalHistory({ label, icon, unit, points }: Props) {
                 x2={width - PAD}
                 y1={y(first.value)}
                 y2={y(first.value)}
-                stroke={colors.lineStrong}
+                stroke={colors.lineHover}
                 strokeWidth={1}
-                strokeDasharray="4 4"
+                strokeDasharray="2 4"
               />
               <Polyline
                 points={points.map((point) => `${x(point)},${y(point.value)}`).join(' ')}
                 fill="none"
                 stroke={colors.seriesEstimate}
-                strokeWidth={2}
+                strokeWidth={1.5}
                 strokeLinejoin="round"
                 strokeLinecap="round"
               />
-              {points.map((point, index) => (
-                <Circle
-                  key={index}
-                  cx={x(point)}
-                  cy={y(point.value)}
-                  r={index === points.length - 1 ? 4 : 3}
-                  fill={index === points.length - 1 ? colors.seriesEstimate : colors.surfaceRaised}
-                  stroke={colors.seriesEstimate}
-                  strokeWidth={2}
-                />
-              ))}
+              {points.map((point, index) => {
+                const newest = index === points.length - 1;
+                return (
+                  <Circle
+                    key={index}
+                    cx={x(point)}
+                    cy={y(point.value)}
+                    r={newest ? 3 : 2}
+                    fill={newest ? colors.seriesEstimate : colors.surface2}
+                    stroke={colors.seriesEstimate}
+                    strokeWidth={1.5}
+                  />
+                );
+              })}
             </Svg>
           ) : null}
         </View>
@@ -109,9 +116,9 @@ export function VitalHistory({ label, icon, unit, points }: Props) {
 function Heading({ label, icon }: { label: string; icon: IconName }) {
   const theme = useScopedTheme();
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space.space2 }}>
-      <Icon name={icon} size={18} color={theme.colors.inkMuted} />
-      <Text style={[theme.type.label, { color: theme.colors.inkMuted }]}>{label}</Text>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+      <Icon name={icon} size={16} color={theme.colors.inkMuted} />
+      <Text style={[theme.type.caption, { color: theme.colors.inkMuted }]}>{label}</Text>
     </View>
   );
 }

@@ -13,6 +13,7 @@ import { useSession } from '@/lib/session/SessionProvider';
 
 import { openEventStream } from './eventStream';
 import { type Connection, announcements, followAlerts, withAcknowledgement } from './nurseFormat';
+import { alertSeverity } from './severity';
 import { type PushRegistration, patientOfNotification, registerForPush, showFlagsInApp } from './push';
 import { flagTitle } from './worklistFormat';
 
@@ -296,6 +297,7 @@ export function NurseProvider({ children }: { children: ReactNode }) {
             <PushBanner
               patient={banner.lead.patient}
               title={flagTitle(banner.lead.rule, banner.lead.patient)}
+              severity={alertSeverity(banner)}
               time={clockTime(banner.lead.openedAt)}
               body={banner.lead.handoff}
               acknowledged={banner.acknowledgedAt != null}
