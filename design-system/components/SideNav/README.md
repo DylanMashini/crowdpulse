@@ -25,9 +25,8 @@ The dashboard's navigation. The shipped component is `apps/web/src/components/ds
 
 - Destinations are data. Relabel, reorder or regroup them where `groups` is built; the component holds no labels of its own.
 - **Active** is one surface step up with a hairline outline, and its icon in `signal`. No stripe on an edge.
-- **`alert`** is a count of things waiting for the nurse (tickets with an unacknowledged trend flag). It is a `flag` chip, shown only above zero. In the collapsed rail it is a `flag` dot, and the tooltip carries the number.
-- **`count`** is a plain total in `ink-muted` mono. Use it for how much a destination holds, never for urgency.
+- **`alert`** is a count of things waiting for the nurse (tickets with a flag, trend or overdue, that nobody has acknowledged). It is a `flag` chip, shown only above zero. `alertWord` puts one word after the number ("2 new") so it is not read as the total on the station card. In the collapsed rail it is a `flag` dot, and the tooltip carries the number.
 - **`live`** is a `signal` dot with its words for screen readers: "Sitting in progress" on Check-in.
-- **Station card.** Up to three numbers from the worklist (waiting, flagged, overdue) and the camera phone with its state: "Live view on", "Online", "Offline since 14:12". The connection word is "Live", "Connecting" or "Reconnecting"; reconnecting is in `flag`. Nothing pulses.
+- **Station card.** Up to three numbers from the worklist (waiting, flagged, overdue) and the camera phone with its state: "Live view on", "Online", "Offline, last seen 12 min ago", the words Check-in uses. The connection word is "Live", "Connecting" or "Reconnecting"; reconnecting is in `flag`. Nothing pulses.
 - A filled dot means connected. A hollow dot means not. The words beside it always say which.
-- Every control is reachable by keyboard and shows the standard focus ring. The account menu closes on Escape and returns focus to its button.
+- Every control is reachable by keyboard and shows the standard focus ring. The account menu closes on Escape and returns focus to its button. It stays open while sign-out runs, and shows the error there if sign-out fails.
