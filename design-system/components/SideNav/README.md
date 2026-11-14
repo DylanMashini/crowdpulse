@@ -13,7 +13,7 @@ The dashboard's navigation. The shipped component is `apps/web/src/components/ds
 | Prop | Meaning |
 |---|---|
 | `groups` | `{ id, label?, items }[]`. A group is a short labelled list: "Triage", "Station". |
-| `groups[].items` | `{ id, label, icon, href, count?, countLabel?, alert?, alertLabel?, live? }`. |
+| `groups[].items` | `{ id, label, icon, href, alert?, alertWord?, alertLabel?, live? }`. |
 | `active` | The `id` of the current destination. |
 | `homeHref` | Where the brand lockup leads. |
 | `descriptor` | One or two words under the product name: "Vitals station". |

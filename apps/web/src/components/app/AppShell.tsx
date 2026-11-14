@@ -163,15 +163,14 @@ function Navigation({ pathname, email }: { pathname: string; email: string }) {
 
   const items = worklist.data?.worklist.items;
   const groups = useMemo(() => {
-    // Trend flags only: an overdue ticket is counted on the station card, and is cleared by a sitting.
-    const unacknowledged = items?.filter((item) =>
-      item.flags.some((flag) => flag.rule !== 'overdue' && flag.acknowledgedAt === null),
-    ).length;
+    // What still waits for a nurse: trend and overdue flags nobody has acknowledged. The station
+    // card gives the totals, so the chip says "new" to keep the two numbers apart.
+    const unacknowledged = items?.filter((item) => item.flags.some((flag) => flag.acknowledgedAt === null)).length;
     const sitting = items?.some((item) => item.sittingInProgress);
     return DESTINATIONS.map((group) => ({
       ...group,
       items: group.items.map((item) => {
-        if (item.id === 'waiting-room') return { ...item, alert: unacknowledged, alertLabel: 'with an unacknowledged trend flag' };
+        if (item.id === 'waiting-room') return { ...item, alert: unacknowledged, alertWord: 'new', alertLabel: 'with an unacknowledged flag' };
         if (item.id === 'check-in' && sitting) return { ...item, live: 'Sitting in progress' };
         return item;
       }),

@@ -13,14 +13,12 @@ export interface SideNavItem {
   label: string;
   icon: IconName;
   href: string;
-  /** A plain number after the label: how many things the destination holds. */
-  count?: number;
-  /** What the count counts, for screen readers. */
-  countLabel?: string;
   /** How many things here wait for the nurse. Drawn as a flag chip, and only above zero. */
   alert?: number;
-  /** What the alert counts: "unacknowledged flags". */
+  /** What the alert counts, for the tooltip and screen readers: "with an unacknowledged flag". */
   alertLabel?: string;
+  /** One short word shown after the number, so it is not read as a total: "new". */
+  alertWord?: string;
   /** Set while something is running at the destination, as the words for it: "Sitting in progress". */
   live?: string;
 }
@@ -112,7 +110,7 @@ export function SideNav({
   // Which rows carry a badge: a badge arriving changes the row's width, so centre again.
   const badges = groups
     .flatMap((group) => group.items)
-    .map((item) => `${item.alert || ''}:${item.count ?? ''}:${item.live ? 1 : ''}`)
+    .map((item) => `${item.alert || ''}:${item.live ? 1 : ''}`)
     .join();
   useEffect(() => {
     const centre = () => {
@@ -249,16 +247,10 @@ function NavLink({ item, on, collapsed }: { item: SideNavItem; on: boolean; coll
         ) : (
           <span className="flex h-[20px] min-w-[20px] items-center justify-center rounded-sm bg-flag-soft px-[6px] font-mono text-[12px] leading-[16px] font-semibold text-flag tabular-nums">
             {alert}
+            {item.alertWord ? ` ${item.alertWord}` : ''}
             {item.alertLabel ? <span className="sr-only"> {item.alertLabel}</span> : null}
           </span>
         )
-      ) : null}
-
-      {item.count != null ? (
-        <span className={collapsed ? 'sr-only' : 'min-w-[20px] text-right font-mono text-[13px] leading-[18px] text-ink-muted tabular-nums'}>
-          {item.count}
-          {item.countLabel ? <span className="sr-only"> {item.countLabel}</span> : null}
-        </span>
       ) : null}
 
       {collapsed ? (
