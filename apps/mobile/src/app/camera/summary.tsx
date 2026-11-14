@@ -96,8 +96,9 @@ function uploadStatus(
       ? `The station did not accept ${uploads.droppedReadings} of the one-second readings`
       : null;
   if (uploads.finish === 'sent') {
-    // A lower-confidence pulse is kept with the sitting but is no baseline and no re-check.
-    const text = lowConfidence ? 'Saved. Repeat the sitting' : kind === 'check_in' ? 'Baseline saved' : 'Re-check saved';
+    // A lower-confidence pulse is kept with the sitting but is no baseline and no re-check. The
+    // note under the heart rate says to repeat the sitting; the status does not say it again.
+    const text = lowConfidence ? 'Saved with lower confidence' : kind === 'check_in' ? 'Baseline saved' : 'Re-check saved';
     return { icon: 'check', text, settled: true, detail: refused };
   }
   if (uploads.finish === 'failed') {
