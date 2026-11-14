@@ -15,6 +15,10 @@ export type RegionColor = z.infer<typeof RegionColor>;
 export const ExposureState = z.enum(['adjusting', 'locked']);
 export type ExposureState = z.infer<typeof ExposureState>;
 
+/** The face box in the upright frame, as fractions of its width and height. */
+export const FaceBox = z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() });
+export type FaceBox = z.infer<typeof FaceBox>;
+
 /** One line of a sitting file after the header. A missing key and null mean the same. */
 export const FrameRecord = z.object({
   t: z.number(),
@@ -26,6 +30,10 @@ export const FrameRecord = z.object({
   exposure: ExposureState,
   droppedFrames: z.int().nonnegative(),
   faceTrackId: z.int().nullish(),
+  /** Recorded for replay only; the engine does not read these three. */
+  face: FaceBox.nullish(),
+  iso: z.number().nullish(),
+  exposureMs: z.number().nullish(),
 });
 export type FrameRecord = z.infer<typeof FrameRecord>;
 

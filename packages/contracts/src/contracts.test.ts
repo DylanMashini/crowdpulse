@@ -34,6 +34,16 @@ test('a frame record line written by SignalEngine parses', () => {
   assert.ok(FrameRecord.safeParse({ t: 1, facePresent: false, exposure: 'adjusting', droppedFrames: 0 }).success);
 });
 
+test('a frame record with the face box and the camera settings parses, and they are optional', () => {
+  const line =
+    '{"droppedFrames":0,"exposure":"locked","exposureMs":8.3,"face":{"height":0.41,"width":0.28,"x":0.31,"y":0.22},' +
+    '"facePresent":true,"faceTrackId":3,"iso":320,"t":12.5}';
+  const frame = FrameRecord.parse(JSON.parse(line));
+  assert.equal(frame.iso, 320);
+  assert.equal(frame.face?.width, 0.28);
+  assert.equal(FrameRecord.parse({ t: 1, facePresent: false, exposure: 'adjusting', droppedFrames: 0 }).face, undefined);
+});
+
 test('an estimate carries a value only when valid', () => {
   const base = { quality: 0.8, coverage: 0.5, ageMs: 0 };
   assert.ok(Estimate.safeParse({ ...base, value: 72, state: 'valid', reason: null }).success);
