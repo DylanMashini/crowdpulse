@@ -782,6 +782,11 @@
   color: var(--ink-muted);
 }
 
+/* The sentence runs to two lines: it breaks between its two halves, never inside "check-in". */
+.lp-push-body span {
+  white-space: nowrap;
+}
+
 .lp-push-action {
   flex: none;
   margin-left: 4px;

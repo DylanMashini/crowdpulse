@@ -65,7 +65,9 @@ export function WorklistPreview() {
         </span>
         <span>
           <span className="lp-push-title">Trend flag, Maria Alvarez</span>
-          <span className="lp-push-body">Pulse 82 bpm at check-in, 108 bpm now (26 min later)</span>
+          <span className="lp-push-body">
+            <span>Pulse 82 bpm at check-in,</span> <span>108 bpm now (26 min later)</span>
+          </span>
         </span>
         <span className="lp-push-action">Acknowledge</span>
       </div>
