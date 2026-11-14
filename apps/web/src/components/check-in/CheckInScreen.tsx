@@ -237,10 +237,13 @@ function Station({ device, serverOffsetMs, serverNow, picker }: StationProps) {
 
   const newPatient = sitting?.kind === 'check_in';
 
+  // Two columns on a wide screen. Below that the columns dissolve into one run, ordered so the
+  // picture comes first and the form right under it; the device list and the strap go last.
   return (
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_400px]">
-      <div className="flex min-w-0 flex-col gap-5">
+      <div className="flex min-w-0 flex-col gap-5 max-xl:contents">
         <Panel
+          className="max-xl:order-1"
           heading="Camera"
           aside={
             cameraLive ? (
@@ -274,17 +277,20 @@ function Station({ device, serverOffsetMs, serverNow, picker }: StationProps) {
           </div>
         </Panel>
 
-        {followed.phase === 'searching' ? <StateMessage kind="loading" title={`Looking for a sitting on ${device.label}`} /> : null}
-        {followed.error ? (
-          <StateMessage kind="error" title="The sitting could not be loaded" onRetry={followed.retry}>
-            {followed.error.message}
-          </StateMessage>
-        ) : null}
-        {sitting && patientRef ? <SittingView sitting={sitting} patient={patientRef} readings={followed.readings} reference={reference} serverNow={serverNow} /> : null}
+        <div className="flex min-w-0 flex-col gap-5 empty:hidden max-xl:order-3">
+          {followed.phase === 'searching' ? <StateMessage kind="loading" title={`Looking for a sitting on ${device.label}`} /> : null}
+          {followed.error ? (
+            <StateMessage kind="error" title="The sitting could not be loaded" onRetry={followed.retry}>
+              {followed.error.message}
+            </StateMessage>
+          ) : null}
+          {sitting && patientRef ? <SittingView sitting={sitting} patient={patientRef} readings={followed.readings} reference={reference} serverNow={serverNow} /> : null}
+        </div>
       </div>
 
-      <div className="flex min-w-0 flex-col gap-5 max-xl:order-first">
+      <div className="flex min-w-0 flex-col gap-5 max-xl:contents">
         <Panel
+          className="max-xl:order-2"
           heading={sitting ? (newPatient ? 'New patient' : 'Patient') : 'Intake'}
           aside={
             patientRef ? (
@@ -321,8 +327,10 @@ function Station({ device, serverOffsetMs, serverNow, picker }: StationProps) {
             <StateMessage kind="loading" title="Opening the intake form" />
           )}
         </Panel>
-        {picker}
-        <StrapPanel onSample={onSample} latest={samples.at(-1) ?? null} posting={posting} serverOffsetMs={serverOffsetMs} sittingRunning={running} />
+        <div className="flex min-w-0 flex-col gap-5 max-xl:order-4">
+          {picker}
+          <StrapPanel onSample={onSample} latest={samples.at(-1) ?? null} posting={posting} serverOffsetMs={serverOffsetMs} sittingRunning={running} />
+        </div>
       </div>
     </div>
   );
