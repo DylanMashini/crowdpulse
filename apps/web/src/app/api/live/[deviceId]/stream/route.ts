@@ -35,11 +35,13 @@ export const GET = route(async (request: Request, context: RouteContext<"/api/li
 
   let waiting: RelayedFrame | null = null;
   let unwatch = () => {};
+  // Sends the waiting frame if the reader has room for it. Set in start(), which has the controller.
+  let send = () => {};
   const stream = new ReadableStream<Uint8Array>(
     {
       start(controller) {
         controller.enqueue(encoder.encode(`--${BOUNDARY}\r\n`));
-        const send = () => {
+        send = () => {
           if (!waiting || (controller.desiredSize ?? 0) <= 0) return;
           const frame = waiting;
           waiting = null;
@@ -49,7 +51,6 @@ export const GET = route(async (request: Request, context: RouteContext<"/api/li
             unwatch();
           }
         };
-        this.pull = send;
         unwatch = watch(device.id, (frame) => {
           waiting = frame;
           send();
@@ -66,6 +67,11 @@ export const GET = route(async (request: Request, context: RouteContext<"/api/li
           },
           { once: true },
         );
+      },
+      // The reader took a part: the frame that arrived while it was busy goes out now, not
+      // when the phone sends the next one.
+      pull() {
+        send();
       },
       cancel() {
         unwatch();
