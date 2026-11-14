@@ -12,7 +12,7 @@ import { Segmented } from '@/components/ui/Segmented';
 import { StateMessage } from '@/components/ui/StateMessage';
 import { api } from '@/lib/api';
 import { cx } from '@/lib/cx';
-import { clockTime, dayTime, decimal, minutes, percent, seconds } from '@/lib/format';
+import { dayTime, decimal, minutes, percent, seconds, timeOrDayTime } from '@/lib/format';
 import { useResource } from '@/lib/use-resource';
 
 import { RateHistogram } from './RateHistogram';
@@ -306,7 +306,7 @@ function PatientRow({ row }: { row: PatientStatistics }) {
         {row.state ? (
           <StatusBadge state={row.state}>{STATE_WORDS[row.state](row.minutesSinceObserved)}</StatusBadge>
         ) : (
-          <span className="whitespace-nowrap text-ink-muted">Discharged{row.dischargedAt ? ` ${clockTime(row.dischargedAt)}` : ''}</span>
+          <span className="whitespace-nowrap text-ink-muted">Discharged{row.dischargedAt ? ` ${timeOrDayTime(row.dischargedAt)}` : ''}</span>
         )}
       </td>
       <td className={cx(tableCell, 'whitespace-nowrap tabular-nums')}>{minutes(row.minutesInRoom)}</td>

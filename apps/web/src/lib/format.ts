@@ -92,6 +92,13 @@ export function dayTime(iso: string): string {
   return dayAndClock.format(new Date(iso));
 }
 
+/** "14:32" for a time today, "13 Nov, 04:00" for any other day, in the browser's zone. */
+export function timeOrDayTime(iso: string, now = new Date()): string {
+  const at = new Date(iso);
+  const sameDay = at.getFullYear() === now.getFullYear() && at.getMonth() === now.getMonth() && at.getDate() === now.getDate();
+  return sameDay ? clockTime(iso) : dayTime(iso);
+}
+
 /** A 0 to 1 share as a whole percentage: "83%". */
 export function percent(share: number): string {
   return `${Math.round(Math.max(0, Math.min(1, share)) * 100)}%`;

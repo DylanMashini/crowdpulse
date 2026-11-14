@@ -15,6 +15,7 @@ import {
   rateChange,
   seconds,
   secondsAgo,
+  timeOrDayTime,
   years,
 } from './format.ts';
 
@@ -69,4 +70,11 @@ test('ages in whole years', () => {
   assert.equal(ageInYears('1991-04-18', new Date(2026, 10, 14)), 35);
   assert.equal(ageInYears('1991-12-01', new Date(2026, 10, 14)), 34);
   assert.equal(ageInYears(null), null);
+});
+
+test('a time on another day carries its date', () => {
+  const now = new Date(2026, 10, 14, 20, 0);
+  assert.equal(timeOrDayTime(new Date(2026, 10, 14, 14, 32).toISOString(), now), '14:32');
+  assert.equal(timeOrDayTime(new Date(2026, 10, 13, 4, 0).toISOString(), now), '13 Nov, 04:00');
+  assert.equal(timeOrDayTime(new Date(2025, 10, 14, 14, 32).toISOString(), now), '14 Nov, 14:32');
 });

@@ -10,7 +10,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { LiveStatus } from '@/components/ui/LiveStatus';
 import { StateMessage } from '@/components/ui/StateMessage';
 import { api, errorMessage } from '@/lib/api';
-import { ageInYears, breathsPerMin, calendarDate, clockTime, heartRate, minutes, rate, ruleText, years } from '@/lib/format';
+import { ageInYears, breathsPerMin, calendarDate, clockTime, heartRate, minutes, rate, ruleText, timeOrDayTime, years } from '@/lib/format';
 import { toTimelineItems } from '@/lib/mapping';
 import { useResource } from '@/lib/use-resource';
 
@@ -100,7 +100,7 @@ function PatientView({ detail, updatedAt, refreshError, onChanged }: PatientView
                 {detail.state === 'observed' && !row ? 'Observed' : undefined}
               </StatusBadge>
             ) : (
-              <span className="text-ink-muted">Discharged at {patient.dischargedAt ? clockTime(patient.dischargedAt) : 'an unknown time'}</span>
+              <span className="text-ink-muted">Discharged at {patient.dischargedAt ? timeOrDayTime(patient.dischargedAt) : 'an unknown time'}</span>
             )}
           </div>
         </div>
@@ -185,7 +185,7 @@ function PatientView({ detail, updatedAt, refreshError, onChanged }: PatientView
             </h2>
             <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2 rounded-lg border border-line bg-surface-raised p-4">
               <dt className="text-ink-muted">Checked in</dt>
-              <dd className="font-mono tabular-nums">{clockTime(patient.createdAt)}</dd>
+              <dd className="font-mono tabular-nums">{timeOrDayTime(patient.createdAt)}</dd>
               <dt className="text-ink-muted">Sittings</dt>
               <dd className="tabular-nums">
                 {detail.sittings.length === 0 ? 'None yet' : `${detail.sittings.length}, baseline ${detail.baseline ? `from ${clockTime(detail.baseline.startedAt)}` : 'not set yet'}`}
