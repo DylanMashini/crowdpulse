@@ -24,11 +24,14 @@ async function load(): Promise<FaceModels> {
   } catch {
     throw new ApiError(
       "face_unavailable",
-      "Face match is unavailable on this server because its models are not installed. Use the patient number.",
+      "Face match is unavailable on this server because its models are not installed. Choose the patient from the waiting-room list instead.",
     );
   }
   // Severity 3 keeps the runtime's per-model graph warnings out of the server log.
-  const options = { logSeverityLevel: 3 as const };
+  // KleidiAI's SME convolution kernels in onnxruntime 1.31 die with SIGILL on Apple silicon
+  // when a run lands on a thread without streaming mode set up, which takes the whole server
+  // with it. The plain MLAS kernels are a few milliseconds slower and do not crash.
+  const options = { logSeverityLevel: 3 as const, extra: { mlas: { disable_kleidiai: "1" } } };
   const [detector, embedder] = await Promise.all(paths.map((path) => InferenceSession.create(path, options)));
   return { detector: detector as InferenceSession, embedder: embedder as InferenceSession };
 }
