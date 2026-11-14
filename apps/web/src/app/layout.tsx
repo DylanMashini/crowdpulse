@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: { default: 'Triage Cam', template: '%s, Triage Cam' },
+  title: { default: 'Crowdpulse', template: '%s, Crowdpulse' },
   description: 'Contact-free vitals at check-in and a live waiting-room worklist for triage nurses',
 };
 

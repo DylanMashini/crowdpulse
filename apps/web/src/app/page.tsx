@@ -5,7 +5,7 @@ import { cookies } from 'next/headers';
 import { LandingPage } from '@/components/landing/LandingPage';
 
 export const metadata: Metadata = {
-  title: { absolute: 'Triage Cam: contact-free vital signs for the waiting room' },
+  title: { absolute: 'Crowdpulse: contact-free vital signs for the waiting room' },
   description:
     'A phone camera measures heart rate and breathing without touching the patient, and the waiting-room worklist puts the people whose numbers are changing first.',
 };

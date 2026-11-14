@@ -10,7 +10,7 @@ const Env = z.object({
   RESEND_API_KEY: optional(),
   /** From address for verification emails. EMAIL_FROM is the older name and is read when this is empty. */
   RESEND_FROM: optional(),
-  EMAIL_FROM: z.preprocess(emptyAsUndefined, z.string().default("Triage Cam <onboarding@resend.dev>")),
+  EMAIL_FROM: z.preprocess(emptyAsUndefined, z.string().default("Crowdpulse <onboarding@resend.dev>")),
   EXPO_ACCESS_TOKEN: optional(),
   EXPO_PUSH_URL: z.preprocess(emptyAsUndefined, z.url().default("https://exp.host/--/api/v2/push/send")),
   SITTING_FILES_DIR: z.preprocess(emptyAsUndefined, z.string().default("./recordings")),

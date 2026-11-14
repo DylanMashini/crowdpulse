@@ -101,7 +101,7 @@ export function CheckInScreen() {
       ) : null}
       {devices.data && cameras.length === 0 ? (
         <StateMessage kind="empty" title="No camera phone has signed in yet">
-          Open the Triage Cam app on the phone, sign in and choose the camera role. The phone appears here within {DEVICE_REFRESH_MS / 1000} seconds.
+          Open the Crowdpulse app on the phone, sign in and choose the camera role. The phone appears here within {DEVICE_REFRESH_MS / 1000} seconds.
         </StateMessage>
       ) : null}
 

@@ -69,7 +69,7 @@ export function Viability() {
               ))}
             </ul>
             <p className="lp-backers-us">
-              Triage Cam is not one of the cleared products. It applies the same measurement principle to one job: re-checking the
+              Crowdpulse is not one of the cleared products. It applies the same measurement principle to one job: re-checking the
               waiting room between check-in and triage.
             </p>
           </div>

@@ -62,7 +62,7 @@ export function LandingPage({ signedIn }: { signedIn: boolean }) {
           <div className="lp-hero-copy">
             <h1 className="lp-h1">Vital signs without touching the patient</h1>
             <p className="lp-hero-lead">
-              Triage Cam turns a phone on a stand into a contact-free vitals station. It measures heart rate and breathing from the camera
+              Crowdpulse turns a phone on a stand into a contact-free vitals station. It measures heart rate and breathing from the camera
               alone, and moves the patients whose numbers are changing to the top of the nurse’s list.
             </p>
             <div className="lp-actions">
@@ -104,7 +104,7 @@ export function LandingPage({ signedIn }: { signedIn: boolean }) {
             <header className="lp-section-head">
               <h2 className="lp-h2">No cuff, no clip, no contact</h2>
               <p className="lp-lead">
-                Vitals are taken once at the desk, and then the waiting room goes quiet. Triage Cam makes every re-check a minute in a
+                Vitals are taken once at the desk, and then the waiting room goes quiet. Crowdpulse makes every re-check a minute in a
                 chair, with nothing to attach and nothing to clean.
               </p>
             </header>
