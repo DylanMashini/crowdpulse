@@ -9,6 +9,8 @@ import { type LastValid, ReasonTally, type Vital } from './readingFormat';
 import { keptFileStore } from './keptFileStore';
 import { type KeptFile, type SittingFileHandOff, SittingFileGone, createSittingFileShelf, isPermanentRefusal } from './sittingFile';
 import { type FaceEnrolment, createUploadQueue, rememberFinishedSitting } from './sittingSession';
+import { stationLink } from './station';
+import { IDLE_STATE } from './stationLink';
 import type { SittingUploadQueue } from './uploadQueue';
 
 export const SITTING_MS = 60_000;
@@ -59,7 +61,7 @@ type RunningSitting = {
  * cannot hold up the sitting.
  */
 export function useSittingController({ patientNumber, kind, enrolFace, deviceId, onFinished }: Options) {
-  const [phase, setPhase] = useState<SittingPhase>('preparing');
+  const [phase, setPhaseState] = useState<SittingPhase>('preparing');
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<CaptureStatusEvent | null>(null);
   const [reading, setReading] = useState<Reading | null>(null);
@@ -71,6 +73,9 @@ export function useSittingController({ patientNumber, kind, enrolFace, deviceId,
 
   const sitting = useRef<RunningSitting | null>(null);
   const stopping = useRef(false);
+  const starting = useRef(false);
+  // The phase as of this instant, for a command that arrives between two renders.
+  const phaseNow = useRef<SittingPhase>('preparing');
   const liveEnabled = useRef(true);
   const liveFps = useRef<number>(LIVE_VIEW.fps);
   const postingFrame = useRef(false);
@@ -84,10 +89,15 @@ export function useSittingController({ patientNumber, kind, enrolFace, deviceId,
     void sittingFiles.resume();
   }, []);
 
+  const setPhase = useCallback((next: SittingPhase) => {
+    phaseNow.current = next;
+    setPhaseState(next);
+  }, []);
+
   const applyCapture = useCallback((result: { phase: SittingPhase; error: string | null }) => {
     setPhase(result.phase);
     setError(result.error);
-  }, []);
+  }, [setPhase]);
 
   const stop = useCallback(async () => {
     const current = sitting.current;
@@ -114,23 +124,33 @@ export function useSittingController({ patientNumber, kind, enrolFace, deviceId,
       sitting.current = null;
       onFinishedRef.current(current.id);
     } catch (failure) {
-      // The module has no sitting any more, so there is no summary to save.
+      // The module has no sitting any more, so there is no summary to save. The server is told,
+      // so the check-in page does not go on waiting for it.
       current.uploads.dispose();
+      void api.abandonSitting(current.id).catch(() => {});
       sitting.current = null;
       stopping.current = false;
       setReading(null);
       setError(`The sitting could not be finished. ${captureErrorMessage(failure)}`);
       setPhase('framing');
     }
-  }, [kind, source, patientNumber]);
+  }, [kind, source, patientNumber, setPhase]);
 
-  const start = useCallback(async () => {
+  /**
+   * Starts the sitting: from the button on this screen, or from the check-in page, which also
+   * says whether the patient opted in to face match since this screen opened.
+   */
+  const start = useCallback(async (remote?: { enrolFace: boolean }) => {
+    // Pressed here and on the dashboard at once, or twice: one sitting.
+    if (starting.current || sitting.current || phaseNow.current !== 'framing') return;
+    starting.current = true;
     setPhase('starting');
     setError(null);
     let sittingId: string;
     try {
       sittingId = (await api.startSitting({ patientNumber, deviceId, kind, source })).sitting.id;
     } catch (failure) {
+      starting.current = false;
       setError(errorMessage(failure));
       return setPhase('framing');
     }
@@ -138,7 +158,7 @@ export function useSittingController({ patientNumber, kind, enrolFace, deviceId,
       id: sittingId,
       uploads: createUploadQueue(sittingId),
       reasons: new ReasonTally(),
-      face: enrolFace ? { status: 'pending', attempts: 0, busy: false } : { status: 'not_needed' },
+      face: enrolFace || remote?.enrolFace ? { status: 'pending', attempts: 0, busy: false } : { status: 'not_needed' },
       // A re-check keeps the photo from check-in; the server fills in a missing one by itself.
       photo: { done: kind !== 'check_in', attempts: 0, busy: false },
     };
@@ -151,10 +171,13 @@ export function useSittingController({ patientNumber, kind, enrolFace, deviceId,
     } catch (failure) {
       sitting.current.uploads.dispose();
       sitting.current = null;
+      void api.abandonSitting(sittingId).catch(() => {});
       setError(captureErrorMessage(failure));
       setPhase('framing');
+    } finally {
+      starting.current = false;
     }
-  }, [deviceId, enrolFace, kind, source, patientNumber]);
+  }, [deviceId, enrolFace, kind, source, patientNumber, setPhase]);
 
   const enrol = useCallback(async () => {
     const current = sitting.current;
@@ -283,13 +306,19 @@ export function useSittingController({ patientNumber, kind, enrolFace, deviceId,
         tuneLiveView(event.viewers);
       }),
       TriageCapture.addListener('onError', (event) => setError(captureErrorMessage(event))),
+      // The outlines the viewfinder draws also go to the check-in page, over the live view.
+      TriageCapture.addListener('onFaceRegions', (event) => stationLink.setRegions(event)),
     ];
     return () => {
       for (const subscription of subscriptions) subscription.remove();
       // Leaving the screen ends the live view and the camera. A sitting that was still running
-      // is abandoned by the module; the server closes it when the patient's next sitting starts.
-      sitting.current?.uploads.dispose();
+      // is abandoned by the module, and the server is told so that nothing waits for its summary.
+      if (sitting.current) {
+        sitting.current.uploads.dispose();
+        void api.abandonSitting(sitting.current.id).catch(() => {});
+      }
       sitting.current = null;
+      stationLink.setRegions(null);
       void TriageCapture.setLivePreview({ enabled: false }).catch(() => {});
       void TriageCapture.stopCapture().catch(() => {});
     };
@@ -311,6 +340,34 @@ export function useSittingController({ patientNumber, kind, enrolFace, deviceId,
     [applyLiveView],
   );
 
+  // The check-in page stands in for this screen: it is told what the screen shows, and its
+  // Start and End buttons do what the ones here do.
+  const sittingId = phase === 'running' || phase === 'stopping' ? (status?.sittingId ?? null) : null;
+  const viewfinder = status?.viewfinder ?? null;
+  const facePresent = status?.facePresent ?? false;
+  const exposureLocked = status?.exposureLocked ?? false;
+  useEffect(() => {
+    stationLink.setState({
+      phase,
+      patientNumber,
+      kind,
+      sittingId,
+      viewfinder,
+      facePresent,
+      exposureLocked,
+      error: error ? error.slice(0, 300) : null,
+    });
+  }, [phase, patientNumber, kind, sittingId, viewfinder, facePresent, exposureLocked, error]);
+  useEffect(() => () => stationLink.setState(IDLE_STATE), []);
+  useEffect(
+    () =>
+      stationLink.onCommand((command) => {
+        if (command.type === 'start') void start({ enrolFace: command.enrolFace });
+        else if (command.type === 'stop') void stop();
+      }),
+    [start, stop],
+  );
+
   const retry = useCallback(() => {
     setPhase('preparing');
     setError(null);
@@ -320,7 +377,7 @@ export function useSittingController({ patientNumber, kind, enrolFace, deviceId,
         if (result.phase === 'framing' && liveEnabled.current) return applyLiveView(LIVE_VIEW.fps);
       })
       .catch(() => setLive({ enabled: false, viewers: null, failing: false }));
-  }, [applyCapture, applyLiveView]);
+  }, [applyCapture, applyLiveView, setPhase]);
 
   const elapsedMs = phase === 'running' || phase === 'stopping' ? Math.max(status?.sittingElapsedMs ?? 0, reading?.elapsedMs ?? 0) : 0;
 

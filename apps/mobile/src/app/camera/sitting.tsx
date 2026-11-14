@@ -19,6 +19,7 @@ import { useScopedTheme } from '@/components/ThemeScope';
 import { PatientIdentity } from '@/components/PatientIdentity';
 import { usePatientRef } from '@/hooks/usePatientRef';
 import { readoutFor } from '@/lib/capture/readingFormat';
+import { stationLink } from '@/lib/capture/station';
 import { type Trace, pushTrace } from '@/lib/capture/trace';
 import { type LiveViewState, useSittingController } from '@/lib/capture/useSittingController';
 import { tidy } from '@/lib/format';
@@ -71,6 +72,8 @@ function SittingScreen({ patientNumber, kind, enrolFace, deviceId }: Props) {
     [router],
   );
   const sitting = useSittingController({ patientNumber, kind, enrolFace, deviceId, onFinished });
+  // Called off from the check-in page: the same as Back here, without the question.
+  useEffect(() => stationLink.onCommand((command) => (command.type === 'cancel' ? router.dismissTo('/camera') : undefined)), [router]);
   // The name is typed on the dashboard while this sitting runs, and the photo is taken from it.
   const patient = usePatientRef(patientNumber);
   const { phase, status, reading, source } = sitting;
