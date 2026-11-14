@@ -171,6 +171,8 @@ export const sittings = pgTable(
     /** bpm. */
     heartRate: real("heart_rate"),
     heartRateCoverage: real("heart_rate_coverage"),
+    /** `normal` or `low` (contracts `HeartRateConfidence`). Null without a heart rate and for sittings from before it existed. */
+    heartRateConfidence: text("heart_rate_confidence"),
     /** Breaths per minute. */
     breathingRate: real("breathing_rate"),
     breathingRateCoverage: real("breathing_rate_coverage"),

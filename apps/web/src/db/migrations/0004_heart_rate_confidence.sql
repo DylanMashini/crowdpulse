@@ -1,0 +1,1 @@
+ALTER TABLE "sittings" ADD COLUMN "heart_rate_confidence" text;
