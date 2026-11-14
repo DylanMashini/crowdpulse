@@ -57,7 +57,7 @@ All values are in `tokens.json`; each token's `usage` says where it goes.
 |---|---|---|
 | Stable | `stable` on `stable-soft` | `state: 'observed'` with no open flag |
 | Watch | `watch` on `watch-soft`, 2px `watch` row edge | An open `baseline_shift` flag, or score 1 or 2 |
-| Urgent | `on-urgent` on `urgent`, row on `urgent-soft` with a 2px `urgent` edge | An open `score_rise` flag, or score 3 |
+| Urgent | `on-urgent` on `urgent`, row on `urgent-soft` with a 2px `urgent` edge | An open `score_rise` flag, or any open trend flag on a patient scoring 3 |
 | Overdue | `on-overdue` on `overdue` (the inverse of the page) | `state: 'overdue'` |
 | No reading | `ink-muted` in a dashed `line-strong` outline | `state: 'no-reading'` |
 
