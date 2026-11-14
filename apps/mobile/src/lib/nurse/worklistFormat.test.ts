@@ -104,9 +104,12 @@ test('one sentence has no full stop, two or more keep them', () => {
 test('the timeline is oldest first and keeps the sitting that failed', () => {
   const at = (minute: number) => new Date(2026, 10, 14, 14, minute).toISOString();
   const id = '0b0e4a53-3c1b-4b7e-9d0a-0d3f6f2a1c11';
+  const other = '0b0e4a53-3c1b-4b7e-9d0a-0d3f6f2a1c12';
+  // The re-check at 14:29 tripped both trend rules: two flags, one alert.
   const newestFirst: TimelineEntry[] = [
     { type: 'flag_acknowledged', at: at(31), flagId: id, by: 'nurse@clinic.org' },
-    { type: 'flag_opened', at: at(30), flagId: id, rule: 'baseline_shift', handoff: 'Patient 14: pulse 82 at check-in, 108 now.' },
+    { type: 'flag_opened', at: at(30), flagId: id, rule: 'baseline_shift', handoff: 'Patient 14: pulse 82 at check-in, 108 now.', alertId: 'trend-14-1' },
+    { type: 'flag_opened', at: at(30), flagId: other, rule: 'score_rise', handoff: 'Patient 14: pulse 82 at check-in, 108 now.', alertId: 'trend-14-1' },
     { type: 'sitting', at: at(29), sittingId: id, kind: 'recheck', source: 'simulated', heartRate: 108.4, breathingRate: null, score: 1 },
     { type: 'sitting', at: at(15), sittingId: id, kind: 'recheck', source: 'camera', heartRate: null, breathingRate: null, score: null },
     { type: 'sitting', at: at(2), sittingId: id, kind: 'check_in', source: 'camera', heartRate: 82, breathingRate: 16, score: 0 },
@@ -131,6 +134,9 @@ test('the timeline is oldest first and keeps the sitting that failed', () => {
 
   assert.equal(rows[4]!.state, 'flag');
   assert.equal(rows[4]!.note, 'Patient 14: pulse 82 at check-in, 108 now.');
+  // One deterioration is told once, not as two identical rows.
+  assert.equal(rows.filter((row) => row.title === 'Flag opened').length, 1);
+  assert.equal(new Set(rows.map((row) => row.key)).size, rows.length);
   // Who acknowledged is never printed by name.
   assert.equal(JSON.stringify(rows[5]).includes('nurse@clinic.org'), false);
 });
@@ -140,8 +146,8 @@ test('overdue and discharge events have their own rows', () => {
   const at = new Date(2026, 10, 14, 16, 0).toISOString();
   const rows = timelineRows([
     { type: 'discharged', at },
-    { type: 'flag_closed', at, flagId: id, rule: 'overdue' },
-    { type: 'flag_opened', at, flagId: id, rule: 'overdue', handoff: 'Patient 9: last observed 31 min ago.' },
+    { type: 'flag_closed', at, flagId: id, rule: 'overdue', alertId: id },
+    { type: 'flag_opened', at, flagId: id, rule: 'overdue', handoff: 'Patient 9: last observed 31 min ago.', alertId: id },
   ]);
   assert.deepEqual(
     rows.map((row) => [row.title, row.state]),

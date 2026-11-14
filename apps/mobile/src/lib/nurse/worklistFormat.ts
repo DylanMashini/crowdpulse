@@ -1,4 +1,4 @@
-import { patientLabel } from '@triagecam/contracts';
+import { patientLabel, timelineByAlert } from '@triagecam/contracts';
 import type {
   CaptureSource,
   FlagRule,
@@ -134,7 +134,10 @@ function timelineRow(entry: TimelineEntry, index: number): TimelineRow {
   }
 }
 
-/** The patient's history for PatientTimeline: oldest first, with failed sittings kept. */
+/**
+ * The patient's history for PatientTimeline: oldest first, with failed sittings kept. An alert
+ * that tripped both trend rules opened once, so it is one "Flag opened" row, not two alike.
+ */
 export function timelineRows(timeline: PatientDetailResponse['timeline']): TimelineRow[] {
-  return [...timeline].reverse().map(timelineRow);
+  return timelineByAlert(timeline).reverse().map(timelineRow);
 }

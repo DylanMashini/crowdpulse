@@ -16,6 +16,8 @@ import {
   defaultSettings,
   errorStatus,
   flagAlerts,
+  timelineByAlert,
+  type TimelineEntry,
 } from './index.ts';
 
 test('a frame record line written by SignalEngine parses', () => {
@@ -141,4 +143,37 @@ test('flags that share an alert id are one alert, and an alert waits until all o
   assert.deepEqual(partly?.waiting.map((each) => each.id), ['b']);
   assert.equal(flagAlerts([flag('a', 'score_rise', 'x', { closedAt })])[0]?.closedAt, closedAt);
   assert.deepEqual(flagAlerts([]), []);
+});
+
+test('the timeline tells an alert opening or closing once, however many rules it tripped', () => {
+  const id = '00000000-0000-4000-8000-000000000001';
+  const opened = (rule: Flag['rule'], alertId: string, at: string): TimelineEntry => ({ type: 'flag_opened', at, flagId: id, rule, handoff: 'h', alertId });
+  const closed = (rule: Flag['rule'], alertId: string, at: string): TimelineEntry => ({ type: 'flag_closed', at, flagId: id, rule, alertId });
+  const t = (minute: number) => `2026-11-14T14:${String(minute).padStart(2, '0')}:00.000Z`;
+  const timeline: TimelineEntry[] = [
+    closed('baseline_shift', 'trend-1', t(40)),
+    closed('score_rise', 'trend-1', t(30)),
+    opened('overdue', 'o', t(20)),
+    { type: 'flag_acknowledged', at: t(12), flagId: id, by: 'nurse@ward.test' },
+    opened('baseline_shift', 'trend-1', t(10)),
+    opened('score_rise', 'trend-1', t(10)),
+    opened('baseline_shift', 'trend-0', t(5)),
+    closed('score_rise', 'trend-x', t(4)),
+    closed('baseline_shift', 'trend-x', t(4)),
+    { type: 'created', at: t(0) },
+  ];
+  const told = timelineByAlert(timeline);
+  assert.deepEqual(
+    told.map((entry) => `${entry.type} ${entry.at.slice(14, 16)}${'rule' in entry ? ` ${entry.rule}` : ''}`),
+    [
+      'flag_closed 40 baseline_shift',
+      'flag_closed 30 score_rise',
+      'flag_opened 20 overdue',
+      'flag_acknowledged 12',
+      'flag_opened 10 baseline_shift',
+      'flag_opened 05 baseline_shift',
+      'flag_closed 04 score_rise',
+      'created 00',
+    ],
+  );
 });

@@ -149,12 +149,30 @@ export const TimelineEntry = z.discriminatedUnion('type', [
     breathingRate: z.number().nullable(),
     score: Score.nullable(),
   }),
-  z.object({ type: z.literal('flag_opened'), at: Timestamp, flagId: Id, rule: FlagRule, handoff: z.string() }),
+  /** `alertId` is the flag's (`Flag.alertId`): flags of one alert open in the same instant. */
+  z.object({ type: z.literal('flag_opened'), at: Timestamp, flagId: Id, rule: FlagRule, handoff: z.string(), alertId: z.string().min(1) }),
   z.object({ type: z.literal('flag_acknowledged'), at: Timestamp, flagId: Id, by: z.string() }),
-  z.object({ type: z.literal('flag_closed'), at: Timestamp, flagId: Id, rule: FlagRule }),
+  z.object({ type: z.literal('flag_closed'), at: Timestamp, flagId: Id, rule: FlagRule, alertId: z.string().min(1) }),
   z.object({ type: z.literal('discharged'), at: Timestamp }),
 ]);
 export type TimelineEntry = z.infer<typeof TimelineEntry>;
+
+/**
+ * The timeline as a nurse reads it: one row for an alert opening and one for it closing, not
+ * one per rule. Where flags of one alert opened (or closed) in the same instant, the first of
+ * those entries is kept and the rest are left out. Order is unchanged. Flags of an alert that
+ * closed at different times keep a row each.
+ */
+export function timelineByAlert(timeline: TimelineEntry[]): TimelineEntry[] {
+  const told = new Set<string>();
+  return timeline.filter((entry) => {
+    if (entry.type !== 'flag_opened' && entry.type !== 'flag_closed') return true;
+    const key = `${entry.type} ${entry.alertId} ${entry.at}`;
+    if (told.has(key)) return false;
+    told.add(key);
+    return true;
+  });
+}
 
 export const PatientDetailResponse = z.object({
   patient: Patient,

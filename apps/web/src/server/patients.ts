@@ -184,8 +184,9 @@ export async function patientDetail(number: number): Promise<PatientDetailRespon
     });
   }
   for (const flag of flags) {
-    timeline.push({ type: "flag_opened", at: flag.openedAt, flagId: flag.id, rule: flag.rule, handoff: flag.handoff });
-    if (flag.closedAt) timeline.push({ type: "flag_closed", at: flag.closedAt, flagId: flag.id, rule: flag.rule });
+    const { alertId } = flag;
+    timeline.push({ type: "flag_opened", at: flag.openedAt, flagId: flag.id, rule: flag.rule, handoff: flag.handoff, alertId });
+    if (flag.closedAt) timeline.push({ type: "flag_closed", at: flag.closedAt, flagId: flag.id, rule: flag.rule, alertId });
   }
   for (const acknowledgement of distinctAcknowledgements(acknowledgements)) {
     timeline.push({

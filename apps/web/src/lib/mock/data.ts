@@ -336,10 +336,10 @@ export function patientDetail(number: number): PatientDetailResponse | null {
     { type: 'created', at: patient.createdAt },
   ];
   if (flag) {
-    const opened: TimelineEntry = { type: 'flag_opened', at: flag.openedAt, flagId: flag.id, rule: flag.rule, handoff: flag.handoff };
+    const opened: TimelineEntry = { type: 'flag_opened', at: flag.openedAt, flagId: flag.id, rule: flag.rule, handoff: flag.handoff, alertId: flag.alertId };
     timeline.unshift(opened);
     if (flag.acknowledgedAt) timeline.unshift({ type: 'flag_acknowledged', at: flag.acknowledgedAt, flagId: flag.id, by: user.email });
-    if (flag.closedAt) timeline.unshift({ type: 'flag_closed', at: flag.closedAt, flagId: flag.id, rule: flag.rule });
+    if (flag.closedAt) timeline.unshift({ type: 'flag_closed', at: flag.closedAt, flagId: flag.id, rule: flag.rule, alertId: flag.alertId });
   }
   if (patient.dischargedAt) timeline.unshift({ type: 'discharged', at: patient.dischargedAt });
   return {
