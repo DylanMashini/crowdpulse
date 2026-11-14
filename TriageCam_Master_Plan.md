@@ -318,6 +318,8 @@ Access was checked on Friday 13 November 2026 by reading each dataset's own page
 
 ### Use these
 
+**Decision of 14 November 2026:** published evaluation and statistics use UBFC-rPPG only. MCD-rPPG is kept as an internal diagnostic and its figures are not published anywhere.
+
 | Dataset | Why | Ground truth | Size | Terms | Link |
 |---|---|---|---|---|---|
 | **UBFC-rPPG** | First one to run. Seated people on a webcam, uncompressed video. The standard benchmark, so results compare with published numbers. | Fingertip pulse waveform and heart rate. Beat intervals can be derived from the waveform. No breathing. | About 38 GB; Dataset 1 alone is 7 GB | "Shared for research purpose". Do not show the faces of subjects 21 and 27 anywhere. | [Project page](https://sites.google.com/view/ybenezeth/ubfcrppg), [Drive folder](https://drive.google.com/drive/folders/1o0XU4gTIo46YfwaWjIgbtCncc-oF44Xk) |
