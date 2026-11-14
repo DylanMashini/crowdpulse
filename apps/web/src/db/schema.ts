@@ -126,6 +126,11 @@ export const patients = pgTable("patients", {
   intakeCompletedAt: instant("intake_completed_at"),
   /** When the profile photo was last stored. Null when there is none. Doubles as its cache key. */
   photoUpdatedAt: instant("photo_updated_at"),
+  /**
+   * When staff removed the profile photo. While it is set nothing takes a new photo by itself;
+   * it is cleared when staff take one. Null for a patient whose photo was never removed.
+   */
+  photoRemovedAt: instant("photo_removed_at"),
 });
 
 /**
