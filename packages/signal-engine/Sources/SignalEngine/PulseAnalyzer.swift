@@ -57,6 +57,9 @@ struct PulseAnalyzer {
     /// Nil when there is no candidate to report or the window is too short to have a
     /// newest part.
     var recentQuality: Double?
+    /// Size of the rhythm at the candidate in those newest seconds, as a share of its
+    /// size over the whole window. Nil with `recentQuality`.
+    var recentAmplitudeShare: Double?
     /// How many times stronger the regions' brightness is than their pulse signal at the
     /// candidate, in the same mix of regions (`maximumBrightnessRatio`). Nil when the
     /// check did not run.
@@ -328,6 +331,7 @@ struct PulseAnalyzer {
         return finished(.illumination)
       }
       detail.recentQuality = recentQuality(combined, usable: usable, at: reportedHz, rate: rate)
+      detail.recentAmplitudeShare = recentAmplitudeShare(combined, at: reportedHz, rate: rate)
 
       // The same mix of regions, of their brightness instead of their pulse signal.
       let bright = mix(
@@ -364,6 +368,22 @@ struct PulseAnalyzer {
     guard DSP.rootMeanSquare(newest) > 0 else { return 0 }
     return spectrum(of: newest, rate: rate).quality(
       at: hz, halfWidthHz: configuration.qualityHalfWidthResolutions * rate / Double(tail))
+  }
+
+  /// Size of the rhythm at `hz` in the newest `recentEvidenceSeconds` of the combined
+  /// waveform, as a share of its size over the whole window. A pulse that is still there
+  /// is about as strong at the end of the window as over all of it; once it has left the
+  /// picture, what the newest seconds hold at its rate is noise, and much smaller.
+  private func recentAmplitudeShare(_ combined: [Double], at hz: Double, rate: Double) -> Double? {
+    let tail = Int((configuration.recentEvidenceSeconds * rate).rounded())
+    guard tail > 1, 2 * combined.count >= 3 * tail else { return nil }
+    func size(_ signal: [Double]) -> Double {
+      let window = DSP.hann(signal.count)
+      let part = DSP.component(of: vDSP.multiply(signal, window), at: hz, rate: rate)
+      return (part.re * part.re + part.im * part.im).squareRoot() / window.reduce(0, +)
+    }
+    let whole = size(combined)
+    return whole > 0 ? size(Array(combined.suffix(tail))) / whole : 0
   }
 
   /// Whether what the regions carry at `hz` is something the projection cancels. The

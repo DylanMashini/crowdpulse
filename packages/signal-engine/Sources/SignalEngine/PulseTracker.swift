@@ -558,7 +558,8 @@ struct PulseTracker {
       diagnostic.gate = .quality
       return .withheld(.none, .lowQuality, quality: quality)
     case .peak(_, let quality)
-    where (outcome.detail.recentQuality ?? 1) < configuration.minimumRecentQuality:
+    where (outcome.detail.recentQuality ?? 1) < configuration.minimumRecentQuality
+      || (outcome.detail.recentAmplitudeShare ?? 1) < configuration.minimumRecentAmplitudeShare:
       gate.push(nil)
       diagnostic.gate = .quality
       return .withheld(.none, .lowQuality, quality: quality)

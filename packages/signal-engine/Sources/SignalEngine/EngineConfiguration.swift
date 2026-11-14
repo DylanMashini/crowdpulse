@@ -78,6 +78,12 @@ public struct EngineConfiguration: Codable, Sendable, Equatable {
   /// their frequency resolution is coarse and noise alone scores about 0.27.
   public var minimumRecentQuality: Double = 0.4
 
+  /// And the rhythm must be at least this large in them, as a share of its size over the
+  /// whole window. Noise passes `minimumRecentQuality` now and then; it does not also come
+  /// out as large as the pulse that was there. No valid window of the UBFC tuning set or
+  /// the owner's sitting is under 0.5; three seconds after a face is covered it is.
+  public var minimumRecentAmplitudeShare: Double = 0.5
+
   // MARK: Motion
 
   /// The colour of a skin region is compared over two neighbouring stretches of this length,
