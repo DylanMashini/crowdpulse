@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+
 import { env } from "./env.ts";
 import { ApiError } from "./http.ts";
 
@@ -42,8 +44,8 @@ const limiter = (globalForLimiter.triagecamLimiter ??= new RateLimiter());
 export const MINUTE_MS = 60_000;
 
 /** Throws rate_limited once `key` has been used more than `limit` times inside the window. */
-export function rateLimit(key: string, limit: number, windowMs: number): void {
-  const retryAfterSeconds = limiter.hit(`${key}|${limit}|${windowMs}`, limit, windowMs);
+export function rateLimit(key: string, limit: number, windowMs: number, counters: RateLimiter = limiter): void {
+  const retryAfterSeconds = counters.hit(`${key}|${limit}|${windowMs}`, limit, windowMs);
   if (retryAfterSeconds > 0) {
     throw new ApiError("rate_limited", `Too many attempts. Try again in ${retryAfterSeconds} seconds.`);
   }
@@ -69,7 +71,71 @@ export function forwardedClient(header: string | null, trustedProxies: number | 
   return entries[Math.max(0, entries.length - trustedProxies)] as string;
 }
 
-/** The caller's address, for rate limits. `TRUSTED_PROXY_HOPS` says how many proxies of ours are in front. */
+/**
+ * What a rate limit counts an address as. An IPv4 address is itself. An IPv6 address is its
+ * /64: a single host or home network is handed a whole /64 and can use any of its 2^64
+ * addresses, so counting each one separately would be no limit at all. An IPv4 address written
+ * as IPv6 (`::ffff:192.0.2.1`) counts as the IPv4 address. Anything else is returned as it came.
+ */
+export function addressBucket(address: string): string {
+  const bare = address.replace(/^\[|\]$/g, "").split("%")[0] as string;
+  if (isIP(bare) !== 6) return address;
+
+  // A dotted IPv4 tail is two groups.
+  let text = bare.toLowerCase();
+  const dotted = /(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(text);
+  if (dotted) {
+    const [a, b, c, d] = dotted.slice(1).map(Number) as [number, number, number, number];
+    text = `${text.slice(0, dotted.index)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const [head = "", tail] = text.split("::");
+  const left = head ? head.split(":") : [];
+  const right = tail ? tail.split(":") : [];
+  const groups =
+    tail === undefined ? left : [...left, ...Array<string>(Math.max(0, 8 - left.length - right.length)).fill("0"), ...right];
+  const words = groups.map((group) => parseInt(group, 16));
+
+  const mapped = words.slice(0, 5).every((word) => word === 0) && words[5] === 0xffff;
+  if (mapped) {
+    const [high, low] = [words[6] as number, words[7] as number];
+    return `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`;
+  }
+  return `${words.slice(0, 4).map((word) => word.toString(16)).join(":")}::/64`;
+}
+
+/**
+ * The caller, for rate limits: their address, or their /64 on IPv6 (`addressBucket`).
+ * `TRUSTED_PROXY_HOPS` says how many proxies of ours are in front.
+ */
 export function clientAddress(request: Request): string {
-  return forwardedClient(request.headers.get("x-forwarded-for"), env().TRUSTED_PROXY_HOPS);
+  return addressBucket(forwardedClient(request.headers.get("x-forwarded-for"), env().TRUSTED_PROXY_HOPS));
+}
+
+/** Sign-in attempts allowed inside `SIGN_IN_WINDOW_MS`, by what is counted. */
+export const SIGN_IN_LIMITS = {
+  /** From one address, whatever the account: a waiting room or a venue can share one address. */
+  perAddress: 60,
+  /** For one account from one address: a person mistyping their own password. */
+  perAddressAndAccount: 10,
+  /** For one account from everywhere: guessing spread over many addresses. */
+  perAccount: 30,
+} as const;
+export const SIGN_IN_WINDOW_MS = 5 * MINUTE_MS;
+
+/** Counts one sign-in attempt from `address`, before the request body is known. */
+export function limitSignInAddress(address: string, counters?: RateLimiter): void {
+  rateLimit(`sign-in:${address}`, SIGN_IN_LIMITS.perAddress, SIGN_IN_WINDOW_MS, counters);
+}
+
+/**
+ * Counts one sign-in attempt on the account `email` from `address`.
+ *
+ * The limit across all addresses is what stops guessing from many addresses at once; it is
+ * three times the limit for one address, so one caller hammering an account from one place
+ * is stopped by their own limit first and does not lock its owner out from elsewhere. It
+ * counts every attempt, for an account that exists or not, so it gives nothing away.
+ */
+export function limitSignInAccount(address: string, email: string, counters?: RateLimiter): void {
+  rateLimit(`sign-in:${address}:${email}`, SIGN_IN_LIMITS.perAddressAndAccount, SIGN_IN_WINDOW_MS, counters);
+  rateLimit(`sign-in-account:${email}`, SIGN_IN_LIMITS.perAccount, SIGN_IN_WINDOW_MS, counters);
 }
