@@ -3,7 +3,7 @@ import { cx } from '@/lib/cx';
 import { ProvenanceTag } from './ProvenanceTag';
 import { ScoreChip } from './ScoreChip';
 import { StatusBadge } from './StatusBadge';
-import { TicketNumber } from './TicketNumber';
+import { PatientIdentity, intakeSummary } from './PatientIdentity';
 import { TrendValue } from './TrendValue';
 import type { TileState, WorklistRow } from './types';
 
@@ -21,12 +21,12 @@ export interface PatientTileProps extends WorklistRow {
   measured?: number;
 }
 
-/** One waiting ticket for the wall view. */
-export function PatientTile({ ticket, state, minutes, pulse, breathing, score, source, sourceLabel, measured }: PatientTileProps) {
+/** One waiting patient for the wall view: who they are, then how they are doing. */
+export function PatientTile({ patient, reason, ageYears, state, minutes, pulse, breathing, score, source, sourceLabel, measured }: PatientTileProps) {
   return (
     <article className={cx('flex h-full w-full flex-col items-start gap-3 rounded-lg bg-surface-raised', FRAMES[state])}>
-      <header className="flex w-full items-center justify-between gap-2">
-        <TicketNumber number={ticket} size="md" />
+      <header className="flex w-full items-start justify-between gap-2">
+        <PatientIdentity patient={patient} size="md" detail={intakeSummary(ageYears, reason)} />
         {source ? <ProvenanceTag kind={source}>{sourceLabel}</ProvenanceTag> : null}
       </header>
       <StatusBadge state={state} minutes={minutes} />

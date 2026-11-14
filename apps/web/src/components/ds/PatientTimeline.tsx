@@ -25,8 +25,8 @@ const MARKS: Record<TileState, string> = {
   'no-reading': 'rounded-full bg-surface-raised outline-2 outline-dashed outline-line-strong',
 };
 
-/** Every observation and flag event for one ticket since check-in, oldest first. */
-export function TicketTimeline({ items }: { items: TimelineItem[] }) {
+/** Every observation and flag event for one patient since check-in, oldest first. */
+export function PatientTimeline({ items }: { items: TimelineItem[] }) {
   return (
     <ol className="w-full max-w-[560px]">
       {items.map((item, index) => {

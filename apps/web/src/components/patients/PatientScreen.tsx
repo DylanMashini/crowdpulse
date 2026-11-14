@@ -1,67 +1,74 @@
 'use client';
 
-import type { Flag, TicketDetailResponse } from '@triagecam/contracts';
+import { patientLabel, type Flag, type Patient, type PatientDetailResponse } from '@triagecam/contracts';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
 import { useLive, useLiveEvents } from '@/components/app/live';
-import { Button, HandoffNote, Icon, StatusBadge, TicketNumber, TicketTimeline, buttonClass } from '@/components/ds';
+import { Button, HandoffNote, Icon, PatientIdentity, PatientTimeline, StatusBadge, buttonClass } from '@/components/ds';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { LiveStatus } from '@/components/ui/LiveStatus';
 import { StateMessage } from '@/components/ui/StateMessage';
 import { api, errorMessage } from '@/lib/api';
-import { clockTime, ruleText } from '@/lib/format';
+import { ageInYears, calendarDate, clockTime, ruleText } from '@/lib/format';
 import { toTimelineItems } from '@/lib/mapping';
 import { useResource } from '@/lib/use-resource';
 
-export function TicketScreen({ number }: { number: number }) {
-  const detail = useResource(`ticket:${number}`, () => api.ticket(number));
+import { IntakeForm } from './IntakeForm';
+
+export function PatientScreen({ number }: { number: number }) {
+  const detail = useResource(`patient:${number}`, () => api.patient(number));
 
   useLiveEvents((event) => {
-    const concernsTicket =
+    const concernsPatient =
       event.type === 'reconnected' ||
-      (event.type === 'ticket_changed' && event.ticketNumber === number) ||
-      ((event.type === 'flag_opened' || event.type === 'flag_acknowledged' || event.type === 'flag_closed') && event.flag.ticketNumber === number) ||
-      ((event.type === 'sitting_started' || event.type === 'sitting_finished') && event.sitting.ticketNumber === number);
-    if (concernsTicket) detail.reload();
+      (event.type === 'patient_changed' && event.patientNumber === number) ||
+      ((event.type === 'flag_opened' || event.type === 'flag_acknowledged' || event.type === 'flag_closed') && event.flag.patientNumber === number) ||
+      ((event.type === 'sitting_started' || event.type === 'sitting_finished') && event.sitting.patientNumber === number);
+    if (concernsPatient) detail.reload();
   });
 
-  if (detail.loading) return <StateMessage kind="loading" title={`Loading ticket ${number}`} />;
+  if (detail.loading) return <StateMessage kind="loading" title="Loading the patient" />;
 
   if (!detail.data) {
     const missing = detail.error?.code === 'not_found';
     return (
       <StateMessage
         kind={missing ? 'empty' : 'error'}
-        title={missing ? `There is no ticket ${number}` : `Ticket ${number} could not be loaded`}
+        title={missing ? `There is no patient with visit number ${number}` : 'The patient could not be loaded'}
         onRetry={missing ? undefined : detail.reload}
         action={
-          <Link href="/tickets" className={buttonClass('secondary')}>
-            All tickets
+          <Link href="/patients" className={buttonClass('secondary')}>
+            All patients
           </Link>
         }
       >
-        {missing ? 'Ticket numbers are given in order at check-in and are never reused. Check the number on the patient’s slip.' : detail.error?.message}
+        {missing ? 'Visit numbers are given in order at check-in and are never reused. Find the patient by name under Patients.' : detail.error?.message}
       </StateMessage>
     );
   }
 
-  return <TicketView detail={detail.data} updatedAt={detail.updatedAt} refreshError={detail.error?.message ?? null} onChanged={detail.reload} />;
+  return <PatientView detail={detail.data} updatedAt={detail.updatedAt} refreshError={detail.error?.message ?? null} onChanged={detail.reload} />;
 }
 
-interface TicketViewProps {
-  detail: TicketDetailResponse;
+interface PatientViewProps {
+  detail: PatientDetailResponse;
   updatedAt: number | null;
   refreshError: string | null;
   onChanged: () => void;
 }
 
-function TicketView({ detail, updatedAt, refreshError, onChanged }: TicketViewProps) {
-  const { ticket } = detail;
+function PatientView({ detail, updatedAt, refreshError, onChanged }: PatientViewProps) {
+  const [saved, setSaved] = useState<{ patient: Patient; at: number } | null>(null);
+  // Whichever arrived last: the answer to the form's own save, or the record as refetched.
+  const patient = saved && saved.at > (updatedAt ?? 0) ? saved.patient : detail.patient;
+  const [editing, setEditing] = useState(false);
+  const age = ageInYears(patient.dateOfBirth);
+  const facts = [age === null ? null : `${age} y`, patient.sex ? SEX[patient.sex] : null].filter(Boolean).join(' · ');
   const { worklist } = useLive();
-  const waiting = ticket.status === 'waiting';
-  // The ticket itself does not say how long ago it was observed; its worklist row does.
-  const row = worklist.data?.worklist.items.find((item) => item.ticketNumber === ticket.number);
+  const waiting = patient.status === 'waiting';
+  // The patient itself does not say how long ago it was observed; its worklist row does.
+  const row = worklist.data?.worklist.items.find((item) => item.patientNumber === patient.number);
   const [confirming, setConfirming] = useState(false);
   const [discharge, setDischarge] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
   const timeline = useMemo(() => toTimelineItems(detail.timeline), [detail.timeline]);
@@ -70,7 +77,7 @@ function TicketView({ detail, updatedAt, refreshError, onChanged }: TicketViewPr
   const onDischarge = async () => {
     setDischarge({ busy: true, error: null });
     try {
-      await api.dischargeTicket(ticket.number);
+      await api.dischargePatient(patient.number);
       setDischarge({ busy: false, error: null });
       setConfirming(false);
       onChanged();
@@ -83,19 +90,17 @@ function TicketView({ detail, updatedAt, refreshError, onChanged }: TicketViewPr
     <>
       <header className="mb-5 flex flex-wrap items-end justify-between gap-x-5 gap-y-3">
         <div className="flex flex-col gap-2">
-          <Link href="/tickets" className="type-caption font-medium text-signal underline underline-offset-[3px]">
-            All tickets
+          <Link href="/patients" className="type-caption font-medium text-signal underline underline-offset-[3px]">
+            All patients
           </Link>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <h1>
-              <TicketNumber number={ticket.number} size="lg" />
-            </h1>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+            <PatientIdentity patient={patient} size="lg" heading detail={facts || undefined} />
             {detail.state ? (
               <StatusBadge state={detail.state} minutes={row?.minutesSinceObserved}>
                 {detail.state === 'observed' && !row ? 'Observed' : undefined}
               </StatusBadge>
             ) : (
-              <span className="text-ink-muted">Discharged at {ticket.dischargedAt ? clockTime(ticket.dischargedAt) : 'an unknown time'}</span>
+              <span className="text-ink-muted">Discharged at {patient.dischargedAt ? clockTime(patient.dischargedAt) : 'an unknown time'}</span>
             )}
           </div>
         </div>
@@ -111,12 +116,44 @@ function TicketView({ detail, updatedAt, refreshError, onChanged }: TicketViewPr
 
       {refreshError ? (
         <p role="alert" className="mb-4 rounded-md border border-flag bg-flag-soft px-3 py-2 font-medium">
-          This ticket could not be refreshed: {refreshError} What is shown may be out of date.
+          This record could not be refreshed: {refreshError} What is shown may be out of date.
         </p>
       ) : null}
 
       <div className="grid items-start gap-x-6 gap-y-5 lg:grid-cols-[minmax(0,560px)_minmax(0,1fr)]">
         <div className="flex flex-col gap-5">
+          <section aria-labelledby="intake-heading" className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <h2 id="intake-heading" className="type-heading">
+                Intake
+              </h2>
+              <Button variant="quiet" onClick={() => setEditing((on) => !on)}>
+                {editing ? 'Done' : 'Edit'}
+              </Button>
+            </div>
+            <div className="rounded-lg border border-line bg-surface-raised p-4">
+              {editing ? (
+                <IntakeForm key={patient.number} patient={patient} onSaved={(next) => setSaved({ patient: next, at: Date.now() })} />
+              ) : (
+                <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2">
+                  <dt className="text-ink-muted">Reason for visit</dt>
+                  <dd className="font-medium">{patient.reasonForVisit ?? <Missing />}</dd>
+                  <dt className="text-ink-muted">Date of birth</dt>
+                  <dd>{patient.dateOfBirth ? `${calendarDate(patient.dateOfBirth)}${age === null ? '' : ` (${age} y)`}` : <Missing />}</dd>
+                  <dt className="text-ink-muted">Sex</dt>
+                  <dd>{patient.sex ? SEX[patient.sex] : <Missing />}</dd>
+                  <dt className="text-ink-muted">Pain</dt>
+                  <dd className="tabular-nums">{patient.painScore === null ? <Missing /> : `${patient.painScore} out of 10`}</dd>
+                  <dt className="text-ink-muted">Allergies</dt>
+                  <dd>{patient.allergies ?? <Missing />}</dd>
+                  <dt className="text-ink-muted">Notes</dt>
+                  <dd className="whitespace-pre-wrap">{patient.notes ?? <Missing />}</dd>
+                </dl>
+              )}
+            </div>
+            {patient.intakeCompletedAt ? null : <p className="type-caption text-ink-muted">Intake has not been marked complete.</p>}
+          </section>
+
           <section aria-labelledby="handoff-heading" className="flex flex-col gap-2">
             <h2 id="handoff-heading" className="type-heading">
               Handoff
@@ -131,7 +168,7 @@ function TicketView({ detail, updatedAt, refreshError, onChanged }: TicketViewPr
                 Open flags
               </h2>
               {openFlags.length === 0 ? (
-                <p className="text-ink-muted">No flag is open on this ticket. A flag opens when a trend rule is met or a re-check is overdue.</p>
+                <p className="text-ink-muted">No flag is open for this patient. A flag opens when a trend rule is met or a re-check is overdue.</p>
               ) : (
                 <ul className="flex flex-col gap-3">
                   {openFlags.map((flag) => (
@@ -148,20 +185,20 @@ function TicketView({ detail, updatedAt, refreshError, onChanged }: TicketViewPr
             </h2>
             <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2 rounded-lg border border-line bg-surface-raised p-4">
               <dt className="text-ink-muted">Checked in</dt>
-              <dd className="font-mono tabular-nums">{clockTime(ticket.createdAt)}</dd>
+              <dd className="font-mono tabular-nums">{clockTime(patient.createdAt)}</dd>
               <dt className="text-ink-muted">Sittings</dt>
               <dd className="tabular-nums">
                 {detail.sittings.length === 0 ? 'None yet' : `${detail.sittings.length}, baseline ${detail.baseline ? `from ${clockTime(detail.baseline.startedAt)}` : 'not set yet'}`}
               </dd>
               <dt className="text-ink-muted">Face match</dt>
               <dd>
-                {ticket.faceEnrolled
+                {patient.faceEnrolled
                   ? 'Opted in. Matching numbers are stored until discharge.'
                   : waiting
-                    ? ticket.faceOptIn
+                    ? patient.faceOptIn
                       ? 'Opted in. Nothing stored yet.'
-                      : 'Not opted in. Re-checks use the ticket number.'
-                    : 'No face data is stored for this ticket'}
+                      : 'Not opted in. Re-checks are started by name.'
+                    : 'Nothing is stored for face match'}
               </dd>
             </dl>
           </section>
@@ -172,15 +209,15 @@ function TicketView({ detail, updatedAt, refreshError, onChanged }: TicketViewPr
             Timeline
           </h2>
           <div className="rounded-lg border border-line bg-surface-raised p-4">
-            <TicketTimeline items={timeline} />
+            <PatientTimeline items={timeline} />
           </div>
         </section>
       </div>
 
       <ConfirmDialog
         open={confirming}
-        title={`Discharge ticket ${ticket.number}?`}
-        confirmLabel="Discharge and delete face data"
+        title={`Discharge ${patientLabel(patient)}?`}
+        confirmLabel="Discharge"
         cancelLabel="Keep waiting"
         busyLabel="Discharging"
         busy={discharge.busy}
@@ -191,13 +228,19 @@ function TicketView({ detail, updatedAt, refreshError, onChanged }: TicketViewPr
           setDischarge({ busy: false, error: null });
         }}
       >
-        <p>The ticket leaves the waiting room and its open flags are closed.</p>
+        <p>{patientLabel(patient)} leaves the waiting room and any open flags are closed. The record, with its photo and readings, is kept under Patients.</p>
         <p className="mt-2">
-          {ticket.faceEnrolled ? 'The face-match numbers stored for this ticket are deleted.' : 'Any face-match numbers stored for this ticket are deleted.'} This cannot be undone.
+          {patient.faceEnrolled ? 'The face-match numbers stored for this patient are deleted. ' : ''}This cannot be undone.
         </p>
       </ConfirmDialog>
     </>
   );
+}
+
+const SEX: Record<NonNullable<Patient['sex']>, string> = { female: 'Female', male: 'Male', other: 'Other' };
+
+function Missing() {
+  return <span className="text-ink-muted">Not recorded</span>;
 }
 
 /** The numbers the flag was raised on, frozen when it opened. */

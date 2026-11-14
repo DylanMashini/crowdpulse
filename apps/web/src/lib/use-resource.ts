@@ -40,13 +40,13 @@ export function useResource<T>(key: string | null, load: () => Promise<T>): Reso
   });
 
   const run = useCallback((forKey: string) => {
-    const ticket = ++latest.current;
+    const attempt = ++latest.current;
     loadRef.current().then(
       (data) => {
-        if (ticket === latest.current) setState({ key: forKey, data, error: null, updatedAt: Date.now() });
+        if (attempt === latest.current) setState({ key: forKey, data, error: null, updatedAt: Date.now() });
       },
       (error: unknown) => {
-        if (ticket !== latest.current) return;
+        if (attempt !== latest.current) return;
         setState((previous) => ({
           key: forKey,
           data: previous.key === forKey ? previous.data : null,

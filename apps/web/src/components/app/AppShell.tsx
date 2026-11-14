@@ -14,7 +14,7 @@ import { LiveProvider, useLive } from './live';
 const DESTINATIONS: SideNavItem[] = [
   { id: 'check-in', label: 'Check-in', icon: 'camera', href: '/check-in' },
   { id: 'waiting-room', label: 'Waiting room', icon: 'list', href: '/waiting-room' },
-  { id: 'tickets', label: 'Tickets', icon: 'ticket', href: '/tickets' },
+  { id: 'patients', label: 'Patients', icon: 'user', href: '/patients' },
   { id: 'flag-settings', label: 'Flag settings', icon: 'sliders', href: '/flag-settings' },
   { id: 'statistics', label: 'Statistics', icon: 'chart', href: '/statistics' },
 ];

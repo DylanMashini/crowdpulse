@@ -1,4 +1,4 @@
-import type { TicketStatistics } from '@triagecam/contracts';
+import type { PatientStatistics } from '@triagecam/contracts';
 
 import { signed } from '@/lib/format';
 
@@ -9,21 +9,21 @@ const MARGIN = { top: 30, right: 24, bottom: 46, left: 96 };
 const TARGET_BPM = 5;
 
 export interface BiasChartProps {
-  tickets: TicketStatistics[];
+  patients: PatientStatistics[];
   /** Mean of estimate minus reference over every paired reading, in bpm. */
   overallBias: number | null;
 }
 
 /**
- * Bias per ticket: how far, and in which direction, the camera estimate sat from the chest strap
- * on average. One row per ticket, zero in the middle, the 5 bpm target as a band.
+ * Bias per patient: how far, and in which direction, the camera estimate sat from the chest strap
+ * on average. One row per patient, zero in the middle, the 5 bpm target as a band.
  */
-export function BiasChart({ tickets, overallBias }: BiasChartProps) {
-  const biases = tickets.flatMap((ticket) => (ticket.biasBpm == null ? [] : [Math.abs(ticket.biasBpm)]));
+export function BiasChart({ patients, overallBias }: BiasChartProps) {
+  const biases = patients.flatMap((patient) => (patient.biasBpm == null ? [] : [Math.abs(patient.biasBpm)]));
   const extent = Math.max(10, Math.ceil((Math.max(0, ...biases) + 1) / 5) * 5);
   const plotWidth = WIDTH - MARGIN.left - MARGIN.right;
-  const height = MARGIN.top + tickets.length * ROW + MARGIN.bottom;
-  const plotBottom = MARGIN.top + tickets.length * ROW;
+  const height = MARGIN.top + patients.length * ROW + MARGIN.bottom;
+  const plotBottom = MARGIN.top + patients.length * ROW;
   const x = (bpm: number) => MARGIN.left + plotWidth * ((bpm + extent) / (2 * extent));
 
   const ticks: number[] = [];
@@ -33,7 +33,7 @@ export function BiasChart({ tickets, overallBias }: BiasChartProps) {
     <svg
       viewBox={`0 0 ${WIDTH} ${height}`}
       role="img"
-      aria-label="Chart of the mean difference between camera estimate and chest strap for each ticket. The table of results per ticket has the same numbers."
+      aria-label="Chart of the mean difference between camera estimate and chest strap for each patient. The table of results per patient has the same numbers."
       className="block h-auto w-full"
     >
       <rect className="fill-surface-sunken" x={x(-TARGET_BPM)} y={MARGIN.top} width={x(TARGET_BPM) - x(-TARGET_BPM)} height={plotBottom - MARGIN.top} />
@@ -57,16 +57,16 @@ export function BiasChart({ tickets, overallBias }: BiasChartProps) {
         <line className="stroke-series-reference" strokeWidth={2} strokeDasharray="5 4" x1={x(overallBias)} x2={x(overallBias)} y1={MARGIN.top} y2={plotBottom} />
       ) : null}
 
-      {tickets.map((ticket, index) => {
+      {patients.map((patient, index) => {
         const y = MARGIN.top + index * ROW + ROW / 2;
-        const bias = ticket.biasBpm;
+        const bias = patient.biasBpm;
         return (
-          <g key={ticket.ticketNumber}>
+          <g key={patient.patientNumber}>
             <text className="fill-ink-muted font-sans text-[12px] font-medium" x={12} y={y + 4}>
-              Ticket
+              Patient
             </text>
             <text className="fill-ink font-mono text-[15px] font-semibold tabular-nums" x={MARGIN.left - 14} y={y + 5} textAnchor="end">
-              {ticket.ticketNumber}
+              {patient.patientNumber}
             </text>
             {bias == null ? (
               <text className="fill-ink-muted font-sans text-[12px]" x={MARGIN.left + 8} y={y + 4}>

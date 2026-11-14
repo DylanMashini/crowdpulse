@@ -29,7 +29,7 @@ export interface StatusBadgeProps {
   className?: string;
 }
 
-/** The state of a waiting ticket: an icon, the words, and a form that differs for each state. */
+/** The state of a waiting patient: an icon, the words, and a form that differs for each state. */
 export function StatusBadge({ state, minutes, children, className }: StatusBadgeProps) {
   const spec = STATES[state];
   return (

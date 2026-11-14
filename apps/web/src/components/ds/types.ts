@@ -1,3 +1,5 @@
+import type { PatientRef } from '@triagecam/contracts';
+
 export type TileState = 'observed' | 'flag' | 'overdue' | 'no-reading';
 export type Provenance = 'live' | 'recording' | 'experimental' | 'ai-draft' | 'reference';
 export type ScoreValue = 0 | 1 | 2 | 3;
@@ -9,7 +11,10 @@ export interface Trend {
 }
 
 export interface WorklistRow {
-  ticket: number;
+  patient: PatientRef;
+  /** The chief complaint from intake. */
+  reason?: string | null;
+  ageYears?: number | null;
   state: TileState;
   /** Whole minutes since the last observation. Null or missing: not yet observed. */
   minutes?: number | null;
@@ -20,6 +25,6 @@ export interface WorklistRow {
   source?: Provenance;
   /** Words for the source tag when the kind's own word is not exact enough, such as "Simulated". */
   sourceLabel?: string;
-  /** A sitting is running for this ticket now. */
+  /** A sitting is running for this patient now. */
   sittingInProgress?: boolean;
 }

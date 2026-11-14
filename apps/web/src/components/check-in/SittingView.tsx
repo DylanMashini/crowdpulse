@@ -1,10 +1,10 @@
 'use client';
 
-import type { Estimate, Sitting, StoredReading, SummaryValue } from '@triagecam/contracts';
+import type { Estimate, PatientRef, Sitting, StoredReading, SummaryValue } from '@triagecam/contracts';
 import Link from 'next/link';
 import { useMemo } from 'react';
 
-import { QualityMeter, Readout, ReferenceChart, TicketNumber, buttonClass, type IconName, type ReadoutState } from '@/components/ds';
+import { PatientIdentity, QualityMeter, Readout, ReferenceChart, buttonClass, type IconName, type ReadoutState } from '@/components/ds';
 import { Panel } from '@/components/ui/Panel';
 import { clockTime, reasonText, secondsAgo } from '@/lib/format';
 import { provenanceOf } from '@/lib/mapping';
@@ -23,6 +23,8 @@ export interface ReferencePoint {
 
 export interface SittingViewProps {
   sitting: Sitting;
+  /** Who is sitting in front of the camera. */
+  patient: PatientRef;
   readings: StoredReading[];
   reference: ReferencePoint[];
   /** The server clock now, in ms. */
@@ -109,8 +111,8 @@ function series(points: Array<{ t: number; value: number | null }>, startedAt: n
   return out;
 }
 
-/** One sitting as it runs and after it ends: ticket, the two vitals, and estimate against reference. */
-export function SittingView({ sitting, readings, reference, serverNow }: SittingViewProps) {
+/** One sitting as it runs and after it ends: who it is, the two vitals, and estimate against reference. */
+export function SittingView({ sitting, patient, readings, reference, serverNow }: SittingViewProps) {
   const startedAt = new Date(sitting.startedAt).getTime();
   const running = sitting.endedAt === null;
   const endMs = sitting.endedAt ? new Date(sitting.endedAt).getTime() : serverNow;
@@ -144,17 +146,17 @@ export function SittingView({ sitting, readings, reference, serverNow }: Sitting
     <div className="flex flex-col gap-5">
       <Panel>
         <div className="mb-5 flex flex-wrap items-center justify-between gap-x-5 gap-y-2">
-          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-            <TicketNumber number={sitting.ticketNumber} size="lg" />
-            <p className="text-ink-muted">
-              {sitting.kind === 'check_in' ? 'Check-in sitting' : 'Re-check sitting'},{' '}
+          <PatientIdentity
+            patient={patient}
+            size="md"
+            detail={
               <span className="tabular-nums">
-                {running ? `running for ${elapsed} s` : `${elapsed} s, finished at ${clockTime(endMs)}`}
+                {sitting.kind === 'check_in' ? 'Check-in' : 'Re-check'}, {running ? `running for ${elapsed} s` : `${elapsed} s, finished at ${clockTime(endMs)}`}
               </span>
-            </p>
-          </div>
-          <Link href={`/tickets/${sitting.ticketNumber}`} className={buttonClass('secondary')}>
-            Open ticket
+            }
+          />
+          <Link href={`/patients/${sitting.patientNumber}`} className={buttonClass('secondary')}>
+            Open record
           </Link>
         </div>
 

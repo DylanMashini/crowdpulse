@@ -20,7 +20,7 @@ export function AuthFrame({ title, lead, children }: AuthFrameProps) {
         </div>
         {children}
       </main>
-      <p className="type-caption text-ink-muted">{PROTOTYPE_NOTICE}. Accounts are for staff. Patients are ticket numbers only.</p>
+      <p className="type-caption text-ink-muted">{PROTOTYPE_NOTICE}. Accounts are for staff.</p>
     </div>
   );
 }

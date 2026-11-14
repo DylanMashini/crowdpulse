@@ -10,14 +10,16 @@ import {
   SignUpResponse,
   SittingDetailResponse,
   Statistics,
-  TicketDetailResponse,
-  TicketListResponse,
-  TicketResponse,
+  PatientDetailResponse,
+  PatientListResponse,
+  PatientResponse,
   VerifyEmailResponse,
   WorklistResponse,
   routes,
   type ErrorCode,
+  type PatientRef,
   type ReferenceReading,
+  type UpdatePatientRequest,
   type UpdateSettingsRequest,
 } from '@triagecam/contracts';
 import type { ZodType } from 'zod';
@@ -42,7 +44,7 @@ export function errorMessage(error: unknown): string {
   return error instanceof ApiError ? error.message : 'Something went wrong on this page. Reload and try again.';
 }
 
-type Method = 'GET' | 'POST' | 'PATCH';
+type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 
 async function send(path: string, init: RequestInit): Promise<Response> {
   if (process.env.NEXT_PUBLIC_API_MOCK === '1') {
@@ -88,7 +90,7 @@ function withQuery(path: string, query: Record<string, string | number | undefin
   return text ? `${path}?${text}` : path;
 }
 
-export type TicketStatusFilter = 'waiting' | 'discharged' | 'all';
+export type PatientStatusFilter = 'waiting' | 'discharged' | 'all';
 
 /** Every call the dashboard makes. Paths come from the contracts package, never from literals. */
 export const api = {
@@ -104,10 +106,17 @@ export const api = {
   devices: () => request(DeviceListResponse, 'GET', routes.devices),
   worklist: () => request(WorklistResponse, 'GET', routes.worklist),
 
-  tickets: (status: TicketStatusFilter, cursor?: string) =>
-    request(TicketListResponse, 'GET', withQuery(routes.tickets, { status, cursor, limit: 50 })),
-  ticket: (number: number) => request(TicketDetailResponse, 'GET', routes.ticket(number)),
-  dischargeTicket: (number: number) => request(TicketResponse, 'POST', routes.ticketDischarge(number)),
+  patients: (status: PatientStatusFilter, cursor?: string) =>
+    request(PatientListResponse, 'GET', withQuery(routes.patients, { status, cursor, limit: 50 })),
+  patient: (number: number) => request(PatientDetailResponse, 'GET', routes.patient(number)),
+  /** Saves any part of the intake form. Called as staff type. */
+  updatePatient: (number: number, changes: UpdatePatientRequest) =>
+    request(PatientResponse, 'PATCH', routes.patient(number), changes),
+  /** Takes the profile photo from the frame a camera phone is showing now. */
+  capturePatientPhoto: (number: number, deviceId: string) =>
+    request(PatientResponse, 'POST', routes.patientPhotoCapture(number), { deviceId }),
+  deletePatientPhoto: (number: number) => request<void>(null, 'DELETE', routes.patientPhoto(number)),
+  dischargePatient: (number: number) => request(PatientResponse, 'POST', routes.patientDischarge(number)),
   acknowledgeFlag: (id: string) => request(FlagResponse, 'POST', routes.flagAcknowledge(id)),
 
   sitting: (id: string) => request(SittingDetailResponse, 'GET', routes.sitting(id)),
@@ -120,14 +129,16 @@ export const api = {
   statistics: (from?: string, to?: string) => request(Statistics, 'GET', withQuery(routes.statistics, { from, to })),
 };
 
-/** Address of the multipart preview stream, for an img element. */
-export function liveStreamUrl(deviceId: string): string {
-  if (process.env.NEXT_PUBLIC_API_MOCK === '1') {
-    const pattern =
-      "<svg xmlns='http://www.w3.org/2000/svg' width='480' height='360'><rect width='480' height='360' fill='#0a0f0e'/>" +
-      "<path d='M0 120h480M0 240h480M160 0v360M320 0v360' stroke='#2a3531'/>" +
-      "<text x='240' y='186' fill='#a3b1ac' font-family='sans-serif' font-size='18' text-anchor='middle'>Mock test pattern</text></svg>";
-    return `data:image/svg+xml;utf8,${encodeURIComponent(pattern)}`;
-  }
-  return routes.liveStream(deviceId);
+/** Address of the multipart live-view stream of a camera phone. Null under the mock, which has no camera. */
+export function liveStreamUrl(deviceId: string): string | null {
+  return process.env.NEXT_PUBLIC_API_MOCK === '1' ? null : routes.liveStream(deviceId);
+}
+
+/**
+ * Address of a patient's profile photo, or null when there is none and the initials show.
+ * The version in the query changes with every new photo, so the browser can cache each one.
+ */
+export function patientPhotoUrl(patient: PatientRef): string | null {
+  if (!patient.photoUpdatedAt || process.env.NEXT_PUBLIC_API_MOCK === '1') return null;
+  return `${routes.patientPhoto(patient.number)}?v=${encodeURIComponent(patient.photoUpdatedAt)}`;
 }

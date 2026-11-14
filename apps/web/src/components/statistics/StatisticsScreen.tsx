@@ -4,7 +4,7 @@ import type { Statistics } from '@triagecam/contracts';
 import Link from 'next/link';
 import { useState, type ReactNode } from 'react';
 
-import { TicketNumber, buttonClass, tableCell, tableFrame, tableHeadCell } from '@/components/ds';
+import { VisitNumber, buttonClass, tableCell, tableFrame, tableHeadCell } from '@/components/ds';
 import { PageHeader, Panel } from '@/components/ui/Panel';
 import { Segmented } from '@/components/ui/Segmented';
 import { StateMessage } from '@/components/ui/StateMessage';
@@ -146,11 +146,11 @@ function Results({ data }: { data: Statistics }) {
 
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
         {hasReference ? (
-          <Panel heading="Bias by ticket">
+          <Panel heading="Bias by patient">
             <p className="-mt-2 mb-3 max-w-[640px] type-caption text-ink-muted">
-              Mean of camera estimate minus chest strap for each ticket. The dashed line is the mean over all {heartRate.pairedReadings} paired readings.
+              Mean of camera estimate minus chest strap for each patient. The dashed line is the mean over all {heartRate.pairedReadings} paired readings.
             </p>
-            <BiasChart tickets={data.perTicket} overallBias={heartRate.biasBpm} />
+            <BiasChart patients={data.perPatient} overallBias={heartRate.biasBpm} />
           </Panel>
         ) : null}
 
@@ -184,16 +184,16 @@ function Results({ data }: { data: Statistics }) {
         </div>
       </div>
 
-      <section aria-labelledby="per-ticket-heading" className="flex flex-col gap-3">
-        <h2 id="per-ticket-heading" className="type-heading">
-          Results per ticket
+      <section aria-labelledby="per-patient-heading" className="flex flex-col gap-3">
+        <h2 id="per-patient-heading" className="type-heading">
+          Results per patient
         </h2>
         <div className={tableFrame}>
           <table className="w-full border-collapse text-[15px]">
             <thead>
               <tr>
                 <th scope="col" className={tableHeadCell}>
-                  Ticket
+                  Patient
                 </th>
                 {['Sittings', 'Paired readings', 'Mean absolute error, bpm', 'Bias, bpm', 'Within 5 bpm', 'Coverage'].map((heading) => (
                   <th key={heading} scope="col" className={cx(tableHeadCell, 'text-right')}>
@@ -203,13 +203,13 @@ function Results({ data }: { data: Statistics }) {
               </tr>
             </thead>
             <tbody>
-              {data.perTicket.map((row) => {
+              {data.perPatient.map((row) => {
                 const cell = cx(tableCell, 'text-right font-mono tabular-nums');
                 const missing = <span className="font-sans text-[13px] text-ink-muted">No reference</span>;
                 return (
-                  <tr key={row.ticketNumber}>
+                  <tr key={row.patientNumber}>
                     <td className={tableCell}>
-                      <TicketNumber number={row.ticketNumber} size="sm" />
+                      <VisitNumber number={row.patientNumber} className="text-ink" />
                     </td>
                     <td className={cell}>{row.sittings}</td>
                     <td className={cell}>{row.pairedReadings}</td>

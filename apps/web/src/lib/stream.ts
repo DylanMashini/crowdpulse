@@ -15,7 +15,7 @@ const EVENT_TYPES: StreamEventType[] = [
   'flag_acknowledged',
   'flag_closed',
   'worklist_changed',
-  'ticket_changed',
+  'patient_changed',
   'live_changed',
 ];
 

@@ -11,8 +11,11 @@ import {
   type Sitting,
   type Statistics,
   type StoredReading,
-  type Ticket,
-  type TicketDetailResponse,
+  patientLabel,
+  type Patient,
+  type PatientDetailResponse,
+  type PatientIntake,
+  type PatientRef,
   type TimelineEntry,
   type User,
   type WorklistItem,
@@ -58,7 +61,38 @@ const seeds: Seed[] = [
   { number: 16, waitedMin: 18, state: 'observed', observedMin: 6, pulse: [95, 92], breathing: [19, 18], score: 1, scoreAtCheckIn: 1, source: 'simulated' },
 ];
 
-export const RUNNING_TICKET = 17;
+export const RUNNING_PATIENT = 17;
+
+/** What staff typed at intake, by visit number. Patient 17 is mid-intake, so only the name is in. */
+const intakes = new Map<number, PatientIntake>([
+  [11, { name: 'Priya Raman', dateOfBirth: '2003-12-11', sex: 'female', reasonForVisit: 'Migraine, nausea', painScore: 7, allergies: null, notes: 'Light sensitive.' }],
+  [12, { name: 'Daniel Whitfield', dateOfBirth: '1979-06-27', sex: 'male', reasonForVisit: 'Cut to the left hand', painScore: 3, allergies: 'Latex', notes: null }],
+  [13, { name: 'Elena Sokolova', dateOfBirth: '1986-01-30', sex: 'female', reasonForVisit: 'Sore throat for three days', painScore: 2, allergies: null, notes: null }],
+  [14, { name: 'Robert Okafor', dateOfBirth: '1958-09-02', sex: 'male', reasonForVisit: 'Short of breath since this morning', painScore: 2, allergies: null, notes: 'History of COPD.' }],
+  [15, { name: 'Maya Chen', dateOfBirth: '1991-04-18', sex: 'female', reasonForVisit: 'Twisted ankle, swelling', painScore: 4, allergies: 'Penicillin', notes: null }],
+  [16, { name: 'Tomás Alvarez', dateOfBirth: '1996-08-05', sex: 'male', reasonForVisit: 'Fever and cough', painScore: 1, allergies: null, notes: null }],
+  [17, { name: 'Grace Lindqvist', dateOfBirth: null, sex: null, reasonForVisit: null, painScore: null, allergies: null, notes: null }],
+]);
+const NO_INTAKE: PatientIntake = { name: null, dateOfBirth: null, sex: null, reasonForVisit: null, painScore: null, allergies: null, notes: null };
+const intakeOf = (number: number): PatientIntake => intakes.get(number) ?? NO_INTAKE;
+
+/** The mock has no photos, so every avatar shows initials. */
+export const refOf = (number: number): PatientRef => ({ number, name: intakeOf(number).name, photoUpdatedAt: null });
+const labelOf = (number: number) => patientLabel(refOf(number));
+
+/** Applies the intake fields of a PATCH body; anything else in it is ignored. */
+export function updateIntake(number: number, changes: Record<string, unknown>): void {
+  const next: Record<string, unknown> = { ...intakeOf(number) };
+  for (const key of Object.keys(NO_INTAKE)) {
+    if (key in changes) next[key] = changes[key] === '' ? null : changes[key];
+  }
+  intakes.set(number, next as PatientIntake);
+}
+
+function ageOf(number: number): number | null {
+  const born = intakeOf(number).dateOfBirth;
+  return born ? new Date(loadedAt).getFullYear() - Number(born.slice(0, 4)) : null;
+}
 /** The check-in sitting that is running when the mock loads. It finishes after 60 seconds. */
 export const runningStart = loadedAt - 25_000;
 export const RUNNING_SECONDS = 60;
@@ -72,7 +106,7 @@ function handoffFor(seed: Seed): string {
   const [breathingBase, breathingNow] = seed.breathing;
   const pulse = pulseNow == null ? `pulse ${pulseBase} at check-in, no reading now` : `pulse ${pulseBase} at check-in, ${pulseNow} now (${seed.waitedMin - (seed.observedMin ?? 0) - 2} min later)`;
   const breathing = breathingNow == null ? `breathing ${breathingBase} at check-in, no reading now` : `breathing ${breathingBase} to ${breathingNow}`;
-  return `Ticket ${seed.number}: ${pulse}; ${breathing}. Last observed ${seed.observedMin} min ago.`;
+  return `${labelOf(seed.number)}: ${pulse}; ${breathing}. Last observed ${seed.observedMin} min ago.`;
 }
 
 function flagFor(seed: Seed): Flag | null {
@@ -81,7 +115,8 @@ function flagFor(seed: Seed): Flag | null {
   const acknowledgedAt = acknowledged.get(id) ?? null;
   return {
     id,
-    ticketNumber: seed.number,
+    patientNumber: seed.number,
+    patient: refOf(seed.number),
     rule: seed.flag,
     openedAt: ago(seed.flag === 'overdue' ? (seed.observedMin ?? 0) - 30 : (seed.observedMin ?? 0)),
     closedAt: discharged.has(seed.number) ? discharged.get(seed.number)! : null,
@@ -108,7 +143,10 @@ export function worklistItems(): WorklistItem[] {
   const items = waiting.map((seed): Omit<WorklistItem, 'rank'> => {
     const flag = flagFor(seed);
     return {
-      ticketNumber: seed.number,
+      patientNumber: seed.number,
+      patient: refOf(seed.number),
+      reasonForVisit: intakeOf(seed.number).reasonForVisit,
+      ageYears: ageOf(seed.number),
       state: seed.state,
       waitingSince: ago(seed.waitedMin),
       lastObservedAt: seed.observedMin == null ? null : ago(seed.observedMin),
@@ -124,10 +162,13 @@ export function worklistItems(): WorklistItem[] {
       sittingInProgress: false,
     };
   });
-  if (!discharged.has(RUNNING_TICKET)) {
+  if (!discharged.has(RUNNING_PATIENT)) {
     const done = runningFinished();
     items.push({
-      ticketNumber: RUNNING_TICKET,
+      patientNumber: RUNNING_PATIENT,
+      patient: refOf(RUNNING_PATIENT),
+      reasonForVisit: intakeOf(RUNNING_PATIENT).reasonForVisit,
+      ageYears: ageOf(RUNNING_PATIENT),
       state: 'observed',
       waitingSince: iso(runningStart - 40_000),
       lastObservedAt: done ? iso(runningStart + RUNNING_SECONDS * 1000) : null,
@@ -139,22 +180,25 @@ export function worklistItems(): WorklistItem[] {
       parametersMeasured: done ? 2 : 0,
       source: done ? 'camera' : null,
       flags: [],
-      handoff: done ? 'Ticket 17: pulse 77 at check-in; breathing 16. Last observed 0 min ago.' : 'Ticket 17: not yet observed.',
+      handoff: done ? `${labelOf(RUNNING_PATIENT)}: pulse 77 at check-in; breathing 16. Last observed 0 min ago.` : `${labelOf(RUNNING_PATIENT)}: not yet observed.`,
       sittingInProgress: !done,
     });
   }
   return items.map((item, index) => ({ ...item, rank: index + 1 }));
 }
 
-export function tickets(): Ticket[] {
-  const numbers = [RUNNING_TICKET, ...seeds.map((seed) => seed.number), 13].sort((a, b) => b - a);
+export function patients(): Patient[] {
+  const numbers = [RUNNING_PATIENT, ...seeds.map((seed) => seed.number), 13].sort((a, b) => b - a);
   return numbers.map((number) => {
     const seed = seeds.find((candidate) => candidate.number === number);
     const dischargedAt = discharged.get(number) ?? null;
     return {
+      ...intakeOf(number),
       number,
+      intakeCompletedAt: number === RUNNING_PATIENT ? null : ago((seed?.waitedMin ?? 170) - 1),
+      photoUpdatedAt: null,
       status: dischargedAt ? 'discharged' : 'waiting',
-      createdAt: number === RUNNING_TICKET ? iso(runningStart - 40_000) : ago(seed?.waitedMin ?? 170),
+      createdAt: number === RUNNING_PATIENT ? iso(runningStart - 40_000) : ago(seed?.waitedMin ?? 170),
       dischargedAt,
       faceOptIn: number % 2 === 0,
       faceEnrolled: number % 2 === 0 && !dischargedAt,
@@ -198,11 +242,11 @@ export function runningReference(i: number): ReferenceReading {
 
 const summaryValue = (value: number | null, coverage: number) => ({ value, coverage });
 
-function sittingOf(id: string, ticketNumber: number, kind: Sitting['kind'], source: Sitting['source'], endedMinAgo: number, heartRate: number | null, breathingRate: number | null): Sitting {
+function sittingOf(id: string, patientNumber: number, kind: Sitting['kind'], source: Sitting['source'], endedMinAgo: number, heartRate: number | null, breathingRate: number | null): Sitting {
   const endedAt = loadedAt - endedMinAgo * MINUTE;
   return {
     id,
-    ticketNumber,
+    patientNumber,
     deviceId: CAMERA_ID,
     kind,
     source,
@@ -225,7 +269,7 @@ function sittingOf(id: string, ticketNumber: number, kind: Sitting['kind'], sour
 
 export function runningSitting(now = Date.now()): Sitting {
   const done = runningFinished(now);
-  const finished = sittingOf(runningSittingId, RUNNING_TICKET, 'check_in', 'camera', 0, 77, 16);
+  const finished = sittingOf(runningSittingId, RUNNING_PATIENT, 'check_in', 'camera', 0, 77, 16);
   return {
     ...finished,
     startedAt: iso(runningStart),
@@ -234,27 +278,27 @@ export function runningSitting(now = Date.now()): Sitting {
   };
 }
 
-export function ticketDetail(number: number): TicketDetailResponse | null {
-  const ticket = tickets().find((candidate) => candidate.number === number);
-  if (!ticket) return null;
-  const isDischarged = ticket.status === 'discharged';
+export function patientDetail(number: number): PatientDetailResponse | null {
+  const patient = patients().find((candidate) => candidate.number === number);
+  if (!patient) return null;
+  const isDischarged = patient.status === 'discharged';
 
-  if (number === RUNNING_TICKET) {
+  if (number === RUNNING_PATIENT) {
     const sitting = runningSitting();
-    const item = worklistItems().find((candidate) => candidate.ticketNumber === number);
-    const timeline: TimelineEntry[] = [{ type: 'created', at: ticket.createdAt }];
+    const item = worklistItems().find((candidate) => candidate.patientNumber === number);
+    const timeline: TimelineEntry[] = [{ type: 'created', at: patient.createdAt }];
     if (sitting.endedAt) {
       timeline.unshift({ type: 'sitting', at: sitting.endedAt, sittingId: sitting.id, kind: 'check_in', source: 'camera', heartRate: 77, breathingRate: 16, score: 0 });
     }
-    if (ticket.dischargedAt) timeline.unshift({ type: 'discharged', at: ticket.dischargedAt });
+    if (patient.dischargedAt) timeline.unshift({ type: 'discharged', at: patient.dischargedAt });
     return {
-      ticket,
+      patient,
       state: isDischarged ? null : 'observed',
       baseline: sitting.endedAt ? sitting : null,
       sittings: [sitting],
       flags: [],
       timeline,
-      handoff: item?.handoff ?? 'Ticket 17: pulse 77 at check-in; breathing 16.',
+      handoff: item?.handoff ?? `${labelOf(number)}: pulse 77 at check-in; breathing 16.`,
     };
   }
 
@@ -262,17 +306,17 @@ export function ticketDetail(number: number): TicketDetailResponse | null {
   if (!seed) {
     const baseline = sittingOf(uuid(3, number * 100), number, 'check_in', 'camera', 168, 71, 15);
     return {
-      ticket,
+      patient,
       state: null,
       baseline,
       sittings: [baseline],
       flags: [],
       timeline: [
-        { type: 'discharged', at: ticket.dischargedAt ?? ago(95) },
+        { type: 'discharged', at: patient.dischargedAt ?? ago(95) },
         { type: 'sitting', at: baseline.endedAt!, sittingId: baseline.id, kind: 'check_in', source: 'camera', heartRate: 71, breathingRate: 15, score: 0 },
-        { type: 'created', at: ticket.createdAt },
+        { type: 'created', at: patient.createdAt },
       ],
-      handoff: `Ticket ${number}: pulse 71 at check-in; breathing 15. Discharged.`,
+      handoff: `${labelOf(number)}: pulse 71 at check-in; breathing 15. Discharged.`,
     };
   }
 
@@ -284,7 +328,7 @@ export function ticketDetail(number: number): TicketDetailResponse | null {
   const timeline: TimelineEntry[] = [
     { type: 'sitting', at: recheck.endedAt!, sittingId: recheck.id, kind: 'recheck', source, heartRate: seed.pulse[1], breathingRate: seed.breathing[1], score: seed.score },
     { type: 'sitting', at: baseline.endedAt!, sittingId: baseline.id, kind: 'check_in', source, heartRate: seed.pulse[0], breathingRate: seed.breathing[0], score: seed.scoreAtCheckIn },
-    { type: 'created', at: ticket.createdAt },
+    { type: 'created', at: patient.createdAt },
   ];
   if (flag) {
     const opened: TimelineEntry = { type: 'flag_opened', at: flag.openedAt, flagId: flag.id, rule: flag.rule, handoff: flag.handoff };
@@ -292,9 +336,9 @@ export function ticketDetail(number: number): TicketDetailResponse | null {
     if (flag.acknowledgedAt) timeline.unshift({ type: 'flag_acknowledged', at: flag.acknowledgedAt, flagId: flag.id, by: user.email });
     if (flag.closedAt) timeline.unshift({ type: 'flag_closed', at: flag.closedAt, flagId: flag.id, rule: flag.rule });
   }
-  if (ticket.dischargedAt) timeline.unshift({ type: 'discharged', at: ticket.dischargedAt });
+  if (patient.dischargedAt) timeline.unshift({ type: 'discharged', at: patient.dischargedAt });
   return {
-    ticket,
+    patient,
     state: isDischarged ? null : seed.state,
     baseline,
     sittings: [baseline, recheck],
@@ -318,15 +362,15 @@ export function statistics(empty: boolean): Statistics {
   if (empty) {
     return {
       ...range,
-      totals: { ticketsWaiting: 0, ticketsDischarged: 0, sittings: 0, sittingsWithReference: 0, openFlags: 0, personHours: 0 },
+      totals: { patientsWaiting: 0, patientsDischarged: 0, sittings: 0, sittingsWithReference: 0, openFlags: 0, personHours: 0 },
       heartRate: { pairedReadings: 0, meanAbsoluteErrorBpm: null, biasBpm: null, within5BpmShare: null },
       sittings: { attempted: 0, withReading: 0, accurateAcceptedShare: null, meanCoverage: null, medianTimeToFirstReadingSeconds: null, longestDropoutSeconds: null },
       flags: { episodes: 0, episodesPerPersonHour: null, acknowledged: 0, medianMinutesToAcknowledge: null },
-      perTicket: [],
+      perPatient: [],
     };
   }
-  const row = (ticketNumber: number, pairedReadings: number, mae: number | null, bias: number | null, within: number | null, coverage: number | null) => ({
-    ticketNumber,
+  const row = (patientNumber: number, pairedReadings: number, mae: number | null, bias: number | null, within: number | null, coverage: number | null) => ({
+    patientNumber,
     sittings: 2,
     pairedReadings,
     meanAbsoluteErrorBpm: mae,
@@ -336,11 +380,11 @@ export function statistics(empty: boolean): Statistics {
   });
   return {
     ...range,
-    totals: { ticketsWaiting: 6, ticketsDischarged: 1, sittings: 13, sittingsWithReference: 12, openFlags: 2, personHours: 4.6 },
+    totals: { patientsWaiting: 6, patientsDischarged: 1, sittings: 13, sittingsWithReference: 12, openFlags: 2, personHours: 4.6 },
     heartRate: { pairedReadings: 508, meanAbsoluteErrorBpm: 2.9, biasBpm: 0.7, within5BpmShare: 0.87 },
     sittings: { attempted: 13, withReading: 11, accurateAcceptedShare: 0.75, meanCoverage: 0.78, medianTimeToFirstReadingSeconds: 11.5, longestDropoutSeconds: 19 },
     flags: { episodes: 3, episodesPerPersonHour: 0.65, acknowledged: 2, medianMinutesToAcknowledge: 4 },
-    perTicket: [
+    perPatient: [
       row(11, 96, 1.8, 0.4, 0.97, 0.88),
       row(12, 91, 2.2, -1.1, 0.93, 0.84),
       row(13, 88, 2.6, 1.9, 0.9, 0.81),

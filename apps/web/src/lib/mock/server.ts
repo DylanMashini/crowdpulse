@@ -2,7 +2,7 @@
 // localStorage "tc-mock" picks a scenario: "empty" (nothing in the waiting room) or "error"
 // (every read fails), so loading, empty and error states can be looked at.
 
-import type { ErrorCode, SittingDetailResponse, StreamEvent, TicketListResponse } from '@triagecam/contracts';
+import type { ErrorCode, SittingDetailResponse, StreamEvent, PatientListResponse } from '@triagecam/contracts';
 
 import type { StreamHandlers } from '../stream';
 import * as data from './data';
@@ -77,10 +77,10 @@ export async function mockFetch(path: string, init: RequestInit): Promise<Respon
   if (route === '/api/worklist') {
     return json(200, { generatedAt: iso(Date.now()), recheckIntervalMin: data.settings.value.recheckIntervalMin, items: empty ? [] : data.worklistItems() });
   }
-  if (route === '/api/tickets') {
+  if (route === '/api/patients') {
     const status = url.searchParams.get('status') ?? 'waiting';
-    const items = empty ? [] : data.tickets().filter((ticket) => status === 'all' || ticket.status === status);
-    return json(200, { items, nextCursor: null } satisfies TicketListResponse);
+    const items = empty ? [] : data.patients().filter((patient) => status === 'all' || patient.status === status);
+    return json(200, { items, nextCursor: null } satisfies PatientListResponse);
   }
   if (route === '/api/settings') {
     if (method === 'PATCH') {
@@ -91,13 +91,21 @@ export async function mockFetch(path: string, init: RequestInit): Promise<Respon
   }
   if (route === '/api/statistics') return json(200, data.statistics(empty));
 
-  const ticketMatch = /^\/api\/tickets\/(\d+)(\/discharge)?$/.exec(route);
-  if (ticketMatch) {
-    const number = Number(ticketMatch[1]);
-    if (ticketMatch[2]) data.discharged.set(number, data.discharged.get(number) ?? iso(Date.now()));
-    const detail = data.ticketDetail(number);
-    if (!detail) return fail(404, 'not_found', `There is no ticket ${number}`);
-    return json(200, ticketMatch[2] ? { ticket: detail.ticket } : detail);
+  const photoMatch = /^\/api\/patients\/(\d+)\/photo(\/capture)?$/.exec(route);
+  if (photoMatch) return fail(409, 'conflict', 'The mock has no camera, so there is no photo to take');
+
+  const patientMatch = /^\/api\/patients\/(\d+)(\/discharge)?$/.exec(route);
+  if (patientMatch) {
+    const number = Number(patientMatch[1]);
+    if (method === 'PATCH') {
+      data.updateIntake(number, body);
+      const patient = data.patients().find((candidate) => candidate.number === number);
+      return patient ? json(200, { patient }) : fail(404, 'not_found', 'There is no such patient');
+    }
+    if (patientMatch[2]) data.discharged.set(number, data.discharged.get(number) ?? iso(Date.now()));
+    const detail = data.patientDetail(number);
+    if (!detail) return fail(404, 'not_found', 'There is no such patient');
+    return json(200, patientMatch[2] ? { patient: detail.patient } : detail);
   }
 
   const acknowledgeMatch = /^\/api\/flags\/([^/]+)\/acknowledge$/.exec(route);
@@ -126,7 +134,7 @@ export function openMockStream({ onEvent, onStatus }: StreamHandlers): () => voi
     const second = Math.floor((Date.now() - data.runningStart) / 1000);
     const events: StreamEvent[] = [];
     if (second < data.RUNNING_SECONDS) {
-      events.push({ type: 'reading', sittingId: data.runningSittingId, ticketNumber: data.RUNNING_TICKET, reading: data.runningReading(second) });
+      events.push({ type: 'reading', sittingId: data.runningSittingId, patientNumber: data.RUNNING_PATIENT, reading: data.runningReading(second) });
     } else if (!finishedSent) {
       finishedSent = true;
       events.push({ type: 'sitting_finished', sitting: data.runningSitting() }, { type: 'worklist_changed', at: iso(Date.now()) });

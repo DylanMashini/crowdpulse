@@ -1,6 +1,6 @@
 'use client';
 
-import type { WorklistItem } from '@triagecam/contracts';
+import { patientLabel, type WorklistItem } from '@triagecam/contracts';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
@@ -27,10 +27,10 @@ function summarise(items: WorklistItem[], recheckIntervalMin: number): string {
     count('overdue') ? `${count('overdue')} overdue` : null,
     count('no-reading') ? `${count('no-reading')} without a reading` : null,
   ].filter(Boolean);
-  return `${plural(items.length, 'ticket', 'tickets')} waiting${parts.length ? `: ${parts.join(', ')}` : ''}. Overdue after ${recheckIntervalMin} min without an observation.`;
+  return `${plural(items.length, 'patient', 'patients')} waiting${parts.length ? `: ${parts.join(', ')}` : ''}. Overdue after ${recheckIntervalMin} min without an observation.`;
 }
 
-/** The nurse view: every waiting ticket in the order to walk to them. */
+/** The nurse view: every waiting patient in the order to walk to them. */
 export function WaitingRoomScreen() {
   const router = useRouter();
   const { worklist } = useLive();
@@ -70,19 +70,19 @@ export function WaitingRoomScreen() {
 
       {loaded && loaded.items.length === 0 ? (
         <StateMessage kind="empty" title="Nobody is waiting">
-          A ticket appears here when a patient is checked in on a camera phone. Discharged tickets are under Tickets.
+          A patient appears here as soon as their check-in starts on a camera phone. Discharged patients are under Patients.
         </StateMessage>
       ) : null}
 
       {loaded && loaded.items.length > 0 && view === 'list' ? (
-        <WorklistTable rows={rows} onSelect={(ticket) => router.push(`/tickets/${ticket}`)} />
+        <WorklistTable rows={rows} onSelect={(number) => router.push(`/patients/${number}`)} />
       ) : null}
 
       {loaded && loaded.items.length > 0 && view === 'wall' ? (
         <ul className="grid grid-cols-[repeat(auto-fill,minmax(248px,1fr))] gap-4">
           {rows.map((row) => (
-            <li key={row.ticket}>
-              <Link href={`/tickets/${row.ticket}`} aria-label={`Open ticket ${row.ticket}`} className="block h-full rounded-lg">
+            <li key={row.patient.number}>
+              <Link href={`/patients/${row.patient.number}`} aria-label={`Open ${patientLabel(row.patient)}`} className="block h-full rounded-lg">
                 <PatientTile {...row} />
               </Link>
             </li>
