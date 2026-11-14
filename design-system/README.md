@@ -1,4 +1,4 @@
-Triage Cam is a contact-free vitals station and a waiting-room worklist. One system, Night Shift, covers the web dashboard, the landing page and both roles of the mobile app.
+Crowdpulse is a contact-free vitals station and a waiting-room worklist. One system, Night Shift, covers the web dashboard, the landing page and both roles of the mobile app.
 
 Night Shift is a dark system for a product that gets used at 3am. The room is dim, so the screen is too: graphite surfaces stepped by brightness, hairlines where a border would shout, and one cold accent the colour of a monitor trace. Colour is rationed so that the patient who is getting worse is the brightest thing a nurse can see.
 
@@ -154,7 +154,25 @@ The parts are the ones the product already has, redrawn. Each component README h
 - One set, line icons at 1.5 stroke in the colour of the text beside them. 16px in the dashboard, 20px on the phone.
 - The icon box has the same width in every row and a fixed gap to its label (8px, or 10px in navigation), so labels align.
 - No emoji, no filled icons, no icon with its own colour. A status that needs colour gets a 6px dot.
-- The mark is the pulse trace in `signal`, flat, beside the name "Triage Cam" at weight 500.
+- The mark is seven round-ended bars, the middle one tall: a row of people with one pulse standing out. See Brand.
+
+## Brand
+
+The product is Crowdpulse, one word with a capital C. The assets are in `brand/`, and all of them are built by `brand/build_brand.py` from one definition of the bar geometry. Change the script, never an output.
+
+- **Mark:** `mark.svg`, seven bars in `signal` with the tall bar in `signal-strong`, on a transparent ground. Flat: no glow, no tile behind it, no other colour.
+- **Lockup:** `lockup.svg`, the mark beside the wordmark. The wordmark (`wordmark.svg`) is Geist SemiBold in `ink`, tracked -0.02em and outlined, with its cap height centred on the mark.
+- **App icon:** `app-icon-1024.png`, five bars on a `surface-2` to `surface-0` ground, opaque. `apple-touch-icon.png` is the same at 180px.
+- **Favicon:** `favicon.svg` and `favicon.ico` (16, 32 and 48px), three bars on a `surface-0` tile, drawn on the pixel grid.
+- **Where each goes:** the lockup where there is room (navigation, sign-in, the landing page header and footer); the mark alone in the collapsed navigation and wherever the name is already beside it in text. In the apps both are drawn from the same geometry: `apps/web/src/components/ds/BrandMark.tsx` and `apps/mobile/src/components/Wordmark.tsx`.
+
+To regenerate, with librsvg for `rsvg-convert`:
+
+```bash
+brew install librsvg
+pip install fonttools brotli pillow
+python design-system/brand/build_brand.py
+```
 
 ## Voice and copy
 
