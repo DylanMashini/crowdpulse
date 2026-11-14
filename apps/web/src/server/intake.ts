@@ -2,7 +2,7 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 
 import { db, schema } from "../db/client.ts";
 import { ApiError } from "./http.ts";
-import { portraitFromFrame, storePhoto } from "./photos.ts";
+import { deletePhoto, portraitFromFrame, storePhoto } from "./photos.ts";
 import type { PatientRow, SittingRow } from "./serialize.ts";
 
 // The profile photo takes itself: while a sitting runs for a patient who has no photo yet,
@@ -25,20 +25,33 @@ const ATTEMPT_EVERY_MS = 600;
 /** After a restart nothing is remembered: ask the database, but not on every frame. */
 const LOOKUP_EVERY_MS = 2000;
 
-type IntakeState = { running: Map<string, Running>; lookedUpAt: Map<string, number>; detectorMissing: boolean };
+type IntakeState = {
+  running: Map<string, Running>;
+  lookedUpAt: Map<string, number>;
+  /**
+   * Patients whose photo staff removed. Nothing takes a new one by itself, in this sitting or
+   * a later one, until staff ask for it. Held in memory like the rest: a server restart
+   * forgets it.
+   */
+  removed: Set<string>;
+  detectorMissing: boolean;
+};
 const globalForIntake = globalThis as typeof globalThis & { triagecamIntake?: IntakeState };
 const state = (globalForIntake.triagecamIntake ??= {
   running: new Map(),
   lookedUpAt: new Map(),
+  removed: new Set(),
   detectorMissing: false,
 });
+// A dev server that hot-reloads this module keeps the state it made before `removed` existed.
+state.removed ??= new Set();
 
 export function noteSittingStarted(sitting: SittingRow, patient: PatientRow): void {
   state.running.set(sitting.deviceId, {
     sittingId: sitting.id,
     patient,
     startedAt: sitting.startedAt.getTime(),
-    needsPhoto: patient.photoUpdatedAt === null,
+    needsPhoto: patient.photoUpdatedAt === null && !state.removed.has(patient.id),
     lastAttemptAt: 0,
     busy: false,
   });
@@ -48,11 +61,30 @@ export function noteSittingEnded(deviceId: string, sittingId: string): void {
   if (state.running.get(deviceId)?.sittingId === sittingId) state.running.delete(deviceId);
 }
 
-/** The photo was stored or removed by hand: stop, or start, looking for one. */
-export function notePhotoChanged(patientId: string, hasPhoto: boolean): void {
+function stopLooking(patientId: string): void {
   for (const running of state.running.values()) {
-    if (running.patient.id === patientId) running.needsPhoto = !hasPhoto;
+    if (running.patient.id === patientId) running.needsPhoto = false;
   }
+}
+
+/** Staff or the phone stored a photo: stop looking for one. */
+export function notePhotoStored(patientId: string): void {
+  state.removed.delete(patientId);
+  stopLooking(patientId);
+}
+
+/**
+ * Staff removed the photo, because it was wrong or the patient does not want one. It stays
+ * removed: neither the live view nor the phone's own crop puts one back by itself.
+ */
+export function notePhotoRemoved(patientId: string): void {
+  state.removed.add(patientId);
+  stopLooking(patientId);
+}
+
+/** Whether a photo may be stored without staff asking for it. */
+export function mayTakePhotoUnasked(patientId: string): boolean {
+  return !state.removed.has(patientId);
 }
 
 async function lookUp(deviceId: string, now: number): Promise<void> {
@@ -87,10 +119,12 @@ export function considerFrameForPhoto(deviceId: string, jpeg: Buffer, now = Date
   void (async () => {
     try {
       const portrait = await portraitFromFrame(jpeg);
-      if (!portrait) return;
-      // The phone may have sent its own crop in the meantime; that one wins.
+      // Staff may have removed the photo, or taken one, while the detector ran.
+      if (!portrait || !running.needsPhoto) return;
       await storePhoto(running.patient, portrait, { onlyIfMissing: true });
       running.needsPhoto = false;
+      // Removed in the instant the photo was being written: the removal stands.
+      if (state.removed.has(running.patient.id)) await deletePhoto(running.patient);
     } catch (error) {
       if (error instanceof ApiError && error.code === "face_unavailable") {
         // No detector on this server. The phone's own crop and the retake button still work.

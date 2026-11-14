@@ -3,7 +3,7 @@ import { CapturePatientPhotoRequest, type PatientResponse } from "@triagecam/con
 import { requireSession } from "@/server/auth/session";
 import { findDevice } from "@/server/devices";
 import { ApiError, patientNumberParam, readJson, route } from "@/server/http";
-import { notePhotoChanged } from "@/server/intake";
+import { notePhotoStored } from "@/server/intake";
 import { currentFrame } from "@/server/live";
 import { findPatient, patientToWire } from "@/server/patients";
 import { portraitFromFrame, storePhoto } from "@/server/photos";
@@ -21,6 +21,6 @@ export const POST = route(async (request: Request, context: RouteContext<"/api/p
     throw new ApiError("no_face_detected", "No face was found in the picture. Ask the patient to face the camera, then try again.");
   }
   const updated = await storePhoto(patient, portrait);
-  notePhotoChanged(patient.id, true);
+  notePhotoStored(patient.id);
   return Response.json({ patient: await patientToWire(updated) } satisfies PatientResponse);
 });

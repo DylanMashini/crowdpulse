@@ -182,7 +182,8 @@ export function useSittingController({ patientNumber, kind, enrolFace, deviceId,
       current.photo.done = true;
     } catch {
       // No face this second, or the network dropped: try again on a later status tick. The
-      // server also takes the photo from the live view, so this is the sharper of two routes.
+      // server also takes the photo from the live view; this crop only fills in when it has
+      // not, and never puts back a photo staff removed.
     } finally {
       current.photo.busy = false;
     }

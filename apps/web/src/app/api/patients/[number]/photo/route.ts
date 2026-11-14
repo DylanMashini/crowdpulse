@@ -2,7 +2,7 @@ import { PatientPhotoRequest, type PatientResponse } from "@triagecam/contracts"
 
 import { requireSession } from "@/server/auth/session";
 import { ApiError, noContent, patientNumberParam, readJson, route } from "@/server/http";
-import { notePhotoChanged } from "@/server/intake";
+import { mayTakePhotoUnasked, notePhotoRemoved, notePhotoStored } from "@/server/intake";
 import { findPatient, patientToWire } from "@/server/patients";
 import { deletePhoto, portraitFromCrop, readPhoto, storePhoto } from "@/server/photos";
 
@@ -25,21 +25,29 @@ export const GET = route(async (request: Request, context: Context) => {
   });
 });
 
-/** The phone's face crop from the capture module. Replaces an earlier photo. */
+/**
+ * The phone's face crop from the capture module. It only fills a gap unless `replace` is set:
+ * the portrait the server cut from the live view is wider and better framed than a tight face
+ * box, and a photo staff took or removed is theirs to decide.
+ */
 export const PUT = route(async (request: Request, context: Context) => {
   await requireSession(request);
   const patient = await findPatient(patientNumberParam((await context.params).number));
-  const { jpegBase64 } = await readJson(request, PatientPhotoRequest);
+  const { jpegBase64, replace } = await readJson(request, PatientPhotoRequest);
   const portrait = await portraitFromCrop(Buffer.from(jpegBase64, "base64"));
-  const updated = await storePhoto(patient, portrait);
-  notePhotoChanged(patient.id, true);
+  if (!replace && !mayTakePhotoUnasked(patient.id)) {
+    return Response.json({ patient: await patientToWire(patient) } satisfies PatientResponse);
+  }
+  const updated = await storePhoto(patient, portrait, { onlyIfMissing: !replace });
+  if (updated.photoUpdatedAt) notePhotoStored(patient.id);
   return Response.json({ patient: await patientToWire(updated) } satisfies PatientResponse);
 });
 
 export const DELETE = route(async (request: Request, context: Context) => {
   await requireSession(request);
   const patient = await findPatient(patientNumberParam((await context.params).number));
+  // First, so a frame that is being looked at right now is not stored after the delete.
+  notePhotoRemoved(patient.id);
   await deletePhoto(patient);
-  notePhotoChanged(patient.id, false);
   return noContent();
 });

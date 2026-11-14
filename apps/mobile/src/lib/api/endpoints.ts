@@ -77,7 +77,10 @@ export function createApi(client: ApiClient) {
         raw: { body: file, contentType: 'application/x-ndjson' },
       }),
 
-    /** The profile photo: the face crop from the capture module, taken during the intake sitting. */
+    /**
+     * The profile photo: the face crop from the capture module, taken during the intake sitting.
+     * The server keeps it only when the patient has no photo yet.
+     */
     putPatientPhoto: (patientNumber: number, jpegBase64: string) =>
       client.request({ method: 'PUT', path: routes.patientPhoto(patientNumber), body: { jpegBase64 } }, PatientResponse),
 
