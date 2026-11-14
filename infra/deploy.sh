@@ -39,9 +39,19 @@ if ! [[ "$tag" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 
 # The registry is taken from the image itself, so the account id is never typed or printed.
-registry=$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids "imageTag=$tag" \
-  --query 'imageDetails[0].registryId' --output text 2> /dev/null) \
-  || fail "There is no image tagged $tag in the ECR repository $ECR_REPOSITORY. Build and push it first."
+# Only "no such image" is reported as that: expired credentials, the wrong region or a refusal
+# must not send anyone off to rebuild an image that is there.
+if ! registry=$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids "imageTag=$tag" \
+  --query 'imageDetails[0].registryId' --output text 2>&1); then
+  if [[ "$registry" == *ImageNotFoundException* ]]; then
+    fail "There is no image tagged $tag in the ECR repository $ECR_REPOSITORY. Build and push it first."
+  fi
+  # AWS error messages can name the account; keep the id out of the output.
+  fail "Could not look up the image $tag in ECR. Check the credentials and the region ($AWS_REGION). AWS said: $(sed -E 's/[0-9]{12}/<account>/g' <<< "$registry" | tr -s '\n' ' ')"
+fi
+if ! [[ "$registry" =~ ^[0-9]{12}$ ]]; then
+  fail "ECR gave no registry for the image $tag."
+fi
 image="$registry.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$tag"
 
 work=$(mktemp -d)
