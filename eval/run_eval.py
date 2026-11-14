@@ -238,6 +238,10 @@ def report():
                     f"{number(s['biasBpm'], '{:+.1f}')} | {number(s['within5'], '{:.0%}')} | {number(s['coverage'], '{:.0%}')} | "
                     f"{number(s['perRecordingMaeBpm'])} | {number(s['perRecordingWithin5'], '{:.0%}')} "
                     f"(n={s['recordingsWithSummary']}) | {number(s['medianTimeToFirstS'], '{:.0f}')} |")
+            checks = [r["referenceCheck"] for r in in_set if r.get("referenceCheck")]
+            if checks:
+                lines += ["", "Reference checked against: "
+                          + ", ".join(f"{check} ({checks.count(check)} recordings)" for check in sorted(set(checks))) + "."]
             failed = [r for r in in_set if "error" in r]
             if failed:
                 lines += ["", f"{len(failed)} recording(s) could not be scored: " + "; ".join(f"{r['id']} ({r['error']})" for r in failed[:5])]
