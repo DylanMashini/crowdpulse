@@ -189,7 +189,7 @@ public struct EngineConfiguration: Codable, Sendable, Equatable {
   /// peak reached 0.93 at most; the owner's still sitting has 1.77.
   public var wholeSittingCorroboratingEvidence: Double = 1.3
   /// Evidence it needs to stand for a sitting with no valid readings to speak of: twice
-  /// as much. The most any of those 755 reached, readings or no readings, is 1.23.
+  /// as much. The most any of those 755 reached, readings or no readings, is 1.21.
   public var wholeSittingEvidence: Double = 2.6
   /// The estimate is not used when the summed spectrum has a peak at half its rate that
   /// stands this far above its own surroundings: that one is the heart rate and the
