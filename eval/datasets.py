@@ -188,7 +188,7 @@ def ubfc_reference_check(folder, listing, name, download=True):
     for saved in listings:
         published = [entry["oid"] for entry in json.loads(saved.read_text()) if entry["path"] == f"{name}/ground_truth.txt"]
         if published != [blob]:
-            raise RuntimeError("the authors' Drive is over quota and the mirror's ground truth differs from another public copy")
+            raise RuntimeError("the mirror's ground truth differs from another public copy, and the authors' file is not on disk to settle it")
     return CHECKED_BY_COPIES
 
 
@@ -208,17 +208,44 @@ def ubfc(subjects):
         _, rates, times = (np.array(line.split(), dtype=float) for line in truth.read_text().splitlines()[:3])
         return {**counts, "referenceCheck": check}, [(float(t), float(hr)) for t, hr in zip(times, rates) if hr > 0]
 
-    def checked_already(name):
-        """For a re-score, which skips `prepare`: the check as the files on disk stand."""
-        try:
-            return ubfc_reference_check(folder, listing, name, download=False) if (folder / name / "ground_truth.txt").exists() else None
-        except RuntimeError:
-            return None
+    def check_on_disk(name):
+        """For a re-score, which skips `prepare`: the check as the files on disk stand, with no
+        download. Raises when a copy on disk differs, so the subject is refused exactly as a
+        fresh run refuses it. None when there is no ground truth on disk to check."""
+        return ubfc_reference_check(folder, listing, name, download=False) if (folder / name / "ground_truth.txt").exists() else None
 
-    return [{"dataset": "ubfc", "id": name, "group": "All", "info": {"subject": name, "referenceCheck": checked_already(name)},
-             "prepare": lambda sitting, name=name: prepare(name, sitting)} for name in names]
+    return [{"dataset": "ubfc", "id": name, "group": "All", "info": {"subject": name},
+             "prepare": lambda sitting, name=name: prepare(name, sitting),
+             "check": lambda name=name: check_on_disk(name)} for name in names]
+
+
+def ubfc_check_references():
+    """Fetch what is missing of each subject's independent copies (the authors' file first) and
+    run the check, without scoring anything. A re-score never downloads, so this is the step
+    that moves a subject from the hash check to the authors' file once their Drive answers
+    again. Returns one line per subject whose ground truth is on disk."""
+    folder = core.DATA / "ubfc"
+    listing = dict(reversed(line.split("\t")) for line in (folder / "listing.txt").read_text().splitlines() if "\t" in line)
+    names = sorted((p.split("/")[1] for p in listing if p.startswith("DATASET_2/") and p.endswith("vid.avi")),
+                   key=lambda name: int(name.removeprefix("subject")))
+    lines, online = [], True
+    for name in names:
+        if not (folder / name / "ground_truth.txt").exists():
+            lines.append(f"{name}: no ground truth on disk (a run without --rescore fetches it)")
+            continue
+        try:
+            try:
+                found = ubfc_reference_check(folder, listing, name, download=online)
+            except subprocess.CalledProcessError:
+                online = False  # one failed download: the rest are checked as the files on disk stand
+                found = ubfc_reference_check(folder, listing, name, download=False)
+            lines.append(f"{name}: {found or 'unchecked'}" + ("" if online else " (from the files on disk; a download failed)"))
+        except RuntimeError as error:
+            lines.append(f"{name}: REFUSED, {error}")
+    return lines
 
 
 LOADERS = {"mcd": mcd, "ubfc": ubfc}
 PUBLISHED = ["ubfc"]   # the only datasets whose figures may be shown anywhere
+REFERENCE_CHECKED = ["ubfc"]  # datasets whose reference file is checked against an independent copy
 DIAGNOSTIC = ["mcd"]   # internal: results go to <out>/internal-diagnostics and are never published

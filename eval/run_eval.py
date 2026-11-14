@@ -7,6 +7,7 @@
     uv run eval/run_eval.py --workers 2                  # UBFC-rPPG, all 42 subjects, 1.9 GB of video each
     uv run eval/run_eval.py --rescore --split tuning     # score again after an engine change, tuning set only
     uv run eval/run_eval.py report
+    uv run eval/run_eval.py check-references             # fetch the authors' ground-truth files and check every reference
     uv run eval/run_eval.py --diagnostics mcd --subjects 100 --workers 3
 
 UBFC-rPPG is the published dataset and the default: <out>/ubfc.json and <out>/report.md hold
@@ -19,6 +20,11 @@ module's face regions -> a sitting file -> engine-cli. The dataset's own heart r
 waveform) is the reference. Videos are deleted after conversion; sitting files are kept in the
 output directory so the engine can be re-scored without downloading again (--rescore, which
 also resumes a run that was stopped: recordings without a sitting file are fetched).
+
+A re-score checks each UBFC reference again from the files on disk and refuses a subject whose
+ground truth differs from an independent copy, as a fresh run does. It downloads nothing for a
+subject that has a sitting file, so it cannot move a reference from the hash check to the
+authors' file: `check-references` does that, and the next re-score records the result.
 
 Subjects are split into a tuning set and a held-out set by eval/split.json (see eval/split.py).
 Tune on the tuning set only (--split tuning). Every published figure comes from the held-out set.
@@ -145,6 +151,10 @@ def evaluate(recording, rescore):
     result = {k: recording[k] for k in ("dataset", "id", "group", "split")}
     result.update(recording.get("info", {}))
     try:
+        if rescore and recording.get("check"):
+            # A re-score checks the reference too, from the files on disk: a subject whose
+            # ground truth differs from an independent copy is refused, never scored unchecked.
+            result["referenceCheck"] = recording["check"]()
         if rescore and sitting.exists() and reference_cache.exists():
             reference = [(r["t"], r["heartRate"]) for r in map(json.loads, reference_cache.read_text().splitlines())]
         else:
@@ -280,6 +290,10 @@ def write_report(target, names, recorded, lines):
             if checks:
                 lines += ["", "Reference checked against: "
                           + ", ".join(f"{check} ({checks.count(check)} recordings)" for check in sorted(set(checks))) + "."]
+            unchecked = [r["id"] for r in in_set if "error" not in r and not r.get("referenceCheck")] if name in datasets.REFERENCE_CHECKED else []
+            if unchecked:
+                lines += ["", f"**Reference not checked, {len(unchecked)} recording(s):** {', '.join(unchecked)}. "
+                          "Their ground truth was not on disk when they were scored again; do not publish this set until they are checked."]
             failed = [r for r in in_set if "error" in r]
             if failed:
                 reasons = {}
@@ -311,8 +325,9 @@ def set_directories(data, out, min_free_gb):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("dataset", nargs="?", choices=[*datasets.PUBLISHED, "report"], default=datasets.PUBLISHED[0],
-                        help="the published dataset to evaluate (default), or only rewrite the reports")
+    parser.add_argument("dataset", nargs="?", choices=[*datasets.PUBLISHED, "report", "check-references"], default=datasets.PUBLISHED[0],
+                        help="the published dataset to evaluate (default); `report` only rewrites the reports; "
+                             "`check-references` fetches the authors' ground-truth files that are missing and checks every reference, scoring nothing")
     parser.add_argument("--diagnostics", choices=datasets.DIAGNOSTIC, default=None,
                         help="evaluate an internal diagnostic dataset instead; its results are never published")
     parser.add_argument("--subjects", type=int, default=None, help="limit the number of subjects")
@@ -329,6 +344,9 @@ def main():
     if found:
         sys.exit("eval/split.json: " + "; ".join(found))
     dataset = arguments.diagnostics or arguments.dataset
+    if dataset == "check-references":
+        print("\n".join(datasets.ubfc_check_references()))
+        return
     if dataset != "report":
         for tool in (CONVERTER, ENGINE):
             if not tool.exists():
