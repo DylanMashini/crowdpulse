@@ -1,5 +1,5 @@
-import { type Flag, type FlagListQuery, type FlagListResponse, patientLabel } from "@triagecam/contracts";
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, or, type SQL } from "drizzle-orm";
+import { type Flag, type FlagListQuery, type FlagListResponse, type FlagRule, patientLabel } from "@triagecam/contracts";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, or, type SQL } from "drizzle-orm";
 import * as z from "zod";
 
 import { db, schema } from "../db/client.ts";
@@ -107,16 +107,44 @@ export async function listFlags(query: FlagListQuery): Promise<FlagListResponse>
   };
 }
 
-/** Records who acknowledged and when. A second acknowledgement by the same person changes nothing. */
+const TREND_RULES: FlagRule[] = ["score_rise", "baseline_shift"];
+
+/**
+ * Records who acknowledged and when. A second acknowledgement by the same person changes nothing.
+ *
+ * One deterioration usually trips both trend rules, and to the nurse it is one alert. So
+ * acknowledging an open trend flag also acknowledges the patient's other open trend flag when
+ * nobody has acknowledged that one yet. An overdue flag is a different alert and is never
+ * covered by, or covers, a trend flag.
+ */
 export async function acknowledgeFlag(flagId: string, userId: string): Promise<Flag> {
   const [row] = await selectFlags().where(eq(schema.flags.id, flagId)).limit(1);
   if (!row) throw new ApiError("not_found", "There is no flag with that id");
+
+  let covered: FlagWithPatient[] = [];
+  if (row.flag.closedAt === null && TREND_RULES.includes(row.flag.rule)) {
+    const others = await selectFlags().where(
+      and(
+        eq(schema.flags.patientId, row.flag.patientId),
+        ne(schema.flags.id, flagId),
+        isNull(schema.flags.closedAt),
+        inArray(schema.flags.rule, TREND_RULES),
+      ),
+    );
+    const acknowledged = await firstAcknowledgements(others.map((other) => other.flag.id));
+    covered = others.filter((other) => !acknowledged.has(other.flag.id));
+  }
+
+  const rows = [row, ...covered];
+  const at = new Date();
   const inserted = await db
     .insert(schema.acknowledgements)
-    .values({ flagId, userId, at: new Date() })
+    .values(rows.map(({ flag }) => ({ flagId: flag.id, userId, at })))
     .onConflictDoNothing()
-    .returning();
-  const flag = await flagToWire(row.flag, row.patient);
-  if (inserted.length > 0) publish({ type: "flag_acknowledged", flag });
-  return flag;
+    .returning({ flagId: schema.acknowledgements.flagId });
+  const flags = await flagsToWire(rows);
+  for (const flag of flags) {
+    if (inserted.some((acknowledgement) => acknowledgement.flagId === flag.id)) publish({ type: "flag_acknowledged", flag });
+  }
+  return flags[0] as Flag;
 }
