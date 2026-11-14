@@ -836,6 +836,33 @@
   gap: 28px 24px;
 }
 
+.lp-figure-groups {
+  display: grid;
+  gap: 28px;
+}
+
+.lp-figure-group {
+  display: grid;
+  gap: 16px;
+}
+
+.lp-figure-group + .lp-figure-group {
+  padding-top: 28px;
+  border-top: 1px solid var(--line);
+}
+
+.lp-figure-caption {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.lp-figure-caption span {
+  display: block;
+  font-weight: 400;
+  color: var(--ink-muted);
+}
+
 .lp-figure {
   display: grid;
   gap: 8px;
