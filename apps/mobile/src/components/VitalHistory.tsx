@@ -15,6 +15,8 @@ type Props = {
   unit: string;
   /** Every sitting that read this value, oldest first. */
   points: VitalPoint[];
+  /** The patient's severity while a trend flag is open. A value that has moved from check-in takes its colour. */
+  severity?: 'watch' | 'urgent';
 };
 
 const HEIGHT = 48;
@@ -26,7 +28,7 @@ const MIN_SPAN = 12;
  * One vital across the patient's sittings: the latest value in words, and a line from the
  * check-in value (the dashed rule) to now. The words carry the numbers; the line carries the shape.
  */
-export function VitalHistory({ label, icon, unit, points }: Props) {
+export function VitalHistory({ label, icon, unit, points, severity }: Props) {
   const theme = useScopedTheme();
   const { colors, space } = theme;
   const [width, setWidth] = useState(0);
@@ -47,6 +49,10 @@ export function VitalHistory({ label, icon, unit, points }: Props) {
   const delta = Math.round(last.value) - Math.round(first.value);
   const change = points.length < 2 ? 'One reading so far' : delta === 0 ? `Unchanged from ${wholeNumber(first.value)} at check-in` : `${delta > 0 ? '+' : '−'}${Math.abs(delta)} from ${wholeNumber(first.value)} at check-in`;
 
+  // Only a value that moved: a flagged patient's steady reading stays white.
+  const moved = points.length > 1 && delta !== 0 && severity != null;
+  const tone = moved ? (severity === 'urgent' ? colors.urgent : colors.watch) : null;
+
   const values = points.map((point) => point.value);
   const middle = (Math.max(...values) + Math.min(...values)) / 2;
   const span = Math.max(Math.max(...values) - Math.min(...values), MIN_SPAN);
@@ -65,10 +71,10 @@ export function VitalHistory({ label, icon, unit, points }: Props) {
       <Heading label={label} icon={icon} />
       <View>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', columnGap: 6 }}>
-          <Text style={[theme.type.readoutLg, { color: colors.ink }]}>{wholeNumber(last.value)}</Text>
+          <Text style={[theme.type.readoutLg, { color: tone ?? colors.ink }]}>{wholeNumber(last.value)}</Text>
           <Text style={[theme.type.dense, { color: colors.inkMuted }]}>{unit}</Text>
         </View>
-        <Text style={[theme.type.caption, { color: colors.inkFaint, fontVariant: ['tabular-nums'] }]}>{change}</Text>
+        <Text style={[theme.type.caption, { color: tone ?? colors.inkFaint, fontVariant: ['tabular-nums'] }]}>{change}</Text>
       </View>
       {points.length > 1 ? (
         <View style={{ height: HEIGHT }} onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>

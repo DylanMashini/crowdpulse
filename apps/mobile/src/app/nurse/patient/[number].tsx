@@ -107,6 +107,7 @@ export default function PatientScreen() {
   const severity = detail?.state
     ? patientSeverity({ state: detail.state, score: item?.score ?? null, flags: detail.flags })
     : 'stable';
+  const vitalSeverity = severity === 'urgent' || severity === 'watch' ? severity : undefined;
   const second = patient
     ? [`No. ${patient.number}`, demographics(patient, now)].filter(Boolean).join(', ')
     : valid
@@ -197,7 +198,7 @@ export default function PatientScreen() {
               {/* One instrument panel: two cells with a hairline between them, side by side until the text is too large. */}
               <Card flush style={{ flexDirection: stacked ? 'column' : 'row' }}>
                 <View style={{ flex: stacked ? undefined : 1, padding: space.space4 }}>
-                  <VitalHistory label="Pulse" icon="pulse" unit="bpm" points={vitalSeries(detail.sittings, 'heartRate')} />
+                  <VitalHistory label="Pulse" icon="pulse" unit="bpm" points={vitalSeries(detail.sittings, 'heartRate')} severity={vitalSeverity} />
                 </View>
                 <View
                   style={[
@@ -205,7 +206,13 @@ export default function PatientScreen() {
                     stacked ? { borderTopWidth: hairline } : { borderLeftWidth: hairline },
                   ]}
                 >
-                  <VitalHistory label="Breathing" icon="breath" unit="per min" points={vitalSeries(detail.sittings, 'breathingRate')} />
+                  <VitalHistory
+                    label="Breathing"
+                    icon="breath"
+                    unit="per min"
+                    points={vitalSeries(detail.sittings, 'breathingRate')}
+                    severity={vitalSeverity}
+                  />
                 </View>
               </Card>
               <Text style={[theme.type.caption, { color: colors.inkFaint }]}>
