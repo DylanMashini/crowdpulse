@@ -1,4 +1,4 @@
-import { LIVE_FRAME_HEADERS } from '@triagecam/contracts';
+import { LIVE_FRAME_HEADERS, LiveRegions } from '@triagecam/contracts';
 
 /** One picture of the live view, as it came off the stream. */
 export interface FeedFrame {
@@ -8,6 +8,8 @@ export interface FeedFrame {
   /** Phone clock when the frame was captured, in ms. Null if the phone did not say. */
   capturedAt: number | null;
   sequence: number | null;
+  /** The outlines the phone was measuring on when it sent this picture. Null when it sent none. */
+  regions: LiveRegions | null;
 }
 
 const HEADER_END = [0x0d, 0x0a, 0x0d, 0x0a];
@@ -26,6 +28,17 @@ const numberOrNull = (value: string | undefined): number | null => {
   const parsed = Number(value);
   return value !== undefined && Number.isFinite(parsed) ? parsed : null;
 };
+
+/** The outlines header of a part. Anything that is not a well-formed set of outlines is no outlines. */
+function regionsOrNull(value: string | undefined): LiveRegions | null {
+  if (!value) return null;
+  try {
+    const parsed = LiveRegions.safeParse(JSON.parse(value));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Cuts a multipart/x-mixed-replace byte stream into its JPEG parts. Feed it chunks as they
@@ -63,6 +76,7 @@ export function createPartParser(onFrame: (frame: FeedFrame) => void): (chunk: U
         receivedAt: numberOrNull(headers.get(LIVE_FRAME_HEADERS.receivedAt)),
         capturedAt: numberOrNull(headers.get(LIVE_FRAME_HEADERS.capturedAt)),
         sequence: numberOrNull(headers.get(LIVE_FRAME_HEADERS.sequence)),
+        regions: regionsOrNull(headers.get(LIVE_FRAME_HEADERS.regions)),
       });
       offset = start + length;
     }
