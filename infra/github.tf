@@ -117,10 +117,16 @@ resource "aws_iam_role_policy" "deploy" {
         Resource = aws_ecs_service.web.arn
       },
       {
-        Sid      = "WatchDeployment"
-        Effect   = "Allow"
-        Action   = "ecs:DescribeServiceDeployments"
-        Resource = "${local.account_arn_prefix}:service-deployment/${aws_ecs_cluster.this.name}/${aws_ecs_service.web.name}/*"
+        Sid    = "WatchDeployment"
+        Effect = "Allow"
+        Action = "ecs:DescribeServiceDeployments"
+        # ECS authorises this call against the service the deployment belongs to, not against
+        # the deployment that is named in the request: with the deployment ARN alone the call
+        # is refused. The service reference lists both resource types, so both are allowed.
+        Resource = [
+          aws_ecs_service.web.arn,
+          "${local.account_arn_prefix}:service-deployment/${aws_ecs_cluster.this.name}/${aws_ecs_service.web.name}/*",
+        ]
       },
     ]
   })
