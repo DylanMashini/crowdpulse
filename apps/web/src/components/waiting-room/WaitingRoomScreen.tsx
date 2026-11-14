@@ -20,7 +20,7 @@ function Count({ value, className }: { value: number; className?: string }) {
 }
 
 /** What the room holds, in one sentence, so the counts do not have to be read off the rows. */
-function summarise(items: WorklistItem[], recheckIntervalMin: number): ReactNode {
+function summarise(items: WorklistItem[]): ReactNode {
   const count = (state: WorklistItem['state']) => items.filter((item) => item.state === state).length;
   const flags = count('flag');
   // The flag count takes the colour of the worst flag in the room, as its rows do.
@@ -56,7 +56,6 @@ function summarise(items: WorklistItem[], recheckIntervalMin: number): ReactNode
           {part}
         </span>
       ))}
-      . Overdue after {recheckIntervalMin} min without an observation.
     </>
   );
 }
@@ -72,7 +71,7 @@ export function WaitingRoomScreen() {
 
   return (
     <>
-      <PageHeader title="Waiting room" description={loaded && loaded.items.length > 0 ? summarise(loaded.items, loaded.recheckIntervalMin) : undefined}>
+      <PageHeader title="Waiting room" description={loaded && loaded.items.length > 0 ? summarise(loaded.items) : undefined}>
         <LiveStatus updatedAt={worklist.updatedAt} />
         <Segmented
           label="View"
@@ -117,6 +116,10 @@ export function WaitingRoomScreen() {
             </li>
           ))}
         </ul>
+      ) : null}
+
+      {loaded && loaded.items.length > 0 ? (
+        <p className="px-5 py-3 type-caption text-ink-faint">A patient is overdue after {loaded.recheckIntervalMin} min without an observation</p>
       ) : null}
     </>
   );
