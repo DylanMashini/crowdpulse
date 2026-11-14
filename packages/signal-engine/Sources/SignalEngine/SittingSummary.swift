@@ -55,6 +55,15 @@ public enum HeartRateSource: String, Codable, Sendable {
   case wholeSitting = "whole_sitting"
 }
 
+/// How much of the sitting stands behind its heart rate.
+public enum HeartRateConfidence: String, Codable, Sendable {
+  /// At least `minimumUncorroboratedReadings` valid one-second readings.
+  case normal
+  /// Fewer than that, or none: the rate rests on the whole-sitting estimate, alone or
+  /// agreeing with the few readings there were. Shown as such, and not a baseline.
+  case low
+}
+
 public struct SittingSummary: Codable, Sendable, Equatable {
   /// First frame to last frame, in seconds.
   public var durationSeconds: Double
@@ -78,6 +87,8 @@ public struct SittingSummary: Codable, Sendable, Equatable {
   public var longestDropoutSeconds: Double
   /// Which path `heartRate.value` came from. Nil when there is no heart rate.
   public var heartRateSource: HeartRateSource?
+  /// Nil when there is no heart rate.
+  public var heartRateConfidence: HeartRateConfidence?
   /// The whole-sitting estimate and its evidence, whether or not it was needed or
   /// accepted. Nil when no window of the sitting could be analysed.
   public var wholeSitting: WholeSittingEstimate?

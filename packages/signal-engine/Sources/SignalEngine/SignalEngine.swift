@@ -149,21 +149,30 @@ public final class SignalEngine {
     // of those, the whole sitting is asked instead.
     var heartRate = summary(\.heart)
     var source: HeartRateSource? = heartRate.value == nil ? nil : .readings
+    var confidence: HeartRateConfidence? = heartRate.value == nil ? nil : .normal
     let whole = WholeSittingAnalyzer(configuration: configuration).estimate(pulse.evidence, origin: first)
-    let corroborated = whole.accepted ? whole.heartRate : nil
+    let valid = ticks.compactMap(\.heart.value)
+    func near(_ bpm: Double, _ other: Double) -> Bool {
+      abs(bpm - other) <= configuration.agreementToleranceBpm
+    }
     if let median = heartRate.value {
       // A handful of readings is what noise produces now and then. They stand for the
-      // sitting only if the sitting as a whole says the same.
-      let readings = ticks.reduce(0) { $0 + ($1.heart.state == .valid ? 1 : 0) }
-      let agrees = corroborated.map { abs($0 - median) <= configuration.agreementToleranceBpm } ?? false
-      if readings < configuration.minimumUncorroboratedReadings, !agrees {
-        heartRate = SummaryValue(
-          value: nil, coverage: heartRate.coverage, reason: SummaryReason.tooFewReadings.rawValue)
-        source = nil
+      // sitting only if the sitting as a whole says the same, and then with less confidence.
+      if valid.count < configuration.minimumUncorroboratedReadings {
+        if whole.corroborates, let bpm = whole.heartRate, near(bpm, median) {
+          confidence = .low
+        } else {
+          heartRate = SummaryValue(
+            value: nil, coverage: heartRate.coverage, reason: SummaryReason.tooFewReadings.rawValue)
+          source = nil
+          confidence = nil
+        }
       }
-    } else if let bpm = corroborated {
+    } else if whole.accepted, let bpm = whole.heartRate, valid.allSatisfy({ near(bpm, $0) }) {
+      // No readings to speak of, and the one or two there were do not say otherwise.
       heartRate = SummaryValue(value: bpm, coverage: heartRate.coverage)
       source = .wholeSitting
+      confidence = .low
     }
     var summary = SittingSummary(
       durationSeconds: duration,
@@ -178,6 +187,7 @@ public final class SignalEngine {
       longestDropoutSeconds: firstValid == nil ? duration : Double(longestDropout)
     )
     summary.heartRateSource = source
+    summary.heartRateConfidence = confidence
     summary.wholeSitting = whole.windows > 0 ? whole : nil
     return summary
   }

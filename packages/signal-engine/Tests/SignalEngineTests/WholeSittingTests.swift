@@ -167,21 +167,110 @@ private func faint(_ bpm: Double, _ change: (inout SyntheticSitting) -> Void = {
   }
 }
 
+@Suite struct TheSummarySaysHowMuchStandsBehindTheHeartRate {
+  @Test func tenReadingsOrMoreAreNormalConfidence() {
+    let summary = replay(sitting()).summary
+    #expect(summary.heartRateSource == .readings)
+    #expect(summary.heartRateConfidence == .normal)
+  }
+
+  @Test func aFewReadingsTheSittingAgreesWithAreLowConfidence() {
+    let result = replay(faint(96))
+    #expect((3..<10).contains(result.heartRates.count))
+    #expect(result.summary.heartRateSource == .readings)
+    #expect(result.summary.heartRateConfidence == .low)
+    #expect(result.summary.wholeSitting?.corroborates == true)
+  }
+
+  @Test func theWholeSittingEstimateAloneIsLowConfidence() {
+    let result = replay(faint(131))
+    #expect(result.heartRates.count < 3)
+    #expect(result.summary.heartRateSource == .wholeSitting)
+    #expect(result.summary.heartRateConfidence == .low)
+  }
+
+  @Test func noHeartRateHasNoConfidence() {
+    let summary = replay(sitting { $0.subject = .wall }).summary
+    #expect(summary.heartRate.value == nil)
+    #expect(summary.heartRateConfidence == nil)
+    #expect(summary.heartRateSource == nil)
+  }
+
+  /// Standing alone takes twice the evidence that vouching for a few readings does.
+  @Test func standingAloneAsksForMoreThanVouching() {
+    let configuration = EngineConfiguration()
+    #expect(configuration.wholeSittingEvidence >= 2 * configuration.wholeSittingCorroboratingEvidence)
+    let whole = try! #require(replay(faint(131)).summary.wholeSitting)
+    #expect(whole.accepted && whole.corroborates)
+    #expect(whole.evidence >= configuration.wholeSittingEvidence)
+
+    // An estimate strong enough to vouch but not to stand alone gives the sitting nothing
+    // when there are no readings for it to vouch for.
+    let between = replay(faint(131)) { $0.wholeSittingEvidence = whole.evidence + 1 }
+    #expect(between.summary.wholeSitting?.corroborates == true)
+    #expect(between.summary.wholeSitting?.accepted == false)
+    #expect(between.summary.heartRate.value == nil)
+
+    let unvouched = replay(faint(96)) { $0.wholeSittingCorroboratingEvidence = 1000 }
+    #expect(unvouched.summary.heartRate.value == nil)
+    #expect(unvouched.summary.heartRate.reason == SummaryReason.tooFewReadings.rawValue)
+  }
+
+  /// One measure a little under its reference level does not throw the estimate out when
+  /// the other two make up for it: the three are multiplied, not each a limit.
+  @Test func noSingleReferenceLevelIsACliff() {
+    let whole = try! #require(replay(faint(96)).summary.wholeSitting)
+    for raise in [\EngineConfiguration.wholeSittingQuality, \.wholeSittingProminence, \.wholeSittingSupport] {
+      let result = replay(faint(96)) { $0[keyPath: raise] *= 1.2 }
+      #expect(result.summary.wholeSitting?.corroborates == true)
+      #expect(abs((result.summary.heartRate.value ?? 0) - 96) <= 2)
+    }
+    #expect(whole.evidence >= 1.2 * EngineConfiguration().wholeSittingCorroboratingEvidence)
+  }
+
+  /// A second harmonic that outgrew a fundamental the sitting can still see is not vouched
+  /// for and does not stand alone. (When the fundamental is under the noise, or under the
+  /// pulse band as below about 48 bpm, nothing in the signal says so: still open.)
+  @Test(arguments: [56.0, 60, 66, 75])
+  func aRateWithItsFundamentalUnderItIsNotUsed(bpm: Double) {
+    let result = replay(
+      sitting {
+        $0.heartRateBpm = bpm
+        $0.pulseHarmonic = 1.5
+        $0.noise = 0.5
+        $0.frameRate = 30
+        $0.seed = UInt64(bpm)
+      })
+    let whole = try! #require(result.summary.wholeSitting)
+    if let rate = whole.heartRate, abs(rate - 2 * bpm) <= 6 {
+      #expect(whole.halfRateProminence >= EngineConfiguration().wholeSittingMaximumHalfRateProminence, "\(bpm) bpm")
+      #expect(whole.evidence == 0, "\(bpm) bpm")
+      #expect(!whole.corroborates && !whole.accepted, "\(bpm) bpm")
+    }
+    if result.heartRates.count < 10, let value = result.summary.heartRate.value {
+      #expect(abs(value - bpm) <= 5, "\(bpm) bpm: \(value)")
+    }
+  }
+}
+
 @Suite struct WholeSittingOnTheWire {
   @Test func theSummaryCarriesTheEstimateAndOldSummariesStillDecode() throws {
     let summary = replay(faint(131)).summary
     let data = try JSONEncoder().encode(summary)
     let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
     #expect(object["heartRateSource"] as? String == "whole_sitting")
+    #expect(object["heartRateConfidence"] as? String == "low")
     #expect((object["wholeSitting"] as? [String: Any])?["accepted"] as? Bool == true)
     #expect(try JSONDecoder().decode(SittingSummary.self, from: data) == summary)
 
     // A summary written before these fields existed.
     var old = object
     old["heartRateSource"] = nil
+    old["heartRateConfidence"] = nil
     old["wholeSitting"] = nil
     let decoded = try JSONDecoder().decode(SittingSummary.self, from: JSONSerialization.data(withJSONObject: old))
     #expect(decoded.heartRateSource == nil)
+    #expect(decoded.heartRateConfidence == nil)
     #expect(decoded.wholeSitting == nil)
     #expect(decoded.heartRate == summary.heartRate)
   }

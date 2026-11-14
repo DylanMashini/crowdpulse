@@ -155,16 +155,28 @@ public struct EngineConfiguration: Codable, Sendable, Equatable {
   /// The whole-sitting estimate (`WholeSittingEstimate`) needs at least this many
   /// full-length windows to add up.
   public var wholeSittingWindows: Int = 15
-  /// Share of the summed spectrum's power, above `wholeSittingMinimumBpm`, that its peak
-  /// must hold. This and the next two were set on negative controls so that none of 588
-  /// produced an estimate: see docs/research/engine-reliability-results.md.
+  /// Reference level for the share of the summed spectrum's power, above
+  /// `wholeSittingMinimumBpm`, that its peak holds. This and the next two are not limits
+  /// on their own: each measure is divided by its level and the three are multiplied
+  /// (`WholeSittingEstimate.evidence`).
   public var wholeSittingQuality: Double = 0.2
-  /// How far the summed peak must stand above the spectrum on either side of it
-  /// (`WholeSittingEstimate.prominence`). Noise that drifts gives a slope, not a peak.
+  /// Reference level for how far the summed peak stands above the spectrum on either side
+  /// of it (`WholeSittingEstimate.prominence`). Noise that drifts gives a slope, not a peak.
   public var wholeSittingProminence: Double = 1.8
-  /// Share of the windows whose own strongest peak must be within `agreementToleranceBpm`
-  /// of the summed peak.
+  /// Reference level for the share of the windows whose own strongest peak is within
+  /// `agreementToleranceBpm` of the summed peak.
   public var wholeSittingSupport: Double = 0.45
+  /// Evidence the estimate needs to vouch for a few valid readings at its own rate. Of 755
+  /// sittings with no pulse, those with three or more readings near their whole-sitting
+  /// peak reached 0.93 at most; the owner's still sitting has 1.77.
+  public var wholeSittingCorroboratingEvidence: Double = 1.3
+  /// Evidence it needs to stand for a sitting with no valid readings to speak of: twice
+  /// as much. The most any of those 755 reached, readings or no readings, is 1.23.
+  public var wholeSittingEvidence: Double = 2.6
+  /// The estimate is not used when the summed spectrum has a peak at half its rate that
+  /// stands this far above its own surroundings: that one is the heart rate and the
+  /// estimate its second harmonic. Real sittings reach 1.7 there, a doubled rate 3.7 and up.
+  public var wholeSittingMaximumHalfRateProminence: Double = 2.5
   /// Those windows must come from at least this many separate ten-second stretches of
   /// the sitting, so that one lucky stretch of noise is not enough.
   public var wholeSittingStretches: Int = 4
