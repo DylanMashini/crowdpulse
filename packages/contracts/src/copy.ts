@@ -9,3 +9,9 @@ export const PRIVACY_FACE =
 
 /** Once per app, quietly: under the sign-in form. Not repeated on working screens. */
 export const PROTOTYPE_NOTICE = 'Research prototype, not validated for clinical use';
+
+/** Beside a heart rate the sitting only weakly supports, on the dashboard and in the nurse app. */
+export const LOWER_CONFIDENCE = 'Lower confidence';
+
+/** What that label means, where there is room for a sentence. */
+export const LOWER_CONFIDENCE_DETAIL = 'Too little of this sitting gave a clear pulse. Not used for the baseline or for flags. Repeat the sitting.';

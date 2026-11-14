@@ -1,7 +1,7 @@
 import * as z from 'zod';
 
 import { Id, PatientNumber, Timestamp } from './common.ts';
-import { CaptureSource } from './signal.ts';
+import { CaptureSource, HeartRateConfidence } from './signal.ts';
 import { Sitting, SittingKind } from './sittings.ts';
 import { Flag, FlagRule, Score, TileState } from './worklist.ts';
 
@@ -145,6 +145,8 @@ export const TimelineEntry = z.discriminatedUnion('type', [
     source: CaptureSource,
     /** bpm; null is "No reading". */
     heartRate: z.number().nullable(),
+    /** `low` when the heart rate is a lower-confidence one: shown, but not part of the score or of any trend. */
+    heartRateConfidence: HeartRateConfidence.nullable().optional(),
     /** Breaths per minute; null is "No reading". */
     breathingRate: z.number().nullable(),
     score: Score.nullable(),

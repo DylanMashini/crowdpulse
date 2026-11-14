@@ -17,6 +17,7 @@ import {
   patientLabel,
   defaultSettings,
   byFlagRule,
+  isLowConfidence,
   errorStatus,
   flagAlerts,
   timelineByAlert,
@@ -59,6 +60,28 @@ test('a reading and a summary as the engine encodes them parse', () => {
       longestDropoutSeconds: 3,
     }).success,
   );
+  // The confidence is additive: absent (older phone builds), null (no heart rate), or one of two values.
+  const summary = {
+    durationSeconds: 59.98,
+    frameCount: 3600,
+    droppedFrames: 0,
+    heartRate: { value: 101.5, coverage: 0.05 },
+    breathingRate: empty,
+    rmssd: empty,
+    sdnn: empty,
+    beatIntervals: [],
+    timeToFirstReadingSeconds: 9,
+    longestDropoutSeconds: 49,
+  };
+  for (const heartRateConfidence of ['normal', 'low', null]) {
+    const parsed = SittingSummary.safeParse({ ...summary, heartRateConfidence });
+    assert.ok(parsed.success);
+    assert.equal(parsed.data.heartRateConfidence, heartRateConfidence);
+  }
+  assert.equal(SittingSummary.parse(summary).heartRateConfidence, undefined);
+  assert.equal(SittingSummary.safeParse({ ...summary, heartRateConfidence: 'high' }).success, false);
+  assert.equal(isLowConfidence('low'), true);
+  for (const other of ['normal', null, undefined] as const) assert.equal(isLowConfidence(other), false);
 });
 
 test('timestamps must be UTC', () => {

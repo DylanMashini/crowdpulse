@@ -95,6 +95,14 @@ export const BeatInterval = z.object({
 });
 export type BeatInterval = z.infer<typeof BeatInterval>;
 
+/**
+ * How much of a sitting stands behind its heart rate. `normal`: at least ten valid one-second
+ * readings. `low`: fewer, or none; the rate rests on the engine's whole-sitting estimate. A
+ * `low` rate is shown as such and is not used as a baseline, for a score or for a flag.
+ */
+export const HeartRateConfidence = z.enum(['normal', 'low']);
+export type HeartRateConfidence = z.infer<typeof HeartRateConfidence>;
+
 /** What SignalEngine.finish() returns, unchanged. */
 export const SittingSummary = z.object({
   durationSeconds: z.number().nonnegative(),
@@ -107,5 +115,10 @@ export const SittingSummary = z.object({
   beatIntervals: z.array(BeatInterval).max(600),
   timeToFirstReadingSeconds: z.number().nonnegative().nullable(),
   longestDropoutSeconds: z.number().nonnegative(),
+  /** Null when there is no heart rate. Left out by builds from before it existed: read as `normal`. */
+  heartRateConfidence: HeartRateConfidence.nullable().optional(),
 });
 export type SittingSummary = z.infer<typeof SittingSummary>;
+
+/** Whether a heart rate with this confidence is one to show as lower confidence and leave out of trends. */
+export const isLowConfidence = (confidence: HeartRateConfidence | null | undefined): boolean => confidence === 'low';
