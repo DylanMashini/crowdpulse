@@ -6,7 +6,8 @@ import { api, authHeaders, errorMessage, isApiError } from '@/lib/api';
 
 import { captureErrorCode, captureErrorMessage } from './captureErrors';
 import { type LastValid, ReasonTally, type Vital } from './readingFormat';
-import { createSittingFileShelf } from './sittingFile';
+import { keptFileStore } from './keptFileStore';
+import { type KeptFile, type SittingFileHandOff, SittingFileGone, createSittingFileShelf, isPermanentRefusal } from './sittingFile';
 import { type FaceEnrolment, createUploadQueue, rememberFinishedSitting } from './sittingSession';
 import type { SittingUploadQueue } from './uploadQueue';
 
@@ -77,6 +78,11 @@ export function useSittingController({ patientNumber, kind, enrolFace, deviceId,
   useEffect(() => {
     onFinishedRef.current = onFinished;
   }, [onFinished]);
+
+  // Sitting files an earlier run of the app could not send: offered again, five at most kept.
+  useEffect(() => {
+    void sittingFiles.resume();
+  }, []);
 
   const applyCapture = useCallback((result: { phase: SittingPhase; error: string | null }) => {
     setPhase(result.phase);
@@ -353,22 +359,34 @@ async function beginCapture(): Promise<{ phase: SittingPhase; error: string | nu
   }
 }
 
-const sittingFiles = createSittingFileShelf();
-
-/**
- * In development the sitting file goes to the server; it leaves the phone once the server has
- * it or has refused it for good. A file that could not be sent is offered again after the next
- * one gets through.
- */
-async function handOffFile(sittingId: string, fileUri: string | null): Promise<void> {
-  if (!fileUri) return;
-  await sittingFiles.handOff({
+/** The hand-off of one sitting file: read it, send it, remove it. */
+function sittingFileHandOff({ sittingId, fileUri }: KeptFile): SittingFileHandOff {
+  return {
     wanted: __DEV__,
     upload: async () => {
-      const file = await (await fetch(fileUri)).blob();
+      let file: Blob;
+      try {
+        file = await (await fetch(fileUri)).blob();
+      } catch {
+        throw new SittingFileGone();
+      }
       await api.uploadSittingFile(sittingId, file);
     },
     remove: () => TriageCapture.deleteSittingFile(fileUri),
-    permanent: (failure) => isApiError(failure) && !failure.retryable,
-  });
+    permanent: isPermanentRefusal,
+  };
+}
+
+const sittingFiles = createSittingFileShelf({ store: keptFileStore, open: sittingFileHandOff });
+
+/**
+ * In development the sitting file goes to the server; it leaves the phone once the server has
+ * it or has refused it for good. A file that could not be sent is written down, offered again
+ * after the next one gets through and at the start of the next run of the app, and is one of
+ * five at most.
+ */
+async function handOffFile(sittingId: string, fileUri: string | null): Promise<void> {
+  if (!fileUri) return;
+  const file = { sittingId, fileUri };
+  await sittingFiles.handOff(sittingFileHandOff(file), file);
 }
