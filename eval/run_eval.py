@@ -4,10 +4,15 @@
 # ///
 """Heart-rate accuracy of the SignalEngine on public rPPG datasets (master plan, section 16).
 
-    uv run eval/run_eval.py ubfc --workers 3            # all 42 subjects, about 1.9 GB of video each
-    uv run eval/run_eval.py mcd --subjects 100 --workers 4
-    uv run eval/run_eval.py mcd --subjects 100 --rescore --split tuning
+    uv run eval/run_eval.py --workers 2                  # UBFC-rPPG, all 42 subjects, 1.9 GB of video each
+    uv run eval/run_eval.py --rescore --split tuning     # score again after an engine change, tuning set only
     uv run eval/run_eval.py report
+    uv run eval/run_eval.py --diagnostics mcd --subjects 100 --workers 3
+
+UBFC-rPPG is the published dataset and the default: <out>/ubfc.json and <out>/report.md hold
+nothing else, and they are the only source for a figure shown anywhere. MCD-rPPG is an internal
+diagnostic (the bias at elevated heart rates), run only when asked for with --diagnostics; its
+results go to <out>/internal-diagnostics/ and are never published.
 
 Each recording goes through the same path as a phone sitting: video frames -> the capture
 module's face regions -> a sitting file -> engine-cli. The dataset's own heart rate (or pulse
@@ -126,9 +131,16 @@ def score(sitting, reference):
     return json.loads(out)
 
 
+def results_folder(dataset):
+    """Where a dataset's results and sitting files go. The output directory itself holds published
+    datasets only, so anything that reads it (the report, the landing page's data script) cannot
+    pick up a diagnostic dataset by accident."""
+    return OUT / "internal-diagnostics" if dataset in datasets.DIAGNOSTIC else OUT
+
+
 def evaluate(recording, rescore):
     """Prepare (download, convert), score, clean up. Never raises: a failure is a result."""
-    sitting = OUT / recording["dataset"] / f"{recording['id']}.jsonl"
+    sitting = results_folder(recording["dataset"]) / recording["dataset"] / f"{recording['id']}.jsonl"
     reference_cache = sitting.with_suffix(".reference.jsonl")
     result = {k: recording[k] for k in ("dataset", "id", "group", "split")}
     result.update(recording.get("info", {}))
@@ -160,7 +172,7 @@ def with_split(dataset, recordings, only=None):
 def run(dataset, recordings, workers, rescore, only=None):
     """Evaluate the recordings and write <out>/<dataset>.json. When only one set was asked for,
     the other set's rows from the last run are kept, so the report still shows both."""
-    path = OUT / f"{dataset}.json"
+    path = results_folder(dataset) / f"{dataset}.json"
     kept = []
     if only and path.exists():
         kept = [r for r in json.loads(path.read_text()) if r.get("split") not in (None, only)]
@@ -172,7 +184,7 @@ def run(dataset, recordings, workers, rescore, only=None):
                 f"MAE {result['meanAbsoluteErrorBpm']:.1f} bpm, coverage {result['coverage']:.0%}"
                 if result.get("meanAbsoluteErrorBpm") is not None else f"no reading, coverage {result['coverage']:.0%}")
             print(f"[{len(results)}/{len(recordings)}] {dataset} {result['id']}: {status}", flush=True)
-    OUT.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(kept + results, indent=1))
     return results
 
@@ -203,18 +215,35 @@ def summarise(results):
 
 
 def report():
-    number = lambda v, f="{:.1f}": "n/a" if v is None else f.format(v)
+    """<out>/report.md from the published datasets, and <out>/internal-diagnostics/diagnostics.md
+    from the diagnostic ones. Only the first may be quoted anywhere."""
     recorded = json.loads(split.FILE.read_text())
-    lines = ["# Heart-rate accuracy on public datasets", "",
-             f"Generated {datetime.date.today().isoformat()} by `eval/run_eval.py`. Engine: `packages/signal-engine` at its default configuration.", "",
-             "Readings are the engine's once-per-second heart rate, paired with the dataset's reference within 1.5 s. "
-             "Coverage is the share of seconds with a reading. Per-recording error compares the sitting summary with the mean reference.", "",
-             f"Subjects are split into a tuning set and a held-out set by `eval/split.json` (seed {recorded['seed']}, by subject, "
-             "half of every subject in the dataset each). Engine parameters are tuned on the tuning set only. "
-             "**Published figures come from the held-out set.**", ""]
+    method = [f"Generated {datetime.date.today().isoformat()} by `eval/run_eval.py`. Engine: `packages/signal-engine` at its default configuration.", "",
+              "Readings are the engine's once-per-second heart rate, paired with the dataset's reference within 1.5 s. "
+              "Coverage is the share of seconds with a reading. Per-recording error compares the sitting summary with the mean reference.", "",
+              f"Subjects are split into a tuning set and a held-out set by `eval/split.json` (seed {recorded['seed']}, by subject, "
+              "half of every subject in the dataset each). Engine parameters are tuned on the tuning set only."]
+    published = write_report(
+        OUT / "report.md", datasets.PUBLISHED, recorded,
+        ["# Heart-rate accuracy on public datasets", "", *method[:-1],
+         method[-1] + " **Published figures come from the held-out set.**", ""])
+    write_report(
+        results_folder(next(iter(datasets.DIAGNOSTIC))) / "diagnostics.md", datasets.DIAGNOSTIC, recorded,
+        ["# Internal diagnostics: not for publication", "",
+         "These datasets are used to find engine faults (for example the bias at elevated heart rates). "
+         "No figure in this file is published or quoted anywhere; published accuracy is `report.md`, " +
+         " and ".join(datasets.TITLES[name] for name in datasets.PUBLISHED) + " only.", "", *method, ""])
+    print(published)
+
+
+def write_report(target, names, recorded, lines):
+    """One section per dataset in `names` that has results; nothing is written when none has."""
+    number = lambda v, f="{:.1f}": "n/a" if v is None else f.format(v)
+    lines = list(lines)
     header = ("| Set | Subjects | Recordings | With a reading | Paired readings | MAE (bpm) | Bias (bpm) | Within 5 bpm | Coverage | "
               "Per-recording MAE (bpm) | Summaries within 5 bpm | Median time to first (s) |")
-    for path in sorted(OUT.glob("*.json")):
+    paths = [path for path in (results_folder(name) / f"{name}.json" for name in names) if path.exists()]
+    for path in paths:
         results = json.loads(path.read_text())
         name = path.stem
         lines += [f"## {datasets.TITLES.get(name, name)}", "", datasets.NOTES.get(name, ""), ""]
@@ -250,9 +279,11 @@ def report():
         unmarked = sum(r.get("split") not in (split.HELD_OUT, split.TUNING) for r in results)
         if unmarked:
             lines += [f"{unmarked} recording(s) carry no set (scored before the split existed) and are left out. Run the dataset again.", ""]
-    OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / "report.md").write_text("\n".join(lines))
-    print("\n".join(lines))
+    if not paths:
+        return ""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("\n".join(lines))
+    return "\n".join(lines)
 
 
 def set_directories(data, out, min_free_gb):
@@ -268,7 +299,10 @@ def set_directories(data, out, min_free_gb):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("dataset", choices=[*datasets.LOADERS, "report"])
+    parser.add_argument("dataset", nargs="?", choices=[*datasets.PUBLISHED, "report"], default=datasets.PUBLISHED[0],
+                        help="the published dataset to evaluate (default), or only rewrite the reports")
+    parser.add_argument("--diagnostics", choices=datasets.DIAGNOSTIC, default=None,
+                        help="evaluate an internal diagnostic dataset instead; its results are never published")
     parser.add_argument("--subjects", type=int, default=None, help="limit the number of subjects")
     parser.add_argument("--workers", type=int, default=6)
     parser.add_argument("--rescore", action="store_true", help="reuse sitting files already in the output directory")
@@ -282,12 +316,13 @@ def main():
     found = split.problems()
     if found:
         sys.exit("eval/split.json: " + "; ".join(found))
-    if arguments.dataset != "report":
+    dataset = arguments.diagnostics or arguments.dataset
+    if dataset != "report":
         for tool in (CONVERTER, ENGINE):
             if not tool.exists():
                 sys.exit(f"build {tool} first: swift build -c release in its package")
-        recordings = with_split(arguments.dataset, datasets.LOADERS[arguments.dataset](arguments.subjects), arguments.split)
-        run(arguments.dataset, recordings, arguments.workers, arguments.rescore, arguments.split)
+        recordings = with_split(dataset, datasets.LOADERS[dataset](arguments.subjects), arguments.split)
+        run(dataset, recordings, arguments.workers, arguments.rescore, arguments.split)
     report()
 
 

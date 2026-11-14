@@ -220,3 +220,5 @@ def ubfc(subjects):
 
 
 LOADERS = {"mcd": mcd, "ubfc": ubfc}
+PUBLISHED = ["ubfc"]   # the only datasets whose figures may be shown anywhere
+DIAGNOSTIC = ["mcd"]   # internal: results go to <out>/internal-diagnostics and are never published
