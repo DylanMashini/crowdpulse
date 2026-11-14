@@ -229,6 +229,8 @@ function Station({ device, serverOffsetMs, serverNow, picker, waiting }: Station
   const onSaved = useCallback((next: Patient) => setPushed((previous) => ({ ...previous, saved: { patient: next, at: Date.now() } })), []);
 
   const [feed, setFeed] = useState<FeedStats | null>(null);
+  // The picture goes the moment the phone says its camera is off, not when its last frame lapses.
+  const showFeed = cameraLive && camera?.phase !== 'idle';
 
   // The phone is back at idle and the sitting's summary has not come: wait a little, then say so.
   const awaitingSummary = camera?.phase === 'idle' && running ? (sitting?.id ?? null) : null;
@@ -396,7 +398,7 @@ function Station({ device, serverOffsetMs, serverNow, picker, waiting }: Station
       <div className="flex min-w-0 flex-col max-xl:contents">
         <Section className="max-xl:order-1">
           <div className="flex flex-col gap-4">
-            {cameraLive ? (
+            {showFeed ? (
               <>
                 <LiveFeed
                   deviceId={device.id}
