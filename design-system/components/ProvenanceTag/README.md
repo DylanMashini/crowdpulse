@@ -7,3 +7,4 @@ Says where a number or sentence came from. Provide `kind`: `live`, `recording`, 
 - Any sentence written by a model carries `ai-draft`, placed before the text.
 - `reference` marks values from the chest strap or oximeter.
 - Tags are outlined in `line-strong` with `ink-muted` text and no dot, so they are never mistaken for a StatusBadge. `live` is the exception: `signal` on `signal-soft` with a 6px dot that carries `glow-live` while a camera is reading.
+- On the phone the `live` dot has no glow (QA finding NS-IOS-11). The two glows are kept for the head of a live trace and the dot of an urgent flag.
