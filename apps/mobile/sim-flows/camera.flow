@@ -1,9 +1,11 @@
 # Every screen of the camera role, from a signed-out phone: the signed-out screens, sign-in,
-# role choice, a full check-in sitting, a re-check, face match and settings.
+# role choice, a full check-in sitting, face match, settings and a re-check.
 run sign-up.flow
 run sign-in.flow
 run role-camera.flow
 run camera-sitting.flow
-run camera-recheck.flow
 run camera-match.flow
 run camera-settings.flow
+# Last, because it is the step BUG-14 breaks: when the sitting screen does not open a second
+# time, everything above has already been captured.
+run camera-recheck.flow

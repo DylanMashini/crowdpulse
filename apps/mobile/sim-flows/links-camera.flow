@@ -12,10 +12,18 @@ shot link-summary-gone
 open "triagecam://camera"
 wait "Check in a new patient" 15
 shot link-check-in
-# The sitting screen by link, then a sitting ended early from it. The app is started again
-# first, as in camera-recheck.flow.
+# A route of the other role is refused: the phone stays in the camera role.
+open "triagecam://nurse"
+sleep 3
+assertNot "Worklist"
+shot link-nurse-refused
+open "triagecam://camera"
+wait "Check in a new patient" 15
+# Last, because it is the step BUG-14 breaks (see camera-recheck.flow): the sitting screen by
+# link, then a sitting ended early from it. The app is started again first.
 run open-app.flow
 wait "Check in a new patient" 120
+sleep 3
 open "triagecam://camera/sitting?patient=3&kind=recheck"
 wait "Start sitting" 60
 shot link-sitting
@@ -29,8 +37,3 @@ shot link-sitting-summary
 tap "Next patient"
 wait "Check in a new patient"
 shot link-after-sitting
-# A route of the other role is refused: the phone stays in the camera role.
-open "triagecam://nurse"
-sleep 3
-assertNot "Worklist"
-shot link-nurse-refused

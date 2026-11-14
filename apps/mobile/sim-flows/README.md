@@ -37,7 +37,7 @@ measures a generated signal, not a camera; every sitting it makes says "Simulate
 
 | Flow | Simulator | Screens |
 |---|---|---|
-| `camera.flow` | camera | sign-in and its errors, create an account and its errors, check your email, role choice, check-in, face-match consent, a full 60-second sitting, summary, a re-check ended early, find patient by face, settings |
+| `camera.flow` | camera | sign-in and its errors, create an account and its errors, check your email, role choice, check-in, face-match consent, a full 60-second sitting, summary, find patient by face, settings, a re-check ended early |
 | `nurse.flow` | nurse | sign-in, role choice, Worklist, Flags, Patients (waiting, discharged, all, no match), a patient top to bottom, You |
 | `nurse-flag.flow` | nurse | after `deteriorate`: the trend-flag banner, acknowledged from the banner, the Flags tab after |
 | `nurse-push.flow` | nurse | a notification sent with `xcrun simctl push`, tapped from the home screen, opens its patient |
@@ -97,18 +97,18 @@ label, so a worklist card is `"~Robert Okafor"`. `${NAME}` is replaced by the ri
 
 ## Things that will bite you
 
-- **Do not leave the sitting screen with "Back to check-in" before the sitting starts.** In the
-  simulator the screen then stays on a stretched picture of the landscape sitting and the app
-  has to be started again (see "Open bugs" in the backlog). End the sitting and go through the
-  summary instead, as `camera-recheck.flow` does.
 - A touch in the first second after a screen slides in or out is lost, although the button is
   already there to be found. `tap` and `type` wait a second for that reason; it is not a hang.
 - Metro runs without file watching, so a Fast Refresh cannot reset a screen in the middle of a
   flow. After a JavaScript change run `sim-qa.sh up` again (with `SIMQA_SKIP_BUILD=1
   SIMQA_KEEP_DATA=1` to keep everything else): it restarts Metro.
-- **The sitting screen opens once per run of the app in the simulator.** After a sitting has
-  finished, tapping a patient or "Check in a new patient" stays on check-in. Start the app again
-  (`run open-app.flow`) before each further sitting, as `camera-recheck.flow` does.
+- **Leaving the sitting screen is unreliable in the simulator (BUG-14).** After the first
+  sitting, a second one usually does not open in the same run of the app; now and then it does
+  not open after a restart either, and now and then "Back to check-in" leaves a stretched
+  picture of the sitting screen with nothing responding. The flows start the app again before
+  every further sitting and put those sittings last, so a run that fails on
+  `wait "Start sitting"` in `camera-recheck.flow` or `links-camera.flow` has still captured
+  everything else. Run that flow again on its own to get its screenshots.
 - The password field of "Create an account" cannot be typed into: iOS covers its keyboard with
   the "Use Strong Password?" sheet. `sign-up.flow` reaches "Check your email" by signing in to an
   account the rig left unverified.
