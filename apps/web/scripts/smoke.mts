@@ -593,6 +593,22 @@ done("patient detail: baseline, sittings, flags and a newest-first timeline");
   }
 }
 
+{
+  // The same check-in followed by a steady 100 and 101 bpm: the score is measured from the
+  // re-check's 100, like the shift, so nothing rose and no flag opens (QA round 3, N1).
+  const steady = (await ok(PatientResponse, 201, "POST", routes.patients, { auth: web, body: {} })).patient.number;
+  await (await sit(steady, "check_in", 101.5, 16, 3, { heartRateCoverage: 0.05, heartRateConfidence: "low" })).finish();
+  await (await sit(steady, "recheck", 100, 16, 3)).finish();
+  await (await sit(steady, "recheck", 101, 16, 3)).finish();
+  assert.deepEqual(await openFlags(steady), [], "steady re-checks after a lower-confidence check-in raise nothing");
+  const row = (await worklistItem(steady)).item;
+  assert.equal(row.state, "observed");
+  assert.equal(row.score, 1);
+  assert.equal(row.scoreAtCheckIn, 1, "the score a rise is measured from is the baselines' score");
+  await ok(PatientResponse, 200, "POST", routes.patientDischarge(steady), { auth: web });
+  done("after a lower-confidence check-in with breathing, steady re-checks at 100 and 101 bpm open no flag");
+}
+
 // --- two deteriorations, two alerts -----------------------------------------------------------
 
 {
@@ -681,6 +697,9 @@ const unchanged = await ok(SettingsResponse, 200, "PATCH", routes.settings, {
 });
 assert.deepEqual(unchanged.settings, settings.settings);
 
+// A patient whose only sitting gave a lower-confidence pulse, still waiting when the statistics are read.
+const tagged = (await ok(PatientResponse, 201, "POST", routes.patients, { auth: web, body: {} })).patient.number;
+await (await sit(tagged, "check_in", 61.5, null, 3, { heartRateCoverage: 0, heartRateConfidence: "low" })).finish();
 const stats = await ok(Statistics, 200, "GET", `${routes.statistics}?from=${new Date(Date.now() - 3_600_000).toISOString()}`, { auth: web });
 assert.ok(stats.patients.seen >= 1 && stats.patients.arrived >= 1);
 assert.ok(stats.sittings.finished >= 7 && stats.sittings.withReading < stats.sittings.finished);
@@ -710,6 +729,10 @@ assert.equal(
   stats.waitingNow.byState.observed + stats.waitingNow.byState.flag + stats.waitingNow.byState.overdue + stats.waitingNow.byState["no-reading"],
 );
 assert.ok(stats.waitingNow.byState["no-reading"] >= 1 && stats.waitingNow.longestMinutesWaiting !== null);
+// A lower-confidence patient is in the no-reading state and counted apart from those with no reading (QA round 3, N6).
+assert.ok(stats.waitingNow.lowConfidence !== undefined && stats.waitingNow.lowConfidence >= 1);
+assert.ok(stats.waitingNow.lowConfidence <= stats.waitingNow.byState["no-reading"]);
+await ok(PatientResponse, 200, "POST", routes.patientDischarge(tagged), { auth: web });
 const empty = await ok(Statistics, 200, "GET", `${routes.statistics}?from=2001-01-01T00:00:00.000Z&to=2001-01-02T00:00:00.000Z`, { auth: web });
 assert.equal(empty.patients.seen, 0);
 assert.equal(empty.sittings.meanHeartRateCoverage, null);
