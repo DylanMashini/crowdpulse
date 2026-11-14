@@ -4,20 +4,18 @@ import { useCallback, useRef, useState } from 'react';
 import { View } from 'react-native';
 
 import { Button } from '@/components/Button';
-import { Icon } from '@/components/Icon';
 import { Notice } from '@/components/Notice';
 import { PatientIdentity } from '@/components/PatientIdentity';
+import { Row, RowList } from '@/components/RowList';
 import { SearchField } from '@/components/SearchField';
 import { Segmented } from '@/components/Segmented';
 import { TabScreen } from '@/components/TabScreen';
 import { useScopedTheme } from '@/components/ThemeScope';
-import { Touchable } from '@/components/Touchable';
 import { useLoadOn } from '@/hooks/useLoadOn';
 import { api, errorMessage } from '@/lib/api';
 import { useNurse } from '@/lib/nurse/NurseProvider';
 import { type PatientFilter, dayTime, filterPatients, patientCountsText } from '@/lib/nurse/nurseFormat';
 import { statusText } from '@/lib/nurse/worklistFormat';
-import { Text } from '@/components/Text';
 
 /** What has been loaded of one status. `nextCursor` is null once it is all of them. */
 type Loaded = { items: Patient[]; nextCursor: string | null };
@@ -26,7 +24,7 @@ type Lists = Partial<Record<PatientFilter, Loaded>>;
 /** Everyone who has checked in, waiting or discharged, found by name, reason or visit number. */
 export default function Patients() {
   const theme = useScopedTheme();
-  const { colors, space } = theme;
+  const { space } = theme;
   const router = useRouter();
   const { worklist, revision, now, refresh, failure: unreachable } = useNurse();
 
@@ -100,17 +98,19 @@ export default function Patients() {
       subtitle={counts ?? 'Waiting and discharged'}
       onRefresh={pull}
     >
-      <SearchField label="Name, reason or visit number" value={query} onChange={setQuery} />
-      <Segmented
-        label="Which patients to list"
-        value={filter}
-        onChange={setFilter}
-        options={[
-          { value: 'waiting', label: 'Waiting' },
-          { value: 'discharged', label: 'Discharged' },
-          { value: 'all', label: 'All' },
-        ]}
-      />
+      <View style={{ gap: space.space3 }}>
+        <SearchField label="Name, reason or visit number" value={query} onChange={setQuery} />
+        <Segmented
+          label="Which patients to list"
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { value: 'waiting', label: 'Waiting' },
+            { value: 'discharged', label: 'Discharged' },
+            { value: 'all', label: 'All' },
+          ]}
+        />
+      </View>
 
       {!loaded ? (
         // The frame already says so, with the one Try again, when the server cannot be reached.
@@ -137,37 +137,20 @@ export default function Patients() {
           }
         />
       ) : (
-        <View style={{ borderWidth: 1, borderColor: colors.line, borderRadius: theme.radius.radiusXl, overflow: 'hidden' }}>
+        <RowList>
           {shown.map((patient, index) => (
-            <Touchable
+            <Row
               key={patient.number}
-              accessibilityRole="button"
+              divided={index > 0}
+              opens
               accessibilityLabel={`${patientLabel(patient)}, ${status(patient)}`}
               accessibilityHint="Opens the patient"
               onPress={() => router.push({ pathname: '/nurse/patient/[number]', params: { number: String(patient.number) } })}
-              style={({ pressed }) => ({
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: space.space3,
-                minHeight: 72,
-                paddingVertical: space.space3,
-                paddingLeft: space.space4,
-                paddingRight: space.space3,
-                borderTopWidth: index === 0 ? 0 : 1,
-                borderTopColor: colors.line,
-                backgroundColor: pressed ? colors.surfaceSunken : colors.surfaceRaised,
-              })}
             >
-              <View style={{ flex: 1, gap: space.space1 }}>
-                <PatientIdentity patient={patient} size="md" detail={patient.reasonForVisit} />
-                <Text style={[theme.type.caption, { color: colors.inkMuted, fontVariant: ['tabular-nums'] }]}>
-                  {status(patient)}
-                </Text>
-              </View>
-              <Icon name="chevron" size={20} color={colors.inkMuted} />
-            </Touchable>
+              <PatientIdentity patient={patient} size="md" detail={patient.reasonForVisit} status={status(patient)} />
+            </Row>
           ))}
-        </View>
+        </RowList>
       )}
 
       {loaded && failure && !unreachable ? <Notice title="The list was not updated" body={failure} /> : null}

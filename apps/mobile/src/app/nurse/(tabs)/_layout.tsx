@@ -2,7 +2,7 @@ import { NativeTabs } from 'expo-router/native-tabs';
 
 import { useNurse } from '@/lib/nurse/NurseProvider';
 import { alertsToAcknowledge } from '@/lib/nurse/nurseFormat';
-import { fonts, useTheme } from '@/theme';
+import { useTheme, weight } from '@/theme';
 
 /**
  * The nurse role's four tabs on the system tab bar (UITabBarController through
@@ -19,8 +19,9 @@ export default function NurseTabs() {
   return (
     <NativeTabs
       tintColor={colors.signal}
-      badgeBackgroundColor={colors.flag}
-      labelStyle={{ fontFamily: fonts.sans[500] }}
+      // The count of flags nobody has acknowledged is the one place the bar carries a severity colour.
+      badgeBackgroundColor={colors.urgent}
+      labelStyle={{ fontWeight: weight.medium }}
       // The bar stays whole while a list scrolls: a nurse changes tab one-handed, mid-list.
       minimizeBehavior="never"
     >
