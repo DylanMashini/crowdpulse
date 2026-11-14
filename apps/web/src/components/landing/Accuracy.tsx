@@ -72,7 +72,7 @@ export function Accuracy() {
               <div className="lp-result-what">
                 <h3 className="lp-h3">Uncompressed webcam video</h3>
                 <p>
-                  {ubfc.title}: the first {ubfc.all.subjects} of its 42 subjects, seated at a webcam, against a fingertip oximeter.
+                  {ubfc.title}: the first {ubfc.all.subjects} of its {ubfc.totalSubjects} subjects, seated at a webcam, against a fingertip oximeter.
                 </p>
                 <p className="lp-result-n">{counts(ubfc.all)}</p>
               </div>
@@ -146,7 +146,7 @@ export function Accuracy() {
                   <Row key={g.id} label={`${mcd.title}: ${lowerFirst(g.cameraLabel)}, ${lowerFirst(g.conditionLabel)}`} s={g} />
                 ))}
                 <Row label={`${mcd.title}: all six conditions`} s={mcd.all} />
-                {ubfc ? <Row label={`${ubfc.title}: ${ubfc.all.subjects} of 42 subjects`} s={ubfc.all} /> : null}
+                {ubfc ? <Row label={`${ubfc.title}: ${ubfc.all.subjects} of ${ubfc.totalSubjects} subjects`} s={ubfc.all} /> : null}
               </tbody>
             </table>
           </div>

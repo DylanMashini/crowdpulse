@@ -27,6 +27,8 @@ const DATASETS = {
     video: 'uncompressed, 640 × 480, 30 fps',
     reference: 'Fingertip oximeter heart rate recorded with each video',
     source: 'https://sites.google.com/view/ybenezeth/ubfcrppg',
+    // Subjects in the published dataset (its second, "realistic" set); the harness may run on fewer.
+    totalSubjects: 42,
   },
 };
 

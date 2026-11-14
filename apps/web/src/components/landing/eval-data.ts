@@ -43,6 +43,8 @@ export interface EvalDataset {
   video: string;
   reference: string;
   source: string;
+  /** Subjects in the published dataset, where the harness ran on a subset of them. */
+  totalSubjects?: number;
   all: EvalSummary;
   groups: EvalGroup[];
 }

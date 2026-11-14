@@ -153,6 +153,7 @@
       "video": "uncompressed, 640 × 480, 30 fps",
       "reference": "Fingertip oximeter heart rate recorded with each video",
       "source": "https://sites.google.com/view/ybenezeth/ubfcrppg",
+      "totalSubjects": 42,
       "all": {
         "recordings": 6,
         "failed": 0,
