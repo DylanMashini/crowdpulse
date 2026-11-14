@@ -35,7 +35,7 @@ export function WorklistCard({ item, onPress }: { item: WorklistItem; onPress: (
     <Touchable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`Rank ${item.rank}, ${patientLabel(item.patient)}, ${statusText(item.state, item.minutesSinceObserved)}`}
+      accessibilityLabel={`Rank ${item.rank}, ${patientLabel(item.patient)}, ${statusText(item.state, item.minutesSinceObserved, item.pulse.lowConfidence != null)}`}
       accessibilityHint="Opens the patient"
       style={({ pressed }) => [
         {
@@ -72,7 +72,7 @@ export function WorklistCard({ item, onPress }: { item: WorklistItem; onPress: (
       ) : null}
 
       <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: space.space3, rowGap: space.space1 }}>
-        <StatusBadge state={item.state} minutes={item.minutesSinceObserved} />
+        <StatusBadge state={item.state} minutes={item.minutesSinceObserved} lowConfidence={item.pulse.lowConfidence != null} />
         {showsLastObserved ? (
           <Text style={[theme.type.caption, { color: colors.inkMuted }]}>{lastObservedText(item)}</Text>
         ) : null}

@@ -1,4 +1,4 @@
-import { patientLabel, timelineByAlert } from '@triagecam/contracts';
+import { isLowConfidence, LOWER_CONFIDENCE, LOWER_CONFIDENCE_REPEAT, patientLabel, timelineByAlert } from '@triagecam/contracts';
 import type {
   CaptureSource,
   FlagRule,
@@ -12,13 +12,16 @@ import type {
 
 import { ageText, clockTime, wholeNumber } from '../format.ts';
 
-/** The words inside a StatusBadge. */
-export function statusText(state: TileState, minutes: number | null): string {
+/**
+ * The words inside a StatusBadge. `lowConfidence`: the latest sitting gave a pulse with lower
+ * confidence, so a "no reading" state says that instead, as the dashboard does.
+ */
+export function statusText(state: TileState, minutes: number | null, lowConfidence = false): string {
   switch (state) {
     case 'flag':
       return 'Trend flag';
     case 'no-reading':
-      return 'No reading';
+      return lowConfidence ? LOWER_CONFIDENCE_REPEAT : 'No reading';
     case 'overdue':
       return minutes != null ? `Overdue, last seen ${ageText(minutes)}` : 'Overdue';
     case 'observed':
@@ -29,18 +32,30 @@ export function statusText(state: TileState, minutes: number | null): string {
 export type TrendText =
   /** The latest sitting gave no reading for this parameter. */
   | { kind: 'none' }
-  /** `base` is "from 82 (+26)", "from 82" when unchanged, or null when there is no baseline. */
-  | { kind: 'value'; now: string; base: string | null };
+  /** The latest sitting gave this pulse with lower confidence. It is tagged and compared with nothing. */
+  | { kind: 'lowConfidence'; now: string; tag: string }
+  /**
+   * `base` is "from 82 (+26)", "from 82" when unchanged, or null when there is no baseline.
+   * `baseFrom` is set when the baseline is not the check-in's: "10:42 re-check".
+   */
+  | { kind: 'value'; now: string; base: string | null; baseFrom?: string };
 
-/** A value against the patient's own check-in baseline. */
+/** A value against the patient's own baseline: the check-in's unless the trend says otherwise. */
 export function trendText(trend: Trend): TrendText {
-  if (trend.now == null) return { kind: 'none' };
+  if (trend.now == null) {
+    return trend.lowConfidence != null
+      ? { kind: 'lowConfidence', now: String(Math.round(trend.lowConfidence)), tag: LOWER_CONFIDENCE }
+      : { kind: 'none' };
+  }
   const now = Math.round(trend.now);
   if (trend.base == null) return { kind: 'value', now: String(now), base: null };
   const base = Math.round(trend.base);
   const delta = now - base;
   const change = delta === 0 ? '' : ` (${delta > 0 ? '+' : '−'}${Math.abs(delta)})`;
-  return { kind: 'value', now: String(now), base: `from ${base}${change}` };
+  const text = `from ${base}${change}`;
+  return trend.baseAt
+    ? { kind: 'value', now: String(now), base: text, baseFrom: `${clockTime(trend.baseAt)} re-check` }
+    : { kind: 'value', now: String(now), base: text };
 }
 
 /** The line under a card's badge: when the patient was last observed, in words. */
@@ -86,8 +101,11 @@ export type TimelineRow = {
   time: string;
   title: string;
   state: TileState;
-  /** Set for sittings: null inside means "No reading" for that parameter. */
-  vitals: { pulse: string | null; breathing: string | null; score: Score | null } | null;
+  /**
+   * Set for sittings: null inside means "No reading" for that parameter. `pulseNote` qualifies
+   * the pulse: "Lower confidence" for one that is in no score and no trend.
+   */
+  vitals: { pulse: string | null; pulseNote?: string; breathing: string | null; score: Score | null } | null;
   sourceLabel: string | null;
   note: string | null;
 };
@@ -113,6 +131,7 @@ function timelineRow(entry: TimelineEntry, index: number): TimelineRow {
         vitals: measured
           ? {
               pulse: entry.heartRate != null ? wholeNumber(entry.heartRate) : null,
+              ...(entry.heartRate != null && isLowConfidence(entry.heartRateConfidence) ? { pulseNote: LOWER_CONFIDENCE } : {}),
               breathing: entry.breathingRate != null ? wholeNumber(entry.breathingRate) : null,
               score: entry.score,
             }

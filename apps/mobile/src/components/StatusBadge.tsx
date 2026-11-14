@@ -20,10 +20,12 @@ type Props = {
   minutes?: number | null;
   /** Replaces the default words, for a timeline entry that names its own event. */
   label?: string;
+  /** The latest sitting gave a pulse with lower confidence: "no reading" then says so. */
+  lowConfidence?: boolean;
 };
 
 /** The state of one patient. Four states, each told apart by shape and lightness as well as hue. */
-export function StatusBadge({ state, minutes = null, label }: Props) {
+export function StatusBadge({ state, minutes = null, label, lowConfidence = false }: Props) {
   const theme = useScopedTheme();
   const { colors } = theme;
   const look = {
@@ -58,7 +60,7 @@ export function StatusBadge({ state, minutes = null, label }: Props) {
           { color: look.text, flexShrink: 1 },
         ]}
       >
-        {label ?? statusText(state, minutes)}
+        {label ?? statusText(state, minutes, lowConfidence)}
       </Text>
     </View>
   );

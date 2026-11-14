@@ -22,6 +22,8 @@ import {
   sittingRows,
   toAcknowledgeText,
   vitalSeries,
+  vitalTrend,
+  lastObservedMinutes,
   withAcknowledgement,
   followAlerts,
 } from './nurseFormat.ts';
@@ -360,6 +362,53 @@ test('a lower-confidence pulse is named in its sitting row, not given a share of
   assert.equal(rows[1]!.pulse, '102');
   assert.equal(rows[1]!.detail, '60 s, lower-confidence pulse, not used for trends or flags');
   assert.equal(rows[0]!.detail, '60 s, pulse read 83% of the time');
+});
+
+test('a lower-confidence pulse is in no vitals line, is no comparison value and is no observation (QA round 2, W2)', () => {
+  const low = (id: string, endedAt: string, bpm: number, breathing: number | null) => {
+    const weak = sitting(id, endedAt, bpm, breathing);
+    weak.summary!.heartRateConfidence = 'low';
+    return weak;
+  };
+
+  // A lower-confidence check-in, then re-checks that count: the first of those is the baseline, and says so.
+  const visit = [low('a', at(13, 1), 101.5, 16), sitting('b', at(13, 12), 55, 16), sitting('c', at(13, 30), 85, 16)];
+  assert.deepEqual(
+    vitalSeries(visit, 'heartRate').map((point) => point.value),
+    [55, 85],
+  );
+  assert.deepEqual(vitalTrend(visit, 'heartRate'), {
+    points: vitalSeries(visit, 'heartRate'),
+    baseFrom: 'at the 13:12 re-check',
+    lowConfidence: null,
+  });
+  // Breathing was read at check-in and is compared with it.
+  assert.equal(vitalTrend(visit, 'breathingRate').baseFrom, 'at check-in');
+  assert.equal(vitalTrend(visit, 'breathingRate').points.length, 3);
+  assert.equal(vitalTrend(visit, 'breathingRate').lowConfidence, null);
+
+  // Only a lower-confidence pulse so far: no point, no baseline, and the rate travels beside the line.
+  const first = [low('a', at(13, 1), 101.5, null)];
+  assert.deepEqual(vitalTrend(first, 'heartRate'), { points: [], baseFrom: 'at check-in', lowConfidence: 101.5 });
+  assert.equal(lastObservedMinutes(first, NOW), null);
+  // With a breathing rate the sitting is an observation, as on the station.
+  assert.equal(lastObservedMinutes([low('a', at(13, 1), 101.5, 16)], NOW), 89);
+
+  // A lower-confidence re-check after a check-in that counts: the line and the baseline stay as they were.
+  const later = [sitting('a', at(13, 1), 72, null), low('b', at(14, 0), 112, null), low('c', at(14, 20), 114, null)];
+  const trend = vitalTrend(later, 'heartRate');
+  assert.deepEqual(trend.points.map((point) => point.value), [72]);
+  assert.equal(trend.baseFrom, 'at check-in');
+  assert.equal(trend.lowConfidence, 114);
+  // Last observed is the check-in, 89 minutes ago, not the lower-confidence sitting ten minutes ago.
+  assert.equal(lastObservedMinutes(later, NOW), 89);
+  assert.equal(lastObservedMinutes([...later, sitting('d', at(14, 25), 80, null)], NOW), 5);
+  assert.equal(vitalTrend([...later, sitting('d', at(14, 25), 80, null)], 'heartRate').lowConfidence, null);
+  assert.equal(lastObservedMinutes([], NOW), null);
+
+  // The sitting row carries the tag.
+  const rows = sittingRows(later, NOW);
+  assert.deepEqual(rows.map((row) => row.pulseLowConfidence), [true, true, false]);
 });
 
 test('the connection has three states, each with its own words', () => {

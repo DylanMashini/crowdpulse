@@ -210,15 +210,67 @@ export function patientCountsText(waiting: number | null, discharged: number | n
 
 export type VitalPoint = { at: number; value: number };
 
-/** One line of the vitals history: every sitting that gave this value, oldest first. */
-export function vitalSeries(sittings: Sitting[], vital: 'heartRate' | 'breathingRate'): VitalPoint[] {
+/** The sitting's heart rate if it is one that counts: not a lower-confidence one. */
+function trustedHeartRate(sitting: Sitting): number | null {
+  const summary = sitting.summary;
+  return !summary || isLowConfidence(summary.heartRateConfidence) ? null : summary.heartRate.value;
+}
+
+const vitalValue = (sitting: Sitting, vital: 'heartRate' | 'breathingRate'): number | null =>
+  vital === 'heartRate' ? trustedHeartRate(sitting) : (sitting.summary?.breathingRate.value ?? null);
+
+/** The sittings that gave this value, with their points, oldest first. */
+function measured(sittings: Sitting[], vital: 'heartRate' | 'breathingRate'): { sitting: Sitting; point: VitalPoint }[] {
   return sittings
     .flatMap((sitting) => {
-      const value = sitting.summary?.[vital].value;
+      const value = vitalValue(sitting, vital);
       const at = sitting.endedAt ? new Date(sitting.endedAt).getTime() : Number.NaN;
-      return value == null || Number.isNaN(at) ? [] : [{ at, value }];
+      return value == null || Number.isNaN(at) ? [] : [{ sitting, point: { at, value } }];
     })
-    .sort((a, b) => a.at - b.at);
+    .sort((a, b) => a.point.at - b.point.at);
+}
+
+/**
+ * One line of the vitals history: every sitting that gave this value, oldest first. A
+ * lower-confidence heart rate is not in it: the station uses it for no baseline and no trend,
+ * and neither does the chart.
+ */
+export function vitalSeries(sittings: Sitting[], vital: 'heartRate' | 'breathingRate'): VitalPoint[] {
+  return measured(sittings, vital).map(({ point }) => point);
+}
+
+export type VitalTrend = {
+  /** What the line is drawn from; the first point is the baseline. */
+  points: VitalPoint[];
+  /** Where the baseline is from, to finish "+30 from 55 ...": "at check-in" or "at the 10:42 re-check". */
+  baseFrom: string;
+  /** The pulse the newest finished sitting gave with lower confidence, if it did. Shown tagged, beside the line. */
+  lowConfidence: number | null;
+};
+
+/** Everything VitalHistory shows for one vital, as the station counts it. */
+export function vitalTrend(sittings: Sitting[], vital: 'heartRate' | 'breathingRate'): VitalTrend {
+  const series = measured(sittings, vital);
+  const first = series[0]?.sitting;
+  const baseFrom = first && first.kind !== 'check_in' && first.endedAt ? `at the ${clockTime(first.endedAt)} re-check` : 'at check-in';
+  const newest = sittings
+    .filter((sitting) => sitting.summary != null && sitting.endedAt != null)
+    .sort((a, b) => new Date(a.endedAt!).getTime() - new Date(b.endedAt!).getTime())
+    .at(-1);
+  const weak = vital === 'heartRate' && newest && trustedHeartRate(newest) == null ? (newest.summary?.heartRate.value ?? null) : null;
+  return { points: series.map(({ point }) => point), baseFrom, lowConfidence: weak };
+}
+
+/**
+ * Whole minutes since the last sitting that gave a pulse that counts or a breathing rate, or
+ * null: what the station calls "last observed". A lower-confidence pulse alone is no observation.
+ */
+export function lastObservedMinutes(sittings: Sitting[], now: number): number | null {
+  const observed = sittings
+    .filter((sitting) => sitting.endedAt && (trustedHeartRate(sitting) != null || sitting.summary?.breathingRate.value != null))
+    .map((sitting) => sitting.endedAt!)
+    .sort();
+  return minutesSince(observed.at(-1), now);
 }
 
 export type SittingRow = {
@@ -229,6 +281,8 @@ export type SittingRow = {
   running: boolean;
   /** Rounded, without units. Null is "No reading". */
   pulse: string | null;
+  /** The pulse is a lower-confidence one: the row tags it. */
+  pulseLowConfidence: boolean;
   breathing: string | null;
   /** "58 s, pulse read 83% of the time". Null while it runs. */
   detail: string | null;
@@ -262,6 +316,7 @@ export function sittingRows(sittings: Sitting[], now: number): SittingRow[] {
       title,
       running,
       pulse: pulse != null ? wholeNumber(pulse) : null,
+      pulseLowConfidence: pulse != null && isLowConfidence(summary?.heartRateConfidence),
       breathing: breathing != null ? wholeNumber(breathing) : null,
       detail,
       sourceLabel: sourceLabel(sitting.source),

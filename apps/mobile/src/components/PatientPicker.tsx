@@ -81,7 +81,7 @@ export function PatientPicker({ onPick }: Props) {
         >
           <PatientIdentity patient={item.patient} size="sm" detail={item.reasonForVisit} />
           <Text style={[theme.type.caption, { color: colors.inkMuted, flexShrink: 0 }]}>
-            {statusText(item.state, item.minutesSinceObserved)}
+            {statusText(item.state, item.minutesSinceObserved, item.pulse.lowConfidence != null)}
           </Text>
         </Touchable>
       ))}
