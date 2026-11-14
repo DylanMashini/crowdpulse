@@ -61,29 +61,36 @@ const orNone = (value: number | null, format: (value: number) => string, words: 
 const cell = 'min-w-0 border-b border-line p-5';
 const pair = 'grid xl:grid-cols-2 xl:[&>*:nth-child(odd)]:border-r';
 
-// The same forms as the chips: amber for a trend flag, the inverse for overdue, dashed for no
-// reading, the stable grey for observed.
-const STATES: Array<{ state: TileState; label: string; swatch: string }> = [
-  { state: 'flag', label: 'Trend flag', swatch: 'bg-watch' },
-  { state: 'overdue', label: 'Overdue', swatch: 'bg-overdue' },
-  { state: 'no-reading', label: 'No reading', swatch: 'border border-dashed border-line-hover' },
-  { state: 'observed', label: 'Observed', swatch: 'bg-stable' },
+// The same forms and colours as the chips: red for an urgent trend flag, amber for any other,
+// the inverse for overdue, dashed for no reading, the stable grey for observed.
+type Share = 'urgent' | TileState;
+const SHARES: Array<{ share: Share; label: string; swatch: string }> = [
+  { share: 'urgent', label: 'Urgent trend flag', swatch: 'bg-urgent' },
+  { share: 'flag', label: 'Trend flag', swatch: 'bg-watch' },
+  { share: 'overdue', label: 'Overdue', swatch: 'bg-overdue' },
+  { share: 'no-reading', label: 'No reading', swatch: 'border border-dashed border-line-hover' },
+  { share: 'observed', label: 'Observed', swatch: 'bg-stable' },
 ];
 
-/** Who is in the room now, by state: one bar split in the order a nurse would walk it. */
-function StateBar({ byState, total }: { byState: Record<TileState, number>; total: number }) {
+/**
+ * Who is in the room now, by state: one bar split in the order a nurse would walk it. A flagged
+ * patient is the colour their worklist row is, so `urgentFlags` of the flags are drawn red.
+ */
+function StateBar({ byState, urgentFlags, total }: { byState: Record<TileState, number>; urgentFlags: number; total: number }) {
+  const urgent = Math.min(urgentFlags, byState.flag);
+  const counts: Record<Share, number> = { ...byState, urgent, flag: byState.flag - urgent };
   return (
     <div className="flex flex-col gap-3">
       <div aria-hidden className="flex h-[8px] gap-[2px]">
-        {STATES.filter(({ state }) => byState[state] > 0).map(({ state, swatch }) => (
-          <span key={state} className={cx('min-w-[6px] rounded-sm', swatch)} style={{ flexGrow: byState[state], flexBasis: 0 }} />
+        {SHARES.filter(({ share }) => counts[share] > 0).map(({ share, swatch }) => (
+          <span key={share} className={cx('min-w-[6px] rounded-sm', swatch)} style={{ flexGrow: counts[share], flexBasis: 0 }} />
         ))}
       </div>
       <ul aria-label={`${plural(total, 'patient', 'patients')} waiting, by state`} className="flex flex-wrap gap-x-5 gap-y-2 type-dense">
-        {STATES.map(({ state, label, swatch }) => (
-          <li key={state} className="flex items-center gap-2">
+        {SHARES.map(({ share, label, swatch }) => (
+          <li key={share} className="flex items-center gap-2">
             <span aria-hidden className={cx('size-[8px] rounded-[2px]', swatch)} />
-            <span className="text-ink tabular-nums">{byState[state]}</span>
+            <span className="text-ink tabular-nums">{counts[share]}</span>
             <span className="text-ink-muted">{label}</span>
           </li>
         ))}
@@ -179,6 +186,7 @@ function Results({ data }: { data: Statistics }) {
   // A waiting patient is drawn in the severity their worklist row has; the rules behind a flag are on the worklist.
   const { worklist } = useLive();
   const severities = new Map(worklist.data?.worklist.items.map((item) => [item.patientNumber, rowSeverity(item)]));
+  const urgentFlags = worklist.data?.worklist.items.filter((item) => item.state === 'flag' && rowSeverity(item) === 'urgent').length ?? 0;
 
   if (patients.seen === 0) {
     return (
@@ -226,7 +234,7 @@ function Results({ data }: { data: Statistics }) {
             <p className="type-dense text-ink-muted">Nobody is waiting. Patients appear here when a check-in starts.</p>
           ) : (
             <div className="flex flex-col gap-4">
-              <StateBar byState={waitingNow.byState} total={waitingNow.patients} />
+              <StateBar byState={waitingNow.byState} urgentFlags={urgentFlags} total={waitingNow.patients} />
               <dl>
                 <Line label="Median wait">{orNone(waitingNow.medianMinutesWaiting, minutes, 'Nobody waiting')}</Line>
                 <Line label="Longest wait">{orNone(waitingNow.longestMinutesWaiting, minutes, 'Nobody waiting')}</Line>
