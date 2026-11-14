@@ -9,7 +9,6 @@ import { StateMessage } from '@/components/ui/StateMessage';
 import { ApiError, api, errorMessage, onSessionEnded } from '@/lib/api';
 import { useNow } from '@/lib/clock';
 import { minutesAgo } from '@/lib/format';
-import { forgetIntakeDrafts } from '@/lib/intake-draft';
 import { SESSION_ENDED, SESSION_ENDED_UNSAVED } from '@/lib/session-ended';
 import { useResource } from '@/lib/use-resource';
 
@@ -233,7 +232,6 @@ function Navigation({
     onSigningOut(true);
     try {
       await api.signOut();
-      forgetIntakeDrafts();
       router.replace('/sign-in');
     } catch (error) {
       onSigningOut(false);
