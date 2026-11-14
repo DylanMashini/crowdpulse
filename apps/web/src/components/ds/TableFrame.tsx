@@ -8,7 +8,8 @@ export const tableHeadCell = 'border-b border-line px-[10px] py-2 text-left type
 export const tableCell = 'h-row border-b border-line px-[10px] align-middle type-dense text-ink-muted first:pl-5 last:pr-5';
 /** A row that can be opened: a surface step under the pointer, in 120ms. */
 export const tableRow = 'transition-colors hover:bg-surface-2';
-const tableFrame = 'w-full overflow-x-auto';
+// Positioned, so anything absolutely placed inside a cell is clipped with the table and cannot widen the page.
+const tableFrame = 'relative w-full overflow-x-auto';
 
 const edgeFade = 'pointer-events-none absolute inset-y-0 w-6 from-surface-1 to-transparent';
 
