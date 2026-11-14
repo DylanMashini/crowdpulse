@@ -15,7 +15,7 @@
 //   SMOKE_OVERDUE=1    Also wait a minute for a patient to go overdue. Changes the re-check
 //                      interval while it runs, so use it on a database of your own.
 //
-// It creates one account, two devices and four patients, and discharges the patients it made.
+// It creates one account, two devices and nine patients, and discharges the patients it made.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -545,6 +545,39 @@ done("patient detail: baseline, sittings, flags and a newest-first timeline");
     await ok(PatientResponse, 200, "POST", routes.patientDischarge(stepwise), { auth: web });
     done("two deteriorations were two alerts, each acknowledged on its own");
   }
+}
+
+// --- a sitting finished while worklists are computed -------------------------------------------
+
+{
+  // Every open dashboard reloads the worklist when a sitting finishes, and computing a worklist
+  // runs the rules too. Whichever request opens the flags, the two trend flags of one sitting
+  // are one alert, opened at one instant.
+  const TRIALS = 5;
+  for (let trial = 0; trial < TRIALS; trial += 1) {
+    const raced = (await ok(PatientResponse, 201, "POST", routes.patients, { auth: web, body: {} })).patient.number;
+    await (await sit(raced, "check_in", 72, 16, 1)).finish();
+    await (await sit(raced, "recheck", 110, 24, 1)).finish();
+    const tripping = await sit(raced, "recheck", 110, 24, 1);
+    let finished = false;
+    const reload = async () => {
+      while (!finished) await ok(WorklistResponse, 200, "GET", routes.worklist, { auth: web });
+    };
+    const reloads = [reload(), reload(), reload(), reload()];
+    await tripping.finish();
+    finished = true;
+    await Promise.all(reloads);
+    const opened = await openFlags(raced);
+    assert.deepEqual(opened.map((flag) => flag.rule).sort(), ["baseline_shift", "score_rise"]);
+    assert.equal(new Set(opened.map((flag) => flag.alertId)).size, 1, "a worklist request racing the finish split one deterioration into two alerts");
+    assert.equal(new Set(opened.map((flag) => flag.openedAt)).size, 1);
+    if (sink) {
+      await until("the push for the deterioration", () => (pushesFor(raced).length > 0 ? true : undefined));
+      assert.equal(pushesFor(raced).length, 1, "one push for the deterioration");
+    }
+    await ok(PatientResponse, 200, "POST", routes.patientDischarge(raced), { auth: web });
+  }
+  done(`a sitting finished while four clients reloaded the worklist opened one alert, ${TRIALS} times out of ${TRIALS}`);
 }
 
 // --- settings and statistics --------------------------------------------------------------
