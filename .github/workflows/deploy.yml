@@ -147,7 +147,7 @@ jobs:
         env:
           TASK_DEFINITION: ${{ steps.task-definition.outputs.arn }}
         run: |
-          started=$(date -u -d '5 seconds ago' +%Y-%m-%dT%H:%M:%SZ)
+          started=$(( $(date +%s) - 5 ))
           aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
             --task-definition "$TASK_DEFINITION" > /dev/null
 
