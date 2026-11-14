@@ -9,10 +9,14 @@ export const routes = {
     me: '/api/auth/me',
   },
   devices: '/api/devices',
-  tickets: '/api/tickets',
-  ticket: (number: number) => `/api/tickets/${number}`,
-  ticketDischarge: (number: number) => `/api/tickets/${number}/discharge`,
-  ticketFace: (number: number) => `/api/tickets/${number}/face`,
+  patients: '/api/patients',
+  patient: (number: number) => `/api/patients/${number}`,
+  patientDischarge: (number: number) => `/api/patients/${number}/discharge`,
+  patientFace: (number: number) => `/api/patients/${number}/face`,
+  /** GET serves the JPEG, PUT stores the phone's face crop, DELETE removes it. Append `?v=<photoUpdatedAt>` when showing it. */
+  patientPhoto: (number: number) => `/api/patients/${number}/photo`,
+  /** POST: take the photo from a camera phone's current live frame. */
+  patientPhotoCapture: (number: number) => `/api/patients/${number}/photo/capture`,
   sittings: '/api/sittings',
   sitting: (id: string) => `/api/sittings/${id}`,
   sittingReadings: (id: string) => `/api/sittings/${id}/readings`,

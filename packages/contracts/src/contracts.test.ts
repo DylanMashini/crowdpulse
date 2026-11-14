@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+  CreatePatientRequest,
   ErrorCode,
   Estimate,
   FrameRecord,
@@ -9,6 +10,8 @@ import {
   Settings,
   SittingSummary,
   StreamEvent,
+  UpdatePatientRequest,
+  patientLabel,
   defaultSettings,
   errorStatus,
 } from './index.ts';
@@ -60,4 +63,20 @@ test('timestamps must be UTC', () => {
 test('every error code has a status and the default settings are valid', () => {
   for (const code of ErrorCode.options) assert.ok(errorStatus[code] >= 400);
   assert.deepEqual(Settings.parse(defaultSettings), defaultSettings);
+});
+
+test('intake text is trimmed, an empty box clears the field, and a left-out field is left alone', () => {
+  assert.deepEqual(CreatePatientRequest.parse({}), { faceOptIn: false });
+  const update = UpdatePatientRequest.parse({ name: '  Maya Chen ', reasonForVisit: '   ', painScore: 4 });
+  assert.deepEqual(update, { name: 'Maya Chen', reasonForVisit: null, painScore: 4 });
+  assert.ok(!('notes' in update));
+  assert.ok(!UpdatePatientRequest.safeParse({ painScore: 11 }).success);
+  assert.ok(!UpdatePatientRequest.safeParse({ dateOfBirth: '14/11/1990' }).success);
+  assert.ok(UpdatePatientRequest.safeParse({ dateOfBirth: '1990-11-14', sex: 'female' }).success);
+});
+
+test('a patient without a name is called by their number', () => {
+  assert.equal(patientLabel({ number: 14, name: null }), 'Patient 14');
+  assert.equal(patientLabel({ number: 14, name: '  ' }), 'Patient 14');
+  assert.equal(patientLabel({ number: 14, name: 'Maya Chen' }), 'Maya Chen');
 });
