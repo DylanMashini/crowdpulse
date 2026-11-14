@@ -20,7 +20,8 @@ public enum PulseGate: String, Codable, Sendable, CaseIterable {
   /// The window holds under `minimumSampleShare` of the frames its median interval
   /// predicts, or fewer than `minimumFrameRate` frames per second. Reason `gaps`.
   case tooFewSamples = "too_few_samples"
-  /// More than `maximumMotionShare` of the window's frames are flagged as motion. Reason `motion`.
+  /// More than `maximumDisturbedShare` of the window had to be cut out around colour jumps
+  /// and fast chest movement. Reason `motion`.
   case motion
   /// No skin region has a colour in every frame of the window. Reason `gaps`.
   case incompleteRegions = "incomplete_regions"
@@ -65,12 +66,15 @@ public struct PulseDiagnostic: Codable, Sendable, Equatable {
   public var sampleShare: Double?
   /// Those frames per second of window (`minimumFrameRate`).
   public var framesPerSecond: Double?
-  /// Share of the window's frames flagged as motion (`maximumMotionShare`).
+  /// Share of the window cut out of the analysis (`maximumDisturbedShare`): the frames
+  /// around colour jumps and fast chest movement, and stretches between them too short to
+  /// analyse.
   public var motionShare: Double?
-  /// Share flagged because the regions' brightness strayed from its running baseline
-  /// (`motionColourDeviation`).
-  public var brightnessMotionShare: Double?
-  /// Share flagged because the chest moved fast (`motionChestSpeed`).
+  /// Share of the window's frames cut because the regions' colour jumped
+  /// (`colourJumpDeviation`, `colourJumpNoiseRatio`, `colourJumpCeiling`).
+  public var colourJumpShare: Double?
+  /// Share cut because the chest moved fast while it was tracked (`motionChestSpeed`,
+  /// `minimumChestTrackedShare`).
   public var chestMotionShare: Double?
 
   /// What the window would report with every check switched off, in bpm: its strongest

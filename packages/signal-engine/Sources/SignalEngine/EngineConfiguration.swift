@@ -68,14 +68,33 @@ public struct EngineConfiguration: Codable, Sendable, Equatable {
 
   // MARK: Motion
 
-  /// A frame is in motion when the regions' brightness is further than this fraction from
-  /// its running baseline.
-  public var motionColourDeviation: Double = 0.02
-  /// Time constant of that running baseline, in seconds.
-  public var motionBaselineSeconds: Double = 1
+  /// The colour of a skin region is compared over two neighbouring stretches of this length,
+  /// in seconds: its mean share of red, green and blue in the newest one against the one
+  /// before. Blood changes those shares by a fraction of a per cent; skin sliding under the
+  /// region, or light of another colour, changes them by more.
+  public var colourJumpSeconds: Double = 0.25
+  /// A change of that share smaller than this fraction is never a jump.
+  public var colourJumpDeviation: Double = 0.012
+  /// Nor is one smaller than this many times the window's median change, which is the
+  /// recording's own noise.
+  public var colourJumpNoiseRatio: Double = 4
+  /// A change larger than this fraction is a jump however noisy the window is, so that a
+  /// subject who never stops moving cannot raise the bar.
+  public var colourJumpCeiling: Double = 0.03
   /// A frame is in motion when the chest moves faster than this, in frame heights per second.
+  /// For heart rate this counts only while the chest is tracked (`minimumChestTrackedShare`).
   public var motionChestSpeed: Double = 0.08
-  /// A window is rejected when more than this share of its frames are in motion.
+  /// Chest speed says something about the patient only when the chest region is followed
+  /// steadily: it must have a value in this share of the frames of the last
+  /// `chestTrackingSeconds`. A region found for a few frames at a time reports its search
+  /// limit, not a movement.
+  public var minimumChestTrackedShare: Double = 0.9
+  public var chestTrackingSeconds: Double = 2
+  /// Frames around a colour jump or a fast chest are cut out of the heart-rate window and
+  /// the rest is analysed. The window is rejected as motion only when more than this share
+  /// of it is cut.
+  public var maximumDisturbedShare: Double = 0.3
+  /// A breathing window is rejected when more than this share of its frames are in motion.
   public var maximumMotionShare: Double = 0.05
 
   // MARK: Breathing

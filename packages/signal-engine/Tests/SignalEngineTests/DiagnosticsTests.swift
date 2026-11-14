@@ -95,7 +95,7 @@ private func brightnessStep(at second: Double, factor: Double) -> [FrameRecord] 
       #expect(diagnostic.candidateQuality == diagnostic.quality)
       #expect(diagnostic.passingWindows == 3)
       #expect((diagnostic.agreementSpreadBpm ?? .infinity) <= 5)
-      #expect((diagnostic.motionShare ?? 1) <= 0.05)
+      #expect((diagnostic.motionShare ?? 1) <= 0.3)
     }
   }
 
@@ -121,27 +121,36 @@ private func brightnessStep(at second: Double, factor: Double) -> [FrameRecord] 
     #expect(!refused.isEmpty)
     for diagnostic in refused {
       #expect(diagnostic.reason == .motion)
-      #expect((diagnostic.motionShare ?? 0) > 0.05)
+      #expect((diagnostic.motionShare ?? 0) > 0.3)
       #expect(diagnostic.windowSeconds != nil)
       #expect(diagnostic.candidateBpm != nil)
     }
   }
 
-  /// The case that matters in the field: the light on a still face changes by a few per
-  /// cent. The pulse is untouched, the brightness check calls it motion, and the diagnostic
-  /// shows that the refused windows held the right rate. When the motion check stops
-  /// refusing this, point the test at something it still refuses.
-  @Test func aBrightnessStepOnAStillFaceIsRefusedAsMotionWhileHoldingTheRightRate() {
+  /// The case that failed in the field: the light on a still face changes by a few per
+  /// cent. Brightness common to the three channels is what the projection cancels, so the
+  /// pulse is untouched, nothing is cut and nothing is refused. The brightness check this
+  /// replaced refused ten seconds for every such step.
+  @Test func aBrightnessStepOnAStillFaceIsNotMotion() {
     let result = diagnosed(brightnessStep(at: 20, factor: 1.06))
+    #expect(!result.diagnostics.contains { $0.gate == .motion })
+    #expect(result.diagnostics.allSatisfy { ($0.motionShare ?? 0) == 0 })
+    #expect(result.heartRates.filter { $0.elapsed > 19.5 && $0.elapsed < 32.5 }.count == 13)
+    #expect(result.heartRates.allSatisfy { abs($0.bpm - 72) <= 2 })
+  }
+
+  /// What the motion check does refuse: a window that is mostly movement. It names how
+  /// much it had to cut and which check asked for it.
+  @Test func aWindowThatIsMostlyMovementIsRefusedAsMotionWithWhatWasCut() {
+    let result = diagnosed(sitting { $0.motionBursts = [.init(start: 20, end: 26)] }.frames())
     let refused = result.diagnostics.filter { $0.gate == .motion }
     #expect(refused.count >= 9)
     for diagnostic in refused {
-      #expect((diagnostic.brightnessMotionShare ?? 0) > 0.05)
-      #expect(diagnostic.chestMotionShare == 0)
-      #expect(diagnostic.motionShare == diagnostic.brightnessMotionShare)
+      #expect((diagnostic.motionShare ?? 0) > 0.3)
+      #expect((diagnostic.colourJumpShare ?? 0) > 0)
+      #expect((diagnostic.motionShare ?? 0) >= (diagnostic.colourJumpShare ?? 1))
     }
-    let right = refused.filter { abs(($0.candidateBpm ?? 0) - 72) <= 5 }
-    #expect(Double(right.count) >= 0.8 * Double(refused.count))
+    #expect(result.heartRates.allSatisfy { abs($0.bpm - 72) <= 2 })
   }
 
   @Test func aRecentGapIsNamed() {

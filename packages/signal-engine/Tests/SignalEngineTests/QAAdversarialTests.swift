@@ -241,13 +241,14 @@ func qaScene(_ change: (inout QAScene) -> Void) -> QAScene {
 }
 
 @Suite struct QAMotionAndLight {
-  @Test func shortMotionBurstRejectsTheWholeWindow() {
-    // 0.7 s is 7% of a 10 s window, over the 5% motion share.
+  @Test func shortMotionBurstIsCutOutAndNeverReadAsPulse() {
+    // 0.7 s of movement used to refuse every window it was in, ten seconds of them. Now
+    // those frames are cut and the window is read around them.
     let s = qa(qaScene { $0.moving = { $0 >= 30 && $0 < 30.7 } })
     print(s.line("motion 30-30.7", truth: { _ in 72 }))
     // Window up to 10 s: seconds 31..39 contain the burst.
     let inside = s.result.readings.filter { $0.elapsed >= 31 && $0.elapsed <= 39 }
-    #expect(inside.allSatisfy { $0.heartRate.value == nil })
+    #expect(inside.contains { $0.heartRate.value != nil })
     #expect(s.hr.allSatisfy { abs($0.1 - 72) <= 3 })
   }
 

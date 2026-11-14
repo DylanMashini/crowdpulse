@@ -50,7 +50,12 @@ struct PulseAnalyzer {
 
   /// POS (plane orthogonal to skin) projection with overlap-add. Each window is normalised
   /// by its own channel means, so brightness changes common to the three channels cancel.
-  func project(_ region: RegionSeries, rate: Double) -> [Double] {
+  ///
+  /// `usable` marks the samples that may be analysed. Every stretch of them is projected on
+  /// its own, so no window straddles a cut and the level the colour settles at afterwards
+  /// does not matter; the samples cut are left at zero. Each sample is the mean of the
+  /// windows that cover it, so a stretch keeps its amplitude up to its ends.
+  func project(_ region: RegionSeries, rate: Double, usable: [Bool]? = nil) -> [Double] {
     let count = region.r.count
     let length = Int((PulseAnalyzer.projectionWindowSeconds * rate).rounded())
     var pulse = [Double](repeating: 0, count: count)
@@ -61,38 +66,65 @@ struct PulseAnalyzer {
     let s2 = scratch + length
     let n = vDSP_Length(length)
 
+    var runs: [Range<Int>] = []
+    if let usable {
+      var runStart: Int?
+      for index in 0...count {
+        let open = index < count && usable[index]
+        if open, runStart == nil { runStart = index }
+        if !open, let from = runStart {
+          if index - from >= length { runs.append(from..<index) }
+          runStart = nil
+        }
+      }
+    } else {
+      runs = [0..<count]
+    }
+
     region.r.withUnsafeBufferPointer { r in
       region.g.withUnsafeBufferPointer { g in
         region.b.withUnsafeBufferPointer { b in
           pulse.withUnsafeMutableBufferPointer { output in
-            for start in 0...(count - length) {
-              let red = r.baseAddress! + start
-              let green = g.baseAddress! + start
-              let blue = b.baseAddress! + start
-              let target = output.baseAddress! + start
-              var meanR = 0.0
-              var meanG = 0.0
-              var meanB = 0.0
-              vDSP_meanvD(red, 1, &meanR, n)
-              vDSP_meanvD(green, 1, &meanG, n)
-              vDSP_meanvD(blue, 1, &meanB, n)
-              guard meanR > 0, meanG > 0, meanB > 0 else { continue }
-              var inverseG = 1 / meanG
-              var inverseB = 1 / meanB
-              var negativeInverseB = -inverseB
-              var minusTwoInverseR = -2 / meanR
-              // s1 = G - B, s2 = G + B - 2R on mean-normalised channels; both have zero mean.
-              vDSP_vsmsmaD(green, 1, &inverseG, blue, 1, &negativeInverseB, s1, 1, n)
-              vDSP_vsmsmaD(green, 1, &inverseG, blue, 1, &inverseB, s2, 1, n)
-              vDSP_vsmaD(red, 1, &minusTwoInverseR, s2, 1, s2, 1, n)
-              var deviation1 = 0.0
-              var deviation2 = 0.0
-              vDSP_rmsqvD(s1, 1, &deviation1, n)
-              vDSP_rmsqvD(s2, 1, &deviation2, n)
-              guard deviation2 > 0 else { continue }
-              var alpha = deviation1 / deviation2
-              vDSP_vsmaD(s2, 1, &alpha, s1, 1, s1, 1, n)
-              vDSP_vaddD(s1, 1, target, 1, target, 1, n)
+            for run in runs {
+              for start in run.lowerBound...(run.upperBound - length) {
+                let red = r.baseAddress! + start
+                let green = g.baseAddress! + start
+                let blue = b.baseAddress! + start
+                let target = output.baseAddress! + start
+                var meanR = 0.0
+                var meanG = 0.0
+                var meanB = 0.0
+                vDSP_meanvD(red, 1, &meanR, n)
+                vDSP_meanvD(green, 1, &meanG, n)
+                vDSP_meanvD(blue, 1, &meanB, n)
+                guard meanR > 0, meanG > 0, meanB > 0 else { continue }
+                var inverseG = 1 / meanG
+                var inverseB = 1 / meanB
+                var negativeInverseB = -inverseB
+                var minusTwoInverseR = -2 / meanR
+                // s1 = G - B, s2 = G + B - 2R on mean-normalised channels; both have zero mean.
+                vDSP_vsmsmaD(green, 1, &inverseG, blue, 1, &negativeInverseB, s1, 1, n)
+                vDSP_vsmsmaD(green, 1, &inverseG, blue, 1, &inverseB, s2, 1, n)
+                vDSP_vsmaD(red, 1, &minusTwoInverseR, s2, 1, s2, 1, n)
+                var deviation1 = 0.0
+                var deviation2 = 0.0
+                vDSP_rmsqvD(s1, 1, &deviation1, n)
+                vDSP_rmsqvD(s2, 1, &deviation2, n)
+                guard deviation2 > 0 else { continue }
+                var alpha = deviation1 / deviation2
+                vDSP_vsmaD(s2, 1, &alpha, s1, 1, s1, 1, n)
+                vDSP_vaddD(s1, 1, target, 1, target, 1, n)
+              }
+              // Windows covering a sample: fewer towards the ends of the stretch.
+              let windows = run.count - length + 1
+              var mean = 0.0
+              for index in run {
+                let covering = min(index - run.lowerBound + 1, run.upperBound - index, length, windows)
+                output[index] /= Double(covering)
+                mean += output[index]
+              }
+              mean /= Double(run.count)
+              for index in run { output[index] -= mean }
             }
           }
         }
@@ -151,13 +183,20 @@ struct PulseAnalyzer {
   /// Heart-rate candidate for one analysis window.
   /// - Parameter frameRate: frames per second the camera delivered in this window, or nil
   ///   when its timestamps are too irregular for lamp flicker to alias into a steady tone.
-  func analyse(_ regions: [RegionSeries], rate: Double, frameRate: Double?) -> Outcome {
+  /// - Parameter usable: samples that may be analysed; the others were cut out around a
+  ///   colour jump or a movement. Nil when all of them may.
+  func analyse(_ regions: [RegionSeries], rate: Double, frameRate: Double?, usable: [Bool]? = nil) -> Outcome {
     guard let count = regions.first?.r.count, count > 1 else { return Outcome(peak: .flat, weights: []) }
     let search = search(windowSeconds: Double(count) / rate)
     let band = configuration.heartRateBandHz
-    let projected = regions.map { DSP.detrend(project($0, rate: rate)) }
+    let kept = usable.map { $0.map { $0 ? 1.0 : 0.0 } }
+    // What the band-pass rings into a cut is not signal.
+    func cut(_ signal: [Double]) -> [Double] {
+      kept.map { vDSP.multiply(signal, $0) } ?? signal
+    }
+    let projected = regions.map { DSP.detrend(project($0, rate: rate, usable: usable)) }
     let waveforms = projected.map {
-      fourier.bandPass($0, rate: rate, band: band, transitionHz: PulseAnalyzer.transitionHz)
+      cut(fourier.bandPass($0, rate: rate, band: band, transitionHz: PulseAnalyzer.transitionHz))
     }
     let weights = regionWeights(waveforms, rate: rate, search: search)
     let scales = scales(waveforms, weights: weights)
@@ -181,8 +220,9 @@ struct PulseAnalyzer {
     // rate in the search range. It is only ever used to overrule a peak, never to report one.
     let open = (band.lowerBound / 2)...band.upperBound
     let wide = spectrum(
-      of: fourier.bandPass(
-        mix(projected, scales: scales), rate: rate, band: open, transitionHz: PulseAnalyzer.transitionHz),
+      of: cut(
+        fourier.bandPass(
+          mix(projected, scales: scales), rate: rate, band: open, transitionHz: PulseAnalyzer.transitionHz)),
       rate: rate)
     let found = wide.hasSubharmonic(
       of: hz, toleranceHz: search.qualityHalfWidthHz / 2, floor: configuration.subharmonicPowerFloor,
