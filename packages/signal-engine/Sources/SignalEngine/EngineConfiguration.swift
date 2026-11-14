@@ -150,6 +150,33 @@ public struct EngineConfiguration: Codable, Sendable, Equatable {
   /// were rejected.
   public var maximumRejectedBeatShare: Double = 0.25
 
+  // MARK: Whole-sitting estimate
+
+  /// The whole-sitting estimate (`WholeSittingEstimate`) needs at least this many
+  /// full-length windows to add up.
+  public var wholeSittingWindows: Int = 15
+  /// Share of the summed spectrum's power, above `wholeSittingMinimumBpm`, that its peak
+  /// must hold. This and the next two were set on negative controls so that none of 588
+  /// produced an estimate: see docs/research/engine-reliability-results.md.
+  public var wholeSittingQuality: Double = 0.2
+  /// How far the summed peak must stand above the spectrum on either side of it
+  /// (`WholeSittingEstimate.prominence`). Noise that drifts gives a slope, not a peak.
+  public var wholeSittingProminence: Double = 1.8
+  /// Share of the windows whose own strongest peak must be within `agreementToleranceBpm`
+  /// of the summed peak.
+  public var wholeSittingSupport: Double = 0.45
+  /// Those windows must come from at least this many separate ten-second stretches of
+  /// the sitting, so that one lucky stretch of noise is not enough.
+  public var wholeSittingStretches: Int = 4
+  /// The whole-sitting estimate reports no rate under this, in bpm. Drift and slow light
+  /// changes pile up at the bottom of the pulse band in every window alike, so down there
+  /// "the same peak all through the sitting" is what noise looks like too. A slow heart
+  /// still gets its one-second readings, which are held to the full quality threshold.
+  public var wholeSittingMinimumBpm: Double = 55
+  /// Sum each region over the sitting and weigh it by its own summed peak, instead of
+  /// adding up the windows' combined spectra.
+  public var wholeSittingWeighsRegions: Bool = true
+
   // MARK: Summary
 
   /// The sitting's heart or breathing rate needs at least this many valid one-second readings.

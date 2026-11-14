@@ -46,12 +46,23 @@ public struct BeatInterval: Codable, Sendable, Equatable {
   }
 }
 
+/// Where a sitting's heart rate came from.
+public enum HeartRateSource: String, Codable, Sendable {
+  /// The median of the valid one-second readings.
+  case readings
+  /// The whole-sitting estimate: too few one-second readings were valid, but the sitting as
+  /// a whole holds one rhythm clearly enough. Lower confidence than `readings`.
+  case wholeSitting = "whole_sitting"
+}
+
 public struct SittingSummary: Codable, Sendable, Equatable {
   /// First frame to last frame, in seconds.
   public var durationSeconds: Double
   public var frameCount: Int
   public var droppedFrames: Int
-  /// Median of the valid one-second heart-rate readings, in bpm.
+  /// Median of the valid one-second heart-rate readings, in bpm. With too few of them, the
+  /// whole-sitting estimate when it was accepted (`heartRateSource`); `coverage` is the share
+  /// of valid one-second readings either way.
   public var heartRate: SummaryValue
   /// Median of the valid one-second breathing-rate readings, in breaths per minute.
   public var breathingRate: SummaryValue
@@ -65,6 +76,11 @@ public struct SittingSummary: Codable, Sendable, Equatable {
   public var timeToFirstReadingSeconds: Double?
   /// Longest run without a valid heart-rate reading after the first one, in seconds.
   public var longestDropoutSeconds: Double
+  /// Which path `heartRate.value` came from. Nil when there is no heart rate.
+  public var heartRateSource: HeartRateSource?
+  /// The whole-sitting estimate and its evidence, whether or not it was needed or
+  /// accepted. Nil when no window of the sitting could be analysed.
+  public var wholeSitting: WholeSittingEstimate?
 
   public init(
     durationSeconds: Double, frameCount: Int, droppedFrames: Int,

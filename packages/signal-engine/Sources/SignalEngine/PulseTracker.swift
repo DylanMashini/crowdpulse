@@ -298,18 +298,37 @@ struct ValidPulseWindow {
   var rateHz: Double
 }
 
+/// What one analysis window held, kept for the whole-sitting estimate whether or not the
+/// window gave a reading.
+struct WindowEvidence {
+  /// Capture-clock time of the window's newest frame.
+  var end: Double
+  var seconds: Double
+  /// What the window would report with nothing refusing it, in Hz.
+  var candidateHz: Double?
+  /// Region indices (forehead, left cheek, right cheek) of `regionSpectra`.
+  var regions: [Int]
+  var spectrum: [Double]
+  var regionSpectra: [[Double]?]
+  var binHz: Double
+}
+
 /// Heart-rate state for one sitting: the frame history, the checks that decide whether a
 /// window may be analysed, and the agreement gate.
 struct PulseTracker {
   /// Frame intervals may stray this far from whole frame periods (RMS, in periods) and
   /// still count as a regular grid.
   static let maximumGridDeviation = 0.15
+  /// Windows kept for the whole-sitting estimate: ten minutes of them.
+  static let maximumEvidenceWindows = 600
 
   private let configuration: EngineConfiguration
   private let analyzer: PulseAnalyzer
 
   private(set) var history = PulseHistory()
   private(set) var validWindows: [ValidPulseWindow] = []
+  /// Every window that was analysed, in time order.
+  private(set) var evidence: [WindowEvidence] = []
   /// Sum over valid windows of each region's weight in the combined signal.
   private(set) var regionWeightSums = [Double](repeating: 0, count: PulseHistory.regionCount)
 
@@ -497,6 +516,20 @@ struct PulseTracker {
       regions.map(\.series), rate: configuration.resampleRateHz, frameRate: frameRate(of: range),
       usable: usable)
     diagnostic.note(outcome.detail)
+    if let spectrum = outcome.spectrum {
+      // A window whose strongest peak is where lamp flicker aliases, or is what the
+      // projection left of a change in the light, is evidence of the lamp, not of a pulse.
+      switch outcome.peak {
+      case .flicker, .illumination, .flat, .drift: break
+      case .peak, .bandEdge:
+        evidence.append(
+          WindowEvidence(
+            end: now, seconds: windowSeconds, candidateHz: outcome.detail.candidateHz,
+            regions: regions.map(\.region), spectrum: spectrum, regionSpectra: outcome.regionSpectra,
+            binHz: outcome.binHz))
+        if evidence.count > PulseTracker.maximumEvidenceWindows { evidence.removeFirst() }
+      }
+    }
 
     switch outcome.peak {
     case .flat, .flicker, .drift, .illumination:

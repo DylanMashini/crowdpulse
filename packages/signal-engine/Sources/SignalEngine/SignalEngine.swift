@@ -145,11 +145,20 @@ public final class SignalEngine {
     func positive(_ value: Double?) -> Double? {
       value.flatMap { $0 > 0 ? $0 : nil }
     }
-    return SittingSummary(
+    // The sitting's heart rate is the median of its valid readings. When there are too few
+    // of those, the whole sitting is asked instead.
+    var heartRate = summary(\.heart)
+    var source: HeartRateSource? = heartRate.value == nil ? nil : .readings
+    let whole = WholeSittingAnalyzer(configuration: configuration).estimate(pulse.evidence, origin: first)
+    if heartRate.value == nil, whole.accepted, let bpm = whole.heartRate {
+      heartRate = SummaryValue(value: bpm, coverage: heartRate.coverage)
+      source = .wholeSitting
+    }
+    var summary = SittingSummary(
       durationSeconds: duration,
       frameCount: frameCount,
       droppedFrames: droppedFrames,
-      heartRate: summary(\.heart),
+      heartRate: heartRate,
       breathingRate: summary(\.breathing),
       rmssd: SummaryValue(value: positive(beats.rmssd), coverage: beats.coverage, reason: beats.withheld?.rawValue),
       sdnn: SummaryValue(value: positive(beats.sdnn), coverage: beats.coverage, reason: beats.withheld?.rawValue),
@@ -157,6 +166,9 @@ public final class SignalEngine {
       timeToFirstReadingSeconds: firstValid.map { ticks[$0].time - first },
       longestDropoutSeconds: firstValid == nil ? duration : Double(longestDropout)
     )
+    summary.heartRateSource = source
+    summary.wholeSitting = whole.windows > 0 ? whole : nil
+    return summary
   }
 
   /// Median of the valid one-second readings, or the commonest reason there were too few.

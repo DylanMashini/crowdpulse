@@ -6,6 +6,11 @@ struct PowerSpectrum {
   var power: [Double]
   var binHz: Double
 
+  init(power: [Double], binHz: Double) {
+    self.power = power
+    self.binHz = binHz
+  }
+
   init(_ spectrum: Fourier.Spectrum) {
     let half = spectrum.real.count / 2
     power = (0...half).map { spectrum.real[$0] * spectrum.real[$0] + spectrum.imaginary[$0] * spectrum.imaginary[$0] }

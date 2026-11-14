@@ -92,6 +92,55 @@ func fieldFailurePattern(_ change: (inout SyntheticSitting) -> Void = { _ in }) 
   }
 }
 
+/// A negative control with no pulse in it: skin-coloured regions whose colour wanders, as
+/// light and a picture do, with white sensor noise on top. The wander is first-order
+/// autoregressive noise, one part shared by the three regions (the light) and one part each
+/// region's own. `memory` is how much of it carries over from one frame to the next,
+/// `percent` its size. With `steps` the regions also settle at a new brightness and redness
+/// eight times, as in `fieldFailurePattern`.
+func colouredNoiseControl(
+  seed: UInt64, frameRate: Double = 60, memory: Double, percent: Double, steps: Bool
+) -> [FrameRecord] {
+  var generator = SplitMix64(state: seed)
+  let bases = [
+    RegionColor(r: 182, g: 136, b: 118), RegionColor(r: 176, g: 128, b: 112),
+    RegionColor(r: 174, g: 126, b: 110),
+  ]
+  let count = Int(60 * frameRate)
+  let drive = (1 - memory * memory).squareRoot()
+  var shared = [Double](repeating: 0, count: 3)
+  var own = [Double](repeating: 0, count: 9)
+  var stepAt: [(at: Double, level: Double, red: Double)] = []
+  if steps {
+    for _ in 0..<8 {
+      stepAt.append(
+        (8 + 47 * generator.nextUnit(), 0.88 + 0.25 * generator.nextUnit(), 0.96 + 0.08 * generator.nextUnit()))
+    }
+  }
+  return (0..<count).map { index in
+    let elapsed = Double(index) / frameRate
+    for channel in 0..<3 { shared[channel] = memory * shared[channel] + drive * generator.nextGaussian() }
+    for series in 0..<9 { own[series] = memory * own[series] + drive * generator.nextGaussian() }
+    var level = 1.0
+    var red = 1.0
+    for step in stepAt where elapsed >= step.at {
+      level *= step.level
+      red *= step.red
+    }
+    var colours: [RegionColor] = []
+    for (region, base) in bases.enumerated() {
+      func channel(_ value: Double, _ index: Int) -> Double {
+        value * (1 + percent / 100 * (shared[index] + 0.7 * own[3 * region + index])) * level
+          + 0.3 * generator.nextGaussian()
+      }
+      colours.append(RegionColor(r: channel(base.r, 0) * red, g: channel(base.g, 1), b: channel(base.b, 2)))
+    }
+    return FrameRecord(
+      t: 1000 + elapsed, facePresent: true, forehead: colours[0], leftCheek: colours[1],
+      rightCheek: colours[2], exposure: .locked, droppedFrames: 0, faceTrackId: 1)
+  }
+}
+
 func rmssd(_ intervals: [Double]) -> Double {
   let differences = zip(intervals, intervals.dropFirst()).map { $1 - $0 }
   return (differences.reduce(0) { $0 + $1 * $1 } / Double(differences.count)).squareRoot()

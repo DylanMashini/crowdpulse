@@ -30,6 +30,13 @@ struct PulseAnalyzer {
     /// What the window held before the checks that can overrule it. Diagnostics only:
     /// nothing in the engine decides anything from it.
     var detail = Detail()
+    /// Power spectrum of the combined waveform from 0 Hz to the top of the pulse band,
+    /// scaled to sum to 1, and the same for each region on its own (nil for a region with
+    /// no signal). The whole-sitting estimate adds these up over the sitting. Nil when the
+    /// window held no signal.
+    var spectrum: [Double]?
+    var regionSpectra: [[Double]?] = []
+    var binHz = 0.0
   }
 
   struct Detail: Equatable {
@@ -209,15 +216,27 @@ struct PulseAnalyzer {
     let narrow = spectrum(of: combined, rate: rate)
     guard let strongest = narrow.strongestCandidate(search) else { return Outcome(peak: .flat, weights: weights) }
     var detail = Detail(strongest: strongest, candidateHz: strongest.hz, candidateQuality: strongest.quality)
-    guard !strongest.atEdge else {
-      return Outcome(peak: .bandEdge(quality: strongest.quality), weights: weights, detail: detail)
+    let top = min(narrow.power.count - 1, Int(((band.upperBound + PulseAnalyzer.transitionHz) / narrow.binHz).rounded(.up)))
+    func scaled(_ spectrum: PowerSpectrum) -> [Double]? {
+      let total = spectrum.power[1...top].reduce(0, +)
+      return total > 0 ? [0] + spectrum.power[1...top].map { $0 / total } : nil
     }
+    let fused = scaled(narrow)
+    let single = waveforms.map { waveform in
+      DSP.rootMeanSquare(waveform) > 0 ? scaled(self.spectrum(of: waveform, rate: rate)) : nil
+    }
+    func finished(_ peak: PeakOutcome) -> Outcome {
+      Outcome(
+        peak: peak, weights: weights, detail: detail, spectrum: fused, regionSpectra: single,
+        binHz: narrow.binHz)
+    }
+    guard !strongest.atEdge else { return finished(.bandEdge(quality: strongest.quality)) }
     let hz = strongest.hz
     let peak = PeakOutcome.peak(hz: hz, quality: strongest.quality)
 
     if isFlickerAlias(hz, frameRate: frameRate) {
       detail.flickerAlias = true
-      return Outcome(peak: .flicker, weights: weights, detail: detail)
+      return finished(.flicker)
     }
 
     // The same mix of regions with the band opened downwards far enough to see half of any
@@ -250,11 +269,11 @@ struct PulseAnalyzer {
     if case .peak = reported {
       detail.projectionYield = projectionYield(regions, weights: weights, at: reportedHz, rate: rate)
       if let yield = detail.projectionYield, yield < configuration.minimumProjectionYield {
-        return Outcome(peak: .illumination, weights: weights, detail: detail)
+        return finished(.illumination)
       }
       detail.recentQuality = recentQuality(combined, usable: usable, at: reportedHz, rate: rate)
     }
-    return Outcome(peak: reported, weights: weights, detail: detail)
+    return finished(reported)
   }
 
   /// Quality at `hz` in the newest `recentEvidenceSeconds` of the combined waveform. 0 when
