@@ -225,6 +225,14 @@ On the iOS simulator there is no camera, so the Swift module switches by itself 
 
 All routes are under `/api` on the Next.js server. Bodies are JSON (`Content-Type: application/json`) unless a row says otherwise. Schemas are in `packages/contracts/src`; the name in the table is the exported schema and type. Conventions for errors, pagination, time and units are in section 5.
 
+### Health
+
+| Method and path | Auth | Request | Response |
+|---|---|---|---|
+| `GET /api/health` | public | none | 200 `HealthResponse` `{ status: 'ok' }` when the server can open a new connection to its database and run a query on it within 3 seconds; 503 `{ status: 'unavailable' }` when it cannot. Never cached. |
+
+This is the load balancer's health check (`docs/DEPLOY.md`). It does not read a session, so it does not start the background jobs of section 6, and it opens its own connection rather than borrowing one from the pool, so it also fails when the database password the process was started with has stopped working.
+
 ### Authentication
 
 - **Web:** an httpOnly cookie named `tc_session` (`SESSION_COOKIE`), `SameSite=Lax`, `Path=/`, `Secure` when `APP_URL` is https, lifetime 7 days.

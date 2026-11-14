@@ -27,6 +27,7 @@ import {
   EnrolFaceResponse,
   ErrorResponse,
   FlagListResponse,
+  HealthResponse,
   FlagResponse,
   MatchFaceResponse,
   MeResponse,
@@ -109,6 +110,9 @@ async function until<T>(what: string, read: () => T | undefined | Promise<T | un
 
 const email = `smoke-${Date.now()}@example.test`;
 const password = "correct horse battery";
+
+assert.equal((await ok(HealthResponse, 200, "GET", routes.health)).status, "ok");
+done("the health route answers ok with no session");
 
 await refused(401, "unauthenticated", "GET", routes.worklist);
 await refused(401, "unauthenticated", "GET", routes.stream);
