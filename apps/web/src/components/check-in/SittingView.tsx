@@ -4,7 +4,7 @@ import type { Estimate, PatientRef, Sitting, StoredReading, SummaryValue } from 
 import Link from 'next/link';
 import { useMemo } from 'react';
 
-import { PatientIdentity, QualityMeter, Readout, ReferenceChart, buttonClass, type IconName, type ReadoutState } from '@/components/ds';
+import { PatientIdentity, QualityMeter, Readout, SittingChart, buttonClass, type IconName, type ReadoutState } from '@/components/ds';
 import { Panel } from '@/components/ui/Panel';
 import { clockTime, reasonText, secondsAgo } from '@/lib/format';
 import { provenanceOf } from '@/lib/mapping';
@@ -14,19 +14,11 @@ const STALE_AFTER_MS = 3000;
 /** And for this long: the value is taken off the screen. */
 const BLANK_AFTER_MS = 10_000;
 
-export interface ReferencePoint {
-  /** Server clock, in ms. */
-  t: number;
-  /** bpm. */
-  heartRate: number;
-}
-
 export interface SittingViewProps {
   sitting: Sitting;
   /** Who is sitting in front of the camera. */
   patient: PatientRef;
   readings: StoredReading[];
-  reference: ReferencePoint[];
   /** The server clock now, in ms. */
   serverNow: number;
 }
@@ -111,8 +103,8 @@ function series(points: Array<{ t: number; value: number | null }>, startedAt: n
   return out;
 }
 
-/** One sitting as it runs and after it ends: who it is, the two vitals, and estimate against reference. */
-export function SittingView({ sitting, patient, readings, reference, serverNow }: SittingViewProps) {
+/** One sitting as it runs and after it ends: who it is, the two vitals, and the heart rate second by second. */
+export function SittingView({ sitting, patient, readings, serverNow }: SittingViewProps) {
   const startedAt = new Date(sitting.startedAt).getTime();
   const running = sitting.endedAt === null;
   const endMs = sitting.endedAt ? new Date(sitting.endedAt).getTime() : serverNow;
@@ -124,21 +116,15 @@ export function SittingView({ sitting, patient, readings, reference, serverNow }
   const breathing =
     sitting.summary && sitting.endedAt ? summaryContent(sitting.summary.breathingRate, sitting.endedAt) : liveContent(readings, (r) => r.breathingRate, serverNow);
 
-  const chart = useMemo(() => {
-    const length = Math.min(900, elapsed + 1);
-    return {
-      estimate: series(
+  const heartRates = useMemo(
+    () =>
+      series(
         readings.map((reading) => ({ t: new Date(reading.t).getTime(), value: reading.heartRate.value })),
         startedAt,
-        length,
+        Math.min(900, elapsed + 1),
       ),
-      reference: series(
-        reference.map((point) => ({ t: point.t, value: point.heartRate })),
-        startedAt,
-        length,
-      ),
-    };
-  }, [readings, reference, startedAt, elapsed]);
+    [readings, startedAt, elapsed],
+  );
 
   const summary = sitting.summary;
 
@@ -182,7 +168,7 @@ export function SittingView({ sitting, patient, readings, reference, serverNow }
         ) : null}
       </Panel>
 
-      <ReferenceChart estimate={chart.estimate} reference={chart.reference} minSeconds={60} />
+      <SittingChart values={heartRates} minSeconds={60} />
     </div>
   );
 }

@@ -8,7 +8,7 @@ export { PrivacyNote } from './PrivacyNote';
 export { ProvenanceTag } from './ProvenanceTag';
 export { QualityMeter } from './QualityMeter';
 export { Readout, type ReadoutState } from './Readout';
-export { ReferenceChart } from './ReferenceChart';
+export { SittingChart } from './SittingChart';
 export { ScoreChip } from './ScoreChip';
 export { SideNav, type SideNavAccount, type SideNavGroup, type SideNavItem, type SideNavStation } from './SideNav';
 export { StatusBadge } from './StatusBadge';

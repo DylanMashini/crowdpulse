@@ -1,8 +1,8 @@
 'use client';
 
-import { PRIVACY_CAPTURE, type Device, type Patient, type PatientRef, type ReferenceReading } from '@triagecam/contracts';
+import { PRIVACY_CAPTURE, type Device, type Patient, type PatientRef } from '@triagecam/contracts';
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { useLive, useLiveEvents } from '@/components/app/live';
 import { PatientIdentity, PrivacyNote, ProvenanceTag, buttonClass, intakeSummary } from '@/components/ds';
@@ -10,30 +10,19 @@ import { IntakeForm } from '@/components/patients/IntakeForm';
 import { LiveStatus } from '@/components/ui/LiveStatus';
 import { PageHeader, Panel } from '@/components/ui/Panel';
 import { StateMessage } from '@/components/ui/StateMessage';
-import { api, errorMessage } from '@/lib/api';
+import { api } from '@/lib/api';
 import { useNow } from '@/lib/clock';
 import { cx } from '@/lib/cx';
 import { minutesAgo } from '@/lib/format';
-import type { StrapSample } from '@/lib/heart-rate-strap';
 import { useResource } from '@/lib/use-resource';
 
 import { LiveFeed, type FeedStats } from './LiveFeed';
-import { SittingView, type ReferencePoint } from './SittingView';
-import { StrapPanel, type PostingState } from './StrapPanel';
+import { SittingView } from './SittingView';
 import { useFollowedSitting } from './use-followed-sitting';
 
 /** A phone counts as online when the server heard from it within this long. */
 const ONLINE_WITHIN_MS = 2 * 60_000;
 const DEVICE_REFRESH_MS = 15_000;
-/** Strap samples kept in the browser for the chart: 15 minutes at one per second. */
-const STRAP_HISTORY = 900;
-const POST_BATCH = 120;
-
-interface QueuedReference {
-  sittingId: string;
-  reading: ReferenceReading;
-}
-
 export function CheckInScreen() {
   const { worklist } = useLive();
   const now = useNow();
@@ -168,77 +157,10 @@ function Station({ device, serverOffsetMs, serverNow, picker }: StationProps) {
   const [feed, setFeed] = useState<FeedStats | null>(null);
   const cameraLive = device.liveAt !== null;
 
-  const [samples, setSamples] = useState<StrapSample[]>([]);
-  const [posting, setPosting] = useState<PostingState>({ accepted: 0, error: null });
-  const [postedFor, setPostedFor] = useState<string | null>(null);
-  const queue = useRef<QueuedReference[]>([]);
-  const target = useRef<{ sittingId: string | null; offsetMs: number }>({ sittingId: null, offsetMs: 0 });
-
-  useEffect(() => {
-    target.current = { sittingId: running && sitting ? sitting.id : null, offsetMs: serverOffsetMs ?? 0 };
-  });
-
-  // The count on screen belongs to one sitting. A new sitting starts it again.
-  const sittingId = sitting?.id ?? null;
-  if (postedFor !== sittingId) {
-    setPostedFor(sittingId);
-    setPosting({ accepted: 0, error: null });
-  }
-
-  const onSample = useCallback((sample: StrapSample) => {
-    setSamples((previous) => [...previous.slice(1 - STRAP_HISTORY), sample]);
-    const { sittingId: id, offsetMs } = target.current;
-    if (!id) return;
-    queue.current.push({
-      sittingId: id,
-      reading: {
-        t: new Date(sample.receivedAt + offsetMs).toISOString(),
-        heartRate: sample.heartRate,
-        rrIntervalsMs: sample.rrIntervalsMs.slice(0, 32),
-        source: 'chest_strap',
-      },
-    });
-  }, []);
-
-  useEffect(() => {
-    let sending = false;
-    const timer = setInterval(() => {
-      const first = queue.current[0];
-      if (sending || !first) return;
-      const batch = queue.current.filter((item) => item.sittingId === first.sittingId).slice(0, POST_BATCH);
-      queue.current = queue.current.filter((item) => !batch.includes(item));
-      sending = true;
-      api
-        .postReference(first.sittingId, batch.map((item) => item.reading))
-        .then(
-          ({ accepted }) => setPosting((previous) => ({ accepted: previous.accepted + accepted, error: null })),
-          (error: unknown) => {
-            // Keep them: posting a reading twice is safe to retry, losing one is not.
-            queue.current = [...batch, ...queue.current];
-            setPosting((previous) => ({ ...previous, error: errorMessage(error) }));
-          },
-        )
-        .finally(() => {
-          sending = false;
-        });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const reference = useMemo<ReferencePoint[]>(() => {
-    const stored = followed.storedReference.flatMap((reading) =>
-      reading.heartRate == null ? [] : [{ t: new Date(reading.t).getTime(), heartRate: reading.heartRate }],
-    );
-    const local = samples.flatMap((sample) =>
-      sample.heartRate == null ? [] : [{ t: sample.receivedAt + (serverOffsetMs ?? 0), heartRate: sample.heartRate }],
-    );
-    return [...stored, ...local];
-  }, [followed.storedReference, samples, serverOffsetMs]);
-
   const newPatient = sitting?.kind === 'check_in';
 
   // Two columns on a wide screen. Below that the columns dissolve into one run, ordered so the
-  // picture comes first and the form right under it; the device list and the strap go last.
+  // picture comes first and the form right under it; the device list goes last.
   return (
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_400px]">
       <div className="flex min-w-0 flex-col gap-5 max-xl:contents">
@@ -284,7 +206,7 @@ function Station({ device, serverOffsetMs, serverNow, picker }: StationProps) {
               {followed.error.message}
             </StateMessage>
           ) : null}
-          {sitting && patientRef ? <SittingView sitting={sitting} patient={patientRef} readings={followed.readings} reference={reference} serverNow={serverNow} /> : null}
+          {sitting && patientRef ? <SittingView sitting={sitting} patient={patientRef} readings={followed.readings} serverNow={serverNow} /> : null}
         </div>
       </div>
 
@@ -327,10 +249,7 @@ function Station({ device, serverOffsetMs, serverNow, picker }: StationProps) {
             <StateMessage kind="loading" title="Opening the intake form" />
           )}
         </Panel>
-        <div className="flex min-w-0 flex-col gap-5 max-xl:order-4">
-          {picker}
-          <StrapPanel onSample={onSample} latest={samples.at(-1) ?? null} posting={posting} serverOffsetMs={serverOffsetMs} sittingRunning={running} />
-        </div>
+        <div className="min-w-0 max-xl:order-4">{picker}</div>
       </div>
     </div>
   );
