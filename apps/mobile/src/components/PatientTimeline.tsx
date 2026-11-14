@@ -1,4 +1,4 @@
-import { View } from 'react-native';
+import { View, useWindowDimensions } from 'react-native';
 
 import type { TimelineRow } from '@/lib/nurse/worklistFormat';
 import { hairline } from '@/theme';
@@ -7,8 +7,9 @@ import { ProvenanceTag } from './ProvenanceTag';
 import { ScoreChip } from './ScoreChip';
 import { StatusBadge } from './StatusBadge';
 import { useScopedTheme } from './ThemeScope';
-import { Text } from './Text';
+import { MAX_TEXT_SCALE, Text } from './Text';
 
+/** Room for "14:44" in the small readout face at the default text size. */
 const TIME_WIDTH = 44;
 const MARK = 8;
 
@@ -16,7 +17,11 @@ const MARK = 8;
 export function PatientTimeline({ rows }: { rows: TimelineRow[] }) {
   const theme = useScopedTheme();
   const { colors, space } = theme;
-  const line = theme.type.bodyStrong.lineHeight;
+  // The time column and the title's line grow with the text, so the time stays on one line and
+  // each mark stays level with its row at every size.
+  const scale = Math.min(Math.max(useWindowDimensions().fontScale, 1), MAX_TEXT_SCALE);
+  const line = Math.round(theme.type.bodyStrong.lineHeight * scale);
+  const timeWidth = Math.ceil(TIME_WIDTH * scale);
   return (
     <View accessibilityRole="list">
       {rows.map((row, index) => {
@@ -31,7 +36,14 @@ export function PatientTimeline({ rows }: { rows: TimelineRow[] }) {
         }[row.severity];
         return (
           <View key={row.key} style={{ flexDirection: 'row', gap: space.space3, paddingBottom: last ? 0 : space.space4 }}>
-            <Text style={[theme.type.readoutSm, { width: TIME_WIDTH, lineHeight: line, textAlign: 'right', color: colors.inkFaint }]}>
+            <Text
+              numberOfLines={1}
+              allowFontScaling={false}
+              style={[
+                theme.type.readoutSm,
+                { width: timeWidth, fontSize: theme.type.readoutSm.fontSize * scale, lineHeight: line, textAlign: 'right', color: colors.inkFaint },
+              ]}
+            >
               {row.time}
             </Text>
             <View style={{ width: MARK, alignItems: 'center' }}>
