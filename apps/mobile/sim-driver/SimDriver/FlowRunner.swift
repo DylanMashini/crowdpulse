@@ -338,25 +338,18 @@ final class FlowRunner: XCTestCase {
 
   // MARK: Output
 
-  /// The screen the way a person sees it: turned upright when the app is in landscape, where
-  /// the simulator's own picture stays in portrait.
+  /// The screen the way a person sees it. In landscape the simulator's picture stays in
+  /// portrait and only says which way up it is; drawing it applies that.
   private func screenshot() -> Data {
     let shot = XCUIScreen.main.screenshot()
-    let window = app.state == .runningForeground ? app.windows.firstMatch : nil
-    guard let window, window.exists, window.frame.width > window.frame.height,
-      shot.image.size.height > shot.image.size.width
-    else { return shot.pngRepresentation }
-    let source = shot.image
-    let size = CGSize(width: source.size.height, height: source.size.width)
-    let clockwise = XCUIDevice.shared.orientation == .landscapeLeft
+    let image = shot.image
+    guard image.imageOrientation != .up else { return shot.pngRepresentation }
     let format = UIGraphicsImageRendererFormat()
-    format.scale = source.scale
-    let turned = UIGraphicsImageRenderer(size: size, format: format).image { context in
-      context.cgContext.translateBy(x: size.width / 2, y: size.height / 2)
-      context.cgContext.rotate(by: clockwise ? .pi / 2 : -.pi / 2)
-      source.draw(in: CGRect(x: -source.size.width / 2, y: -source.size.height / 2, width: source.size.width, height: source.size.height))
+    format.scale = image.scale
+    let upright = UIGraphicsImageRenderer(size: image.size, format: format).image { _ in
+      image.draw(in: CGRect(origin: .zero, size: image.size))
     }
-    return turned.pngData() ?? shot.pngRepresentation
+    return upright.pngData() ?? shot.pngRepresentation
   }
 
   private func save(_ data: Data, as name: String) {
