@@ -423,7 +423,7 @@ Each event's `event:` field is the `type` and its `data:` is the whole `StreamEv
 | `patient_changed` | `{ patientNumber, patient, at }` | A patient was created, discharged, renamed or photographed, or any intake field was saved. `patient` is the new `PatientRef`. Refetch `GET /api/patients/:number` for the other fields. |
 | `live_changed` | `{ deviceId, live }` | A camera device started or stopped posting frames |
 
-The dashboard uses this stream. The nurse role of the mobile app polls `GET /api/worklist` every 5 seconds while it is on screen, and relies on push for the rest.
+The dashboard uses this stream, and so does the nurse role of the mobile app (`apps/mobile/src/lib/nurse/eventStream.ts`, over `expo/fetch` with the bearer token, because React Native's own `fetch` cannot read a body as it arrives). The phone ignores `reading` and `live_changed`, and on any other event refetches `GET /api/worklist` and the open flags. Underneath it polls both: every 20 seconds while the stream is open, every 5 seconds while it is not. The stream is closed while the app is in the background; push covers that.
 
 ## 5. Conventions
 
@@ -577,7 +577,7 @@ All times are `timestamptz` on the server clock. No table stores video. The only
 | Shadow | `shadow-overlay` only |
 | Type | One class per type style, setting family, size, line height, weight and tracking together: `type-title`, `type-heading`, `type-subheading`, `type-body`, `type-body-touch`, `type-body-strong`, `type-label`, `type-caption`, `type-readout-xl`, `type-readout-lg`, `type-readout-md`. Also `font-sans`, `font-mono`, `font-normal`, `font-medium`, `font-semibold`. |
 
-**Mobile** (`apps/mobile/src/theme`): `const theme = useTheme()` for the nurse role, `useTheme('dark')` for the camera role. `theme.colors.inkMuted`, `theme.space.space4`, `theme.radius.radiusLg`, `theme.size.controlTouch`, `theme.shadow.shadowOverlay` (a `boxShadow` string, for sheets and the push banner only), and `theme.type.readoutXl` and the other type styles, which are spread into a `Text` style and already carry the right font file for their weight. The six static TTFs are in `apps/mobile/assets/fonts` and are embedded by the `expo-font` config plugin, so there is nothing to load at runtime.
+**Mobile** (`apps/mobile/src/theme`): `const theme = useTheme()` for the nurse role, `useTheme('dark')` for the camera role. `theme.colors.inkMuted`, `theme.space.space4`, `theme.radius.radiusLg`, `theme.size.controlTouch`, `theme.shadow.shadowOverlay` (a `boxShadow` string, for sheets and the push banner only), and `theme.type.readoutXl` and the other type styles, which are spread into a `Text` style and already carry the right font file for their weight. The six static TTFs are in `apps/mobile/assets/fonts` and are embedded by the `expo-font` config plugin, so there is nothing to load at runtime. Screens take `Text` from `@/components/Text`, not from `react-native`: it follows the system text size up to 1.6 times (`MAX_TEXT_SCALE`), the point up to which every layout holds.
 
 The design-system README's line "No surface shows a face or a video frame" is overridden in two places: the dashboard's live view, and the camera phone's viewfinder, which shows the live picture under the framing template and the outlines (section 3, Preview view). Neither stores video.
 
