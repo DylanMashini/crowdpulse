@@ -259,7 +259,7 @@ function flagNumbers(flag: Flag): string {
   const change = (name: string, base: number | null, now: number | null, withUnit: (value: number) => string) =>
     base == null || now == null ? `${name} had no reading` : `${name} ${rate(base)} to ${withUnit(now)}`;
   const score = scoreAtCheckIn != null && scoreNow != null ? `, partial score ${scoreAtCheckIn} to ${scoreNow}` : '';
-  return `${change('Pulse', pulse.base, pulse.now, heartRate)}, ${change('breathing', breathing.base, breathing.now, breathsPerMin)}${score}, ${minutes(minutesSinceCheckIn)} after check-in`;
+  return `${change('Pulse', pulse.base, pulse.now, heartRate)}, ${change('breathing', breathing.base, breathing.now, breathsPerMin)}${score}, ${minutes(minutesSinceCheckIn)} after ${hasReCheckBaseline(flag.detail) ? 'the first reading' : 'check-in'}`;
 }
 
 /**
