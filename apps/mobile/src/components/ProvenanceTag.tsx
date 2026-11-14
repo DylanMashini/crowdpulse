@@ -1,5 +1,8 @@
 import { View } from 'react-native';
 
+import { weight } from '@/theme';
+
+import { StatusBadge } from './StatusBadge';
 import { useScopedTheme } from './ThemeScope';
 import { Text } from './Text';
 
@@ -13,33 +16,28 @@ const WORDS: Record<Kind, string> = {
   reference: 'Reference',
 };
 
-/** Says where a number came from. Square-cornered and outlined, so it is never read as a status. */
+/**
+ * Says where a number came from. Outlined, with no dot, so it is never read as a status.
+ * `live` is the exception: ice on its soft fill, with the lit dot of a camera that is reading.
+ */
 export function ProvenanceTag({ kind, label }: { kind: Kind; label?: string }) {
   const theme = useScopedTheme();
   const { colors } = theme;
-  const filled = kind === 'live' || kind === 'ai-draft';
+  if (kind === 'live') return <StatusBadge severity="live" label={label ?? WORDS.live} />;
   return (
     <View
       style={{
-        flexDirection: 'row',
-        alignItems: 'center',
         alignSelf: 'flex-start',
-        gap: 6,
-        height: 22,
+        justifyContent: 'center',
+        minHeight: 22,
+        paddingVertical: 2,
         paddingHorizontal: theme.space.space2,
         borderRadius: theme.radius.radiusSm,
         borderWidth: 1,
-        borderStyle: filled ? 'solid' : 'dashed',
-        borderColor: filled ? 'transparent' : colors.lineStrong,
-        backgroundColor: kind === 'live' ? colors.signalSoft : kind === 'ai-draft' ? colors.surfaceSunken : 'transparent',
+        borderColor: colors.lineStrong,
       }}
     >
-      {kind === 'live' ? (
-        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.signal }} />
-      ) : null}
-      <Text style={[theme.type.label, { color: kind === 'experimental' ? colors.inkMuted : colors.ink }]}>
-        {label ?? WORDS[kind]}
-      </Text>
+      <Text style={[theme.type.caption, { fontWeight: weight.medium, color: colors.inkMuted }]}>{label ?? WORDS[kind]}</Text>
     </View>
   );
 }

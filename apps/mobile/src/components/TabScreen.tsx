@@ -4,9 +4,11 @@ import { RefreshControl, ScrollView, View } from 'react-native';
 import { clockTime, sentences } from '@/lib/format';
 import { useNurse } from '@/lib/nurse/NurseProvider';
 import { type Connection, connectionText } from '@/lib/nurse/nurseFormat';
+import { weight } from '@/theme';
 
 import { Button } from './Button';
 import { Notice } from './Notice';
+import { ScreenTitle } from './Screen';
 import { useScopedTheme } from './ThemeScope';
 import { Text } from './Text';
 
@@ -44,34 +46,25 @@ export function TabScreen({ title, subtitle, onRefresh, children }: Props) {
   };
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: colors.surface }}
+      style={{ flex: 1, backgroundColor: colors.surface0 }}
       contentInsetAdjustmentBehavior="automatic"
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
-      refreshControl={
-        <RefreshControl
-          refreshing={pulling}
-          onRefresh={() => void pull()}
-          tintColor={colors.inkMuted}
-        />
-      }
+      indicatorStyle="white"
+      refreshControl={<RefreshControl refreshing={pulling} onRefresh={() => void pull()} tintColor={colors.inkMuted} />}
       contentContainerStyle={{
-        padding: space.space4,
-        paddingBottom: space.space6,
-        gap: space.space4,
+        paddingHorizontal: space.space4,
+        paddingTop: space.space4,
+        paddingBottom: space.space8,
+        gap: space.space6,
         width: '100%',
         maxWidth: 560,
         alignSelf: 'center',
       }}
     >
-      <View style={{ gap: space.space1 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: space.space2 }}>
-          <Text accessibilityRole="header" style={[theme.type.title, { color: colors.ink }]}>
-            {title}
-          </Text>
-          <ConnectionStatus connection={connection} />
-        </View>
-        {subtitle ? <Text style={[theme.type.bodyTouch, { color: colors.inkMuted }]}>{subtitle}</Text> : null}
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: space.space2 }}>
+        <ScreenTitle title={title} subtitle={subtitle} />
+        <ConnectionStatus connection={connection} />
       </View>
       {failure ? (
         <Notice
@@ -86,40 +79,54 @@ export function TabScreen({ title, subtitle, onRefresh, children }: Props) {
   );
 }
 
-/** Whether changes arrive by themselves. Told apart by the mark's shape as well as its colour. */
+/**
+ * Whether changes arrive by themselves. Told apart by the mark's shape as well as its colour:
+ * a lit dot while the stream is open, a ring while the lists are polled, a square when the
+ * server cannot be reached. It is chrome, so it never borrows a severity colour.
+ */
 export function ConnectionStatus({ connection }: { connection: Connection }) {
   const theme = useScopedTheme();
   const { colors } = theme;
   const mark = {
-    live: { backgroundColor: colors.signal, borderColor: colors.signal, borderRadius: 4 },
-    polling: { backgroundColor: 'transparent', borderColor: colors.lineStrong, borderRadius: 4 },
-    offline: { backgroundColor: colors.flag, borderColor: colors.flag, borderRadius: 1 },
+    live: { backgroundColor: colors.signal, borderColor: colors.signal, borderRadius: 3 },
+    polling: { backgroundColor: 'transparent', borderColor: colors.inkFaint, borderRadius: 3 },
+    offline: { backgroundColor: colors.ink, borderColor: colors.ink, borderRadius: 1 },
   }[connection];
   return (
     <View
       accessible
       accessibilityLabel={`Connection: ${connectionText(connection)}`}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 22 }}
+      // As tall as the title's line, so the two share a centre.
+      style={{ flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: theme.type.title.lineHeight }}
     >
-      <View style={[{ width: 8, height: 8, borderWidth: 1.5 }, mark]} />
-      <Text style={[theme.type.label, { color: connection === 'offline' ? colors.flag : colors.inkMuted }]}>
+      <View style={[{ width: 6, height: 6, borderWidth: 1 }, mark]} />
+      <Text
+        style={[
+          theme.type.caption,
+          { fontWeight: weight.medium, color: connection === 'offline' ? colors.ink : colors.inkMuted, fontVariant: ['tabular-nums'] },
+        ]}
+      >
         {connectionText(connection)}
       </Text>
     </View>
   );
 }
 
-/** A titled group inside a tab or the patient screen. `count` prints beside the heading. */
+/**
+ * A titled group inside a tab or the patient screen. The heading is a quiet label that sits
+ * closer to its own group than to the one above; `count` prints beside it.
+ */
 export function Section({ heading, count, children }: { heading: string; count?: number; children: ReactNode }) {
   const theme = useScopedTheme();
+  const { colors } = theme;
   return (
-    <View style={{ gap: theme.space.space3 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.space.space2 }}>
-        <Text accessibilityRole="header" style={[theme.type.heading, { color: theme.colors.ink }]}>
+    <View style={{ gap: theme.space.space2 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
+        <Text accessibilityRole="header" style={[theme.type.label, { color: colors.inkMuted }]}>
           {heading}
         </Text>
         {count != null ? (
-          <Text style={[theme.type.bodyTouch, { color: theme.colors.inkMuted, fontVariant: ['tabular-nums'] }]}>{count}</Text>
+          <Text style={[theme.type.label, { fontWeight: weight.normal, color: colors.inkFaint, fontVariant: ['tabular-nums'] }]}>{count}</Text>
         ) : null}
       </View>
       {children}
