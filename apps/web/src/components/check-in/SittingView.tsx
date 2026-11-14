@@ -104,7 +104,7 @@ function Vital({ label, icon, unit, kind, content, tag, live }: VitalProps) {
       >
         {live ? <LiveTrace kind={kind} rate={reading ? Number(content.value) : null} className="mt-3" /> : null}
       </Readout>
-      <QualityMeter value={content.coverage} label="Coverage, share of seconds with a reading" />
+      <QualityMeter value={content.coverage} hint="Share of seconds with a reading" />
     </div>
   );
 }
