@@ -172,6 +172,12 @@
 
 /* ---------------------------------------------------------------- hero */
 
+.lp-top,
+.lp-foot {
+  background: var(--surface);
+  color: var(--ink);
+}
+
 .lp-hero {
   background: var(--surface);
   color: var(--ink);
@@ -1400,6 +1406,6 @@
   font-size: 15px;
 }
 
-[id] {
+.lp [id] {
   scroll-margin-top: 16px;
 }
