@@ -336,7 +336,7 @@ Every waiting patient appears once, in rank order (`rank` 1 first). Clients do n
 | Method and path | Auth | Request | Response |
 |---|---|---|---|
 | `GET /api/flags` | staff | Query `FlagListQuery`: `status=open\|closed\|all` (default `open`), `patient=<number>`, `limit`, `cursor` | 200 `FlagListResponse` `{ items, nextCursor }`, newest first |
-| `POST /api/flags/:id/acknowledge` | staff | none | 200 `FlagResponse` `{ flag }`. Records who and when. Acknowledging twice changes nothing. Acknowledging does not close the flag. |
+| `POST /api/flags/:id/acknowledge` | staff | none | 200 `FlagResponse` `{ flag }`. Records who and when. Acknowledging twice changes nothing. Acknowledging does not close the flag. Acknowledging an open trend flag also acknowledges the patient's other open trend flag if nobody has yet (section 6, Flag rules); each one gets its own `flag_acknowledged` event. |
 
 `Flag`: `{ id, patientNumber, rule: 'score_rise' \| 'baseline_shift' \| 'overdue', openedAt, closedAt, detail, acknowledgedAt, acknowledgedBy, handoff }`. `detail` (`FlagDetail`) holds the numbers the flag was raised on: `{ pulse: Trend, breathing: Trend, scoreAtCheckIn, scoreNow, minutesSinceCheckIn, minutesSinceObserved }`. `acknowledgedBy` is the staff member's email (the first to acknowledge).
 
@@ -513,6 +513,14 @@ A flag is one episode: it opens once, may be acknowledged, and closes. At most o
 | `overdue` | No observation for longer than `recheckIntervalMin` (counted from patient creation if there has been none) | An observation arrives, or discharge |
 
 Trend rules run when a sitting is finished. Overdue is checked by the server on a timer of at most 30 seconds and whenever the worklist is computed.
+
+One deterioration usually opens both trend flags (`score_rise` and `baseline_shift`) in the same request, with the same numbers. They stay two flags, one per rule, but they are one alert to the nurse:
+
+- One push goes out (the cool-down below).
+- One acknowledgement covers both: acknowledging either open trend flag also acknowledges the other when it is open and unacknowledged. An `overdue` flag is acknowledged on its own.
+- A client that lists a patient's open flags may show trend flags with the same `detail` as one alert. The dashboard's patient page does.
+
+The patient timeline (`PatientDetailResponse.timeline`) is newest first. Entries at the same instant are in causal order: read oldest first, a sitting comes before the flags it closed and opened, and those before an acknowledgement. An acknowledgement that covered both trend flags is one `flag_acknowledged` entry, carrying the id of one of them.
 
 ### Tile state and rank
 
