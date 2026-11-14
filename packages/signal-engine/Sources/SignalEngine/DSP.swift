@@ -59,6 +59,18 @@ enum DSP {
     signal.isEmpty ? 0 : vDSP.rootMeanSquare(signal)
   }
 
+  /// Fourier coefficient of `signal` at one frequency.
+  static func component(of signal: [Double], at hz: Double, rate: Double) -> (re: Double, im: Double) {
+    let step = 2 * Double.pi * hz / rate
+    var re = 0.0
+    var im = 0.0
+    for (index, value) in signal.enumerated() {
+      re += value * cos(step * Double(index))
+      im -= value * sin(step * Double(index))
+    }
+    return (re, im)
+  }
+
   static func powerOfTwo(atLeast count: Int) -> Int {
     var size = 8
     while size < count { size *= 2 }

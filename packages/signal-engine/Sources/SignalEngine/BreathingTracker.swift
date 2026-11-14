@@ -110,7 +110,7 @@ struct BreathingTracker {
     }
 
     switch analyse(range) {
-    case .flat, .flicker, .drift:
+    case .flat, .flicker, .drift, .illumination:
       gate.push(nil)
       return .withheld(.none, .lowQuality)
     case .bandEdge(let quality):

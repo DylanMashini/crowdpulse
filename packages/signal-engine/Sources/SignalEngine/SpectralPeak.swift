@@ -49,11 +49,13 @@ enum PeakOutcome: Equatable {
   /// The peak was cut by the band-pass out of a spectrum that keeps rising below it: drift,
   /// not a rhythm.
   case drift
+  /// The peak is what the projection left of a change in the colour of the light.
+  case illumination
 
   var quality: Double {
     switch self {
     case .peak(_, let quality), .bandEdge(let quality): return quality
-    case .flat, .flicker, .drift: return 0
+    case .flat, .flicker, .drift, .illumination: return 0
     }
   }
 }

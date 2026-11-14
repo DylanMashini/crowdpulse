@@ -61,6 +61,10 @@ public struct EngineConfiguration: Codable, Sendable, Equatable {
   /// Half-width of the interval the quality score integrates around the reported
   /// frequency, as a multiple of the window's frequency resolution (1 / window length).
   public var qualityHalfWidthResolutions: Double = 1.25
+  /// Share of what the two colour-difference signals hold at the reported frequency that
+  /// must survive the projection's sum. Blood keeps nearly all of it; a change in the colour
+  /// of the light keeps a few per cent.
+  public var minimumProjectionYield: Double = 0.1
 
   // MARK: Motion
 

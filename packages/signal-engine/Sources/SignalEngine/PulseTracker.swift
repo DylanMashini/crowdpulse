@@ -233,7 +233,7 @@ struct PulseTracker {
       regions.map(\.series), rate: configuration.resampleRateHz, frameRate: frameRate(of: range))
 
     switch outcome.peak {
-    case .flat, .flicker, .drift:
+    case .flat, .flicker, .drift, .illumination:
       gate.push(nil)
       return .withheld(.none, .lowQuality)
     case .bandEdge(let quality):

@@ -163,16 +163,65 @@ struct PulseAnalyzer {
       of: hz, toleranceHz: search.qualityHalfWidthHz / 2, floor: configuration.subharmonicPowerFloor,
       noiseRatio: configuration.subharmonicNoiseRatio, band: open,
       lobeHalfWidthHz: PulseAnalyzer.mainLobeResolutions * rate / Double(count))
-    guard found else { return Outcome(peak: peak, weights: weights) }
 
-    // The peak is a second harmonic. The heart rate is half of it, scored like any other
-    // candidate: by its own share of the pulse band, or rejected when it lies outside.
-    let fundamental = hz / 2
-    let quality = narrow.quality(at: fundamental, halfWidthHz: search.qualityHalfWidthHz)
-    let inside = (search.rangeHz.lowerBound + search.edgeMarginHz)...(search.rangeHz.upperBound - search.edgeMarginHz)
-    return Outcome(
-      peak: inside.contains(fundamental) ? .peak(hz: fundamental, quality: quality) : .bandEdge(quality: quality),
-      weights: weights)
+    // A peak with a subharmonic is a second harmonic. The heart rate is half of it, scored
+    // like any other candidate: by its own share of the pulse band, or rejected when it lies
+    // outside.
+    var reported = peak
+    var reportedHz = hz
+    if found {
+      reportedHz = hz / 2
+      let quality = narrow.quality(at: reportedHz, halfWidthHz: search.qualityHalfWidthHz)
+      let inside = (search.rangeHz.lowerBound + search.edgeMarginHz)...(search.rangeHz.upperBound - search.edgeMarginHz)
+      reported = inside.contains(reportedHz) ? .peak(hz: reportedHz, quality: quality) : .bandEdge(quality: quality)
+    }
+    if case .peak = reported, cancels(regions, weights: weights, at: reportedHz, rate: rate) {
+      return Outcome(peak: .illumination, weights: weights)
+    }
+    return Outcome(peak: reported, weights: weights)
+  }
+
+  /// Whether what the regions carry at `hz` is something the projection cancels. The
+  /// projection adds two colour-difference signals, green minus blue and green plus blue
+  /// minus twice red, the second scaled so that the two are equally strong. Blood moves them
+  /// together and they add. A change in the colour of the light, such as a screen or a sign
+  /// cycling, moves them against each other and they cancel, but never completely: sensor
+  /// noise detunes the scale, and the remainder keeps the rhythm of the light and can pass
+  /// for a pulse on quality alone. So when less than `minimumProjectionYield` of what the
+  /// two signals hold at `hz` survives their sum, the peak is that remainder.
+  private func cancels(_ regions: [RegionSeries], weights: [Double], at hz: Double, rate: Double) -> Bool {
+    var kept = 0.0
+    var held = 0.0
+    for (region, weight) in zip(regions, weights) where weight > 0 {
+      let meanR = vDSP.mean(region.r)
+      let meanG = vDSP.mean(region.g)
+      let meanB = vDSP.mean(region.b)
+      guard meanR > 0, meanG > 0, meanB > 0 else { continue }
+      let count = region.r.count
+      var s1 = [Double](repeating: 0, count: count)
+      var s2 = [Double](repeating: 0, count: count)
+      for index in 0..<count {
+        let r = region.r[index] / meanR
+        let g = region.g[index] / meanG
+        let b = region.b[index] / meanB
+        s1[index] = g - b
+        s2[index] = g + b - 2 * r
+      }
+      s1 = DSP.detrend(s1)
+      s2 = DSP.detrend(s2)
+      let deviation2 = DSP.rootMeanSquare(s2)
+      guard deviation2 > 0 else { continue }
+      let alpha = DSP.rootMeanSquare(s1) / deviation2
+      let window = DSP.hann(count)
+      let a = DSP.component(of: vDSP.multiply(s1, window), at: hz, rate: rate)
+      let b = DSP.component(of: vDSP.multiply(s2, window), at: hz, rate: rate)
+      let sum = (re: a.re + alpha * b.re, im: a.im + alpha * b.im)
+      kept += weight * (sum.re * sum.re + sum.im * sum.im).squareRoot()
+      held += weight
+        * ((a.re * a.re + a.im * a.im).squareRoot() + alpha * (b.re * b.re + b.im * b.im).squareRoot())
+    }
+    guard held > 0 else { return false }
+    return kept / held < configuration.minimumProjectionYield
   }
 
   /// Lamps flicker at the mains frequency and twice it. A camera whose frame rate is not an
