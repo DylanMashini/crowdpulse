@@ -27,6 +27,25 @@ struct PulseAnalyzer {
     var peak: PeakOutcome
     /// Weight each region had in the combined signal; they sum to 1 when any region is usable.
     var weights: [Double]
+    /// What the window held before the checks that can overrule it. Diagnostics only:
+    /// nothing in the engine decides anything from it.
+    var detail = Detail()
+  }
+
+  struct Detail: Equatable {
+    /// The strongest peak of the combined signal. Nil when the pulse band holds no power.
+    var strongest: PeakCandidate?
+    /// What the window would report if nothing refused it: the strongest peak, or half of
+    /// it when it was taken for a second harmonic.
+    var candidateHz: Double?
+    var candidateQuality: Double?
+    /// The strongest peak is where lamp flicker would appear at this frame rate.
+    var flickerAlias = false
+    /// The strongest peak was taken for a second harmonic.
+    var halved = false
+    /// Share of what the colour-difference signals hold at the candidate that survives the
+    /// projection. Nil when the check did not run.
+    var projectionYield: Double?
   }
 
   /// POS (plane orthogonal to skin) projection with overlap-add. Each window is normalised
@@ -145,11 +164,17 @@ struct PulseAnalyzer {
     let combined = mix(waveforms, scales: scales)
     guard DSP.rootMeanSquare(combined) > 0 else { return Outcome(peak: .flat, weights: weights) }
     let narrow = spectrum(of: combined, rate: rate)
-    let peak = narrow.strongestPeak(search)
-    guard case .peak(let hz, _) = peak else { return Outcome(peak: peak, weights: weights) }
+    guard let strongest = narrow.strongestCandidate(search) else { return Outcome(peak: .flat, weights: weights) }
+    var detail = Detail(strongest: strongest, candidateHz: strongest.hz, candidateQuality: strongest.quality)
+    guard !strongest.atEdge else {
+      return Outcome(peak: .bandEdge(quality: strongest.quality), weights: weights, detail: detail)
+    }
+    let hz = strongest.hz
+    let peak = PeakOutcome.peak(hz: hz, quality: strongest.quality)
 
     if isFlickerAlias(hz, frameRate: frameRate) {
-      return Outcome(peak: .flicker, weights: weights)
+      detail.flickerAlias = true
+      return Outcome(peak: .flicker, weights: weights, detail: detail)
     }
 
     // The same mix of regions with the band opened downwards far enough to see half of any
@@ -174,11 +199,17 @@ struct PulseAnalyzer {
       let quality = narrow.quality(at: reportedHz, halfWidthHz: search.qualityHalfWidthHz)
       let inside = (search.rangeHz.lowerBound + search.edgeMarginHz)...(search.rangeHz.upperBound - search.edgeMarginHz)
       reported = inside.contains(reportedHz) ? .peak(hz: reportedHz, quality: quality) : .bandEdge(quality: quality)
+      detail.halved = true
+      detail.candidateHz = reportedHz
+      detail.candidateQuality = quality
     }
-    if case .peak = reported, cancels(regions, weights: weights, at: reportedHz, rate: rate) {
-      return Outcome(peak: .illumination, weights: weights)
+    if case .peak = reported {
+      detail.projectionYield = projectionYield(regions, weights: weights, at: reportedHz, rate: rate)
+      if let yield = detail.projectionYield, yield < configuration.minimumProjectionYield {
+        return Outcome(peak: .illumination, weights: weights, detail: detail)
+      }
     }
-    return Outcome(peak: reported, weights: weights)
+    return Outcome(peak: reported, weights: weights, detail: detail)
   }
 
   /// Whether what the regions carry at `hz` is something the projection cancels. The
@@ -189,7 +220,9 @@ struct PulseAnalyzer {
   /// noise detunes the scale, and the remainder keeps the rhythm of the light and can pass
   /// for a pulse on quality alone. So when less than `minimumProjectionYield` of what the
   /// two signals hold at `hz` survives their sum, the peak is that remainder.
-  private func cancels(_ regions: [RegionSeries], weights: [Double], at hz: Double, rate: Double) -> Bool {
+  ///
+  /// Returns the share that survives, or nil when the regions hold nothing at `hz`.
+  private func projectionYield(_ regions: [RegionSeries], weights: [Double], at hz: Double, rate: Double) -> Double? {
     var kept = 0.0
     var held = 0.0
     for (region, weight) in zip(regions, weights) where weight > 0 {
@@ -220,8 +253,8 @@ struct PulseAnalyzer {
       held += weight
         * ((a.re * a.re + a.im * a.im).squareRoot() + alpha * (b.re * b.re + b.im * b.im).squareRoot())
     }
-    guard held > 0 else { return false }
-    return kept / held < configuration.minimumProjectionYield
+    guard held > 0 else { return nil }
+    return kept / held
   }
 
   /// Lamps flicker at the mains frequency and twice it. A camera whose frame rate is not an

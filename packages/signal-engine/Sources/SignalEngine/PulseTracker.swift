@@ -38,6 +38,17 @@ struct AgreementGate {
     return high - low <= tolerance
   }
 
+  /// How many of the windows held produced a rate. For diagnostics.
+  var passing: Int { recent.compactMap { $0 }.count }
+
+  /// Highest minus lowest rate when every one of the `required` windows produced one. For
+  /// diagnostics.
+  var spread: Double? {
+    let rates = recent.compactMap { $0 }
+    guard rates.count == required, let low = rates.min(), let high = rates.max() else { return nil }
+    return high - low
+  }
+
   mutating func reset() {
     recent.removeAll()
   }
@@ -51,8 +62,18 @@ struct PulseHistory {
   /// Nine series: region (forehead, left cheek, right cheek) times channel (r, g, b).
   private(set) var channels = [[Double]](repeating: [], count: 3 * PulseHistory.regionCount)
   private(set) var motion: [Bool] = []
+  /// Which of the two motion checks flagged each frame. Read by diagnostics only.
+  private(set) var brightnessMotion: [Bool] = []
+  private(set) var chestMotion: [Bool] = []
 
   mutating func append(time: Double, frame: FrameRecord, motion inMotion: Bool) {
+    append(time: time, frame: frame, brightnessMotion: inMotion, chestMotion: false)
+  }
+
+  mutating func append(time: Double, frame: FrameRecord, brightnessMotion: Bool, chestMotion: Bool) {
+    let inMotion = brightnessMotion || chestMotion
+    self.brightnessMotion.append(brightnessMotion)
+    self.chestMotion.append(chestMotion)
     times.append(time)
     for (region, colour) in [frame.forehead, frame.leftCheek, frame.rightCheek].enumerated() {
       channels[3 * region].append(colour?.r ?? .nan)
@@ -78,6 +99,8 @@ struct PulseHistory {
     guard count > 0 else { return }
     times.removeFirst(count)
     motion.removeFirst(count)
+    brightnessMotion.removeFirst(count)
+    chestMotion.removeFirst(count)
     for series in channels.indices { channels[series].removeFirst(count) }
   }
 
@@ -130,6 +153,11 @@ struct PulseTracker {
   private var gate: AgreementGate
   private var acceptedSinceReset = false
 
+  /// When true, every `tick` and `missedTick` leaves a `lastDiagnostic`, and a window that a
+  /// check refuses before the analysis is analysed all the same, for the diagnostic only.
+  var collectsDiagnostics = false
+  private(set) var lastDiagnostic: PulseDiagnostic?
+
   init(configuration: EngineConfiguration, fourier: Fourier) {
     self.configuration = configuration
     analyzer = PulseAnalyzer(configuration: configuration, fourier: fourier)
@@ -164,18 +192,19 @@ struct PulseTracker {
     if segmentStart == nil { segmentStart = frame.t }
 
     let brightness = regions.reduce(0) { $0 + $1.r + $1.g + $1.b } / Double(regions.count)
-    var inMotion = false
+    var brightnessMoving = false
     if let baseline = brightnessBaseline, let interval, baseline > 0 {
-      inMotion = abs(brightness - baseline) / baseline > configuration.motionColourDeviation
+      brightnessMoving = abs(brightness - baseline) / baseline > configuration.motionColourDeviation
       let blend = min(1, interval / configuration.motionBaselineSeconds)
       brightnessBaseline = baseline + blend * (brightness - baseline)
     } else {
       brightnessBaseline = brightness
     }
+    var chestMoving = false
     if let chest = frame.chestMotion, let interval, abs(chest) / interval > configuration.motionChestSpeed {
-      inMotion = true
+      chestMoving = true
     }
-    history.append(time: frame.t, frame: frame, motion: inMotion)
+    history.append(time: frame.t, frame: frame, brightnessMotion: brightnessMoving, chestMotion: chestMoving)
 
     if frame.t - history.times[0] > 2 * configuration.maximumHistorySeconds {
       history.removeFrames(before: frame.t - configuration.maximumHistorySeconds)
@@ -194,14 +223,43 @@ struct PulseTracker {
   /// The second passed with no frame.
   mutating func missedTick() {
     gate.push(nil)
+    if collectsDiagnostics {
+      var diagnostic = PulseDiagnostic()
+      diagnostic.gate = .noFrames
+      lastDiagnostic = diagnostic
+    }
   }
 
   /// Analyses the window that ends at the newest frame. Called once per second.
   mutating func tick(at now: Double) -> TickEstimate {
+    var diagnostic = PulseDiagnostic()
+    let estimate = tick(at: now, diagnostic: &diagnostic)
+    if collectsDiagnostics {
+      diagnostic.state = estimate.state
+      diagnostic.reason = estimate.reason
+      diagnostic.value = estimate.value
+      diagnostic.quality = estimate.quality
+      diagnostic.passingWindows = gate.passing
+      diagnostic.agreementSpreadBpm = gate.spread
+      lastDiagnostic = diagnostic
+    }
+    return estimate
+  }
+
+  /// `tick(at:)` itself. What it writes to `diagnostic` never feeds back into the estimate
+  /// or into the tracker's state.
+  private mutating func tick(at now: Double, diagnostic: inout PulseDiagnostic) -> TickEstimate {
     if let blocked {
+      diagnostic.gate = blocked == .exposureAdjusting ? .exposureAdjusting : .noFace
       return .withheld(.none, blocked)
     }
     guard let segmentStart, now - segmentStart >= configuration.heartRateMinimumWindowSeconds else {
+      diagnostic.gate = .warmingUp
+      if collectsDiagnostics, let segmentStart {
+        describeRefused(
+          history.index(atOrAfter: segmentStart)..<history.times.count,
+          windowSeconds: now - segmentStart, in: &diagnostic)
+      }
       return .withheld(.settling, warmUpReason)
     }
     warmUpReason = .warmingUp
@@ -217,30 +275,44 @@ struct PulseTracker {
       windowSeconds = now - history.times[afterGap]
       if windowSeconds < configuration.heartRateMinimumWindowSeconds {
         gate.push(nil)
+        diagnostic.gate = .recentGap
+        if collectsDiagnostics { describeRefused(range, windowSeconds: windowSeconds, in: &diagnostic) }
         return .withheld(.none, .gaps)
       }
     }
     if let rejection = rejection(of: range, windowSeconds: windowSeconds) {
       gate.push(nil)
+      diagnostic.gate = rejection == .motion ? .motion : .tooFewSamples
+      if collectsDiagnostics { describeRefused(range, windowSeconds: windowSeconds, in: &diagnostic) }
       return .withheld(.none, rejection)
     }
+    if collectsDiagnostics { measure(range, windowSeconds: windowSeconds, in: &diagnostic) }
     let regions = history.regions(in: range, rate: configuration.resampleRateHz)
     guard !regions.isEmpty else {
       gate.push(nil)
+      diagnostic.gate = .incompleteRegions
       return .withheld(.none, .gaps)
     }
     let outcome = analyzer.analyse(
       regions.map(\.series), rate: configuration.resampleRateHz, frameRate: frameRate(of: range))
+    diagnostic.note(outcome.detail)
 
     switch outcome.peak {
     case .flat, .flicker, .drift, .illumination:
       gate.push(nil)
+      switch outcome.peak {
+      case .flicker: diagnostic.gate = .flicker
+      case .illumination: diagnostic.gate = .illumination
+      default: diagnostic.gate = .flat
+      }
       return .withheld(.none, .lowQuality)
     case .bandEdge(let quality):
       gate.push(nil)
+      diagnostic.gate = .bandEdge
       return .withheld(.none, .bandEdge, quality: quality)
     case .peak(_, let quality) where quality < configuration.qualityThreshold:
       gate.push(nil)
+      diagnostic.gate = .quality
       return .withheld(.none, .lowQuality, quality: quality)
     case .peak(let hz, let quality):
       // The value shown is this window's own rate. Earlier windows only vouch for it; they
@@ -248,6 +320,7 @@ struct PulseTracker {
       let bpm = hz * 60
       gate.push(bpm)
       guard gate.agreed else {
+        diagnostic.gate = .agreement
         return .withheld(acceptedSinceReset ? .none : .settling, .awaitingAgreement, quality: quality)
       }
       acceptedSinceReset = true
@@ -273,6 +346,37 @@ struct PulseTracker {
     let offGrid = zip(intervals, slots).map { $0 / period - $1 }
     guard DSP.rootMeanSquare(offGrid) <= PulseTracker.maximumGridDeviation else { return nil }
     return 1 / period
+  }
+
+  // MARK: Diagnostics
+
+  /// The numbers the sample and motion checks compare with their thresholds.
+  private func measure(_ range: Range<Int>, windowSeconds: Double, in diagnostic: inout PulseDiagnostic) {
+    diagnostic.windowSeconds = windowSeconds
+    diagnostic.frames = range.count
+    guard range.count >= 2, windowSeconds > 0 else { return }
+    let times = history.times
+    if let typical = DSP.median(range.dropFirst().map({ times[$0] - times[$0 - 1] })), typical > 0 {
+      diagnostic.sampleShare = Double(range.count) / (windowSeconds / typical)
+    }
+    diagnostic.framesPerSecond = Double(range.count) / windowSeconds
+    func share(_ flags: [Bool]) -> Double {
+      Double(flags[range].reduce(0) { $0 + ($1 ? 1 : 0) }) / Double(range.count)
+    }
+    diagnostic.motionShare = share(history.motion)
+    diagnostic.brightnessMotionShare = share(history.brightnessMotion)
+    diagnostic.chestMotionShare = share(history.chestMotion)
+  }
+
+  /// For a window a check refused before the analysis: its measurements, and the analysis
+  /// it was denied, so that the candidate it held can be compared with a reference.
+  private func describeRefused(_ range: Range<Int>, windowSeconds: Double, in diagnostic: inout PulseDiagnostic) {
+    measure(range, windowSeconds: windowSeconds, in: &diagnostic)
+    let regions = history.regions(in: range, rate: configuration.resampleRateHz)
+    guard !regions.isEmpty else { return }
+    let outcome = analyzer.analyse(
+      regions.map(\.series), rate: configuration.resampleRateHz, frameRate: frameRate(of: range))
+    diagnostic.note(outcome.detail)
   }
 
   /// Checks that look at every frame of the window, not only the newest ones.

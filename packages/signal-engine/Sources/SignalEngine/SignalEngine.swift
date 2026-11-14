@@ -26,6 +26,16 @@ public final class SignalEngine {
   private var frameCount = 0
   private var droppedFrames = 0
 
+  /// Set before the first frame to keep a `PulseDiagnostic` for every one-second heart-rate
+  /// reading. For tuning and field debugging: readings and the summary are the same with it
+  /// on or off, and it costs one more analysis for each window a check refuses early.
+  public var collectsDiagnostics = false {
+    didSet { pulse.collectsDiagnostics = collectsDiagnostics }
+  }
+  /// One entry per whole second since the first frame, in time order. Empty unless
+  /// `collectsDiagnostics` is set.
+  public private(set) var diagnostics: [PulseDiagnostic] = []
+
   public init(configuration: EngineConfiguration = .default) {
     self.configuration = configuration
     pulse = PulseTracker(configuration: configuration, fourier: fourier)
@@ -56,6 +66,14 @@ public final class SignalEngine {
         breathing.missedTick()
         let silent = TickEstimate.withheld(.stale, .noFrames)
         ticks.append(Tick(time: time, heart: silent, breathing: silent))
+      }
+      if collectsDiagnostics, var diagnostic = pulse.lastDiagnostic, let heart = ticks.last?.heart {
+        diagnostic.elapsed = time - first
+        diagnostic.state = heart.state
+        diagnostic.reason = heart.reason
+        diagnostic.value = heart.value
+        diagnostic.quality = heart.quality
+        diagnostics.append(diagnostic)
       }
     }
   }
@@ -161,8 +179,10 @@ public final class SignalEngine {
   /// Discards all history, as if newly created.
   public func reset() {
     pulse = PulseTracker(configuration: configuration, fourier: fourier)
+    pulse.collectsDiagnostics = collectsDiagnostics
     breathing = BreathingTracker(configuration: configuration, fourier: fourier)
     ticks.removeAll()
+    diagnostics.removeAll()
     firstFrameTime = nil
     lastFrameTime = nil
     frameCount = 0
