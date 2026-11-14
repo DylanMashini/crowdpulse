@@ -3,11 +3,12 @@ import { and, desc, eq } from "drizzle-orm";
 
 import { db, schema } from "../db/client.ts";
 import { ApiError } from "./http.ts";
-import { liveAt } from "./live.ts";
+import { cameraState, liveAt } from "./live.ts";
 import type { DeviceRow } from "./serialize.ts";
 import { toDevice } from "./serialize.ts";
 
-const wire = (row: DeviceRow): Device => toDevice(row, row.role === "camera" ? liveAt(row.id) : null);
+const wire = (row: DeviceRow): Device =>
+  row.role === "camera" ? toDevice(row, liveAt(row.id), cameraState(row.id)) : toDevice(row, null);
 
 /** Creates a device, or updates the caller's own device when `id` is given. */
 export async function registerDevice(userId: string, request: RegisterDeviceRequest): Promise<Device> {
