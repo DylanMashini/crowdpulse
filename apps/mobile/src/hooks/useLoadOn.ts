@@ -10,11 +10,13 @@ type Options = {
 /**
  * Runs `task` when the screen mounts and again whenever `key` changes: screens pass the nurse
  * provider's `revision`, which goes up each time the server reports a change. A run that is
- * still in the air is not overlapped by the next one.
+ * still in the air is not overlapped: the task runs once more when it lands, so a change that
+ * arrived in the meantime is not missed.
  */
 export function useLoadOn(task: () => Promise<void>, key: unknown, { enabled = true, everyMs }: Options = {}): void {
   const taskRef = useRef(task);
   const running = useRef(false);
+  const again = useRef(false);
   useEffect(() => {
     taskRef.current = task;
   }, [task]);
@@ -22,10 +24,16 @@ export function useLoadOn(task: () => Promise<void>, key: unknown, { enabled = t
   useEffect(() => {
     if (!enabled) return;
     const run = async () => {
-      if (running.current) return;
+      if (running.current) {
+        again.current = true;
+        return;
+      }
       running.current = true;
       try {
-        await taskRef.current();
+        do {
+          again.current = false;
+          await taskRef.current();
+        } while (again.current);
       } finally {
         running.current = false;
       }
