@@ -502,6 +502,11 @@ struct PulseTracker {
       gate.push(nil)
       diagnostic.gate = .quality
       return .withheld(.none, .lowQuality, quality: quality)
+    case .peak(_, let quality)
+    where (outcome.detail.recentQuality ?? 1) < configuration.minimumRecentQuality:
+      gate.push(nil)
+      diagnostic.gate = .quality
+      return .withheld(.none, .lowQuality, quality: quality)
     case .peak(let hz, let quality):
       // The value shown is this window's own rate. Earlier windows only vouch for it; they
       // are never averaged in, so the reading cannot lag behind a rate that has moved.

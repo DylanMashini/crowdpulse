@@ -65,7 +65,10 @@ private let search = PulseAnalyzer(configuration: .default, fourier: Fourier()).
     #expect(strict.heartReasons(in: 12...59).isSubset(of: [.lowQuality, .awaitingAgreement]))
     #expect(strict.summary.heartRate.reason == EstimateReason.lowQuality.rawValue)
 
-    let loose = replay(faint) { $0.qualityThreshold = 0.2 }
+    let loose = replay(faint) {
+      $0.qualityThreshold = 0.2
+      $0.minimumRecentQuality = 0
+    }
     #expect(loose.heartRates.count >= 10)
   }
 

@@ -36,7 +36,8 @@ public enum PulseGate: String, Codable, Sendable, CaseIterable {
   /// Under `minimumProjectionYield` of the colour signal at the peak survives the
   /// projection. Reason `low_quality`.
   case illumination
-  /// Quality at the peak is under `qualityThreshold`. Reason `low_quality`.
+  /// Quality at the peak is under `qualityThreshold`, or under `minimumRecentQuality` in
+  /// the newest seconds of the window. Reason `low_quality`.
   case quality
   /// The last `agreeingWindows` windows did not all pass, or their rates differ by more
   /// than `agreementToleranceBpm`. Reason `awaiting_agreement`.
@@ -93,6 +94,9 @@ public struct PulseDiagnostic: Codable, Sendable, Equatable {
   /// Share of the colour signal at the candidate that survives the projection
   /// (`minimumProjectionYield`). Nil when the check did not run.
   public var projectionYield: Double?
+  /// Quality at the candidate in the newest `recentEvidenceSeconds` of the window alone
+  /// (`minimumRecentQuality`). Nil when the check did not run.
+  public var recentQuality: Double?
   /// How many of the last `agreeingWindows` windows passed every check before agreement,
   /// this one included.
   public var passingWindows: Int?
@@ -114,5 +118,6 @@ extension PulseDiagnostic {
     halved = detail.halved
     flickerAlias = detail.flickerAlias
     projectionYield = detail.projectionYield
+    recentQuality = detail.recentQuality
   }
 }

@@ -602,8 +602,27 @@ func qaScene(_ change: (inout QAScene) -> Void) -> QAScene {
     }
     let r = QAStats(result: SittingReplay.run(frames))
     print(r.line("hand cover 30-45 with face reported", truth: { _ in 72 }))
-    let during = r.result.readings.filter { $0.elapsed >= 32 && $0.elapsed < 45 }
+    // A window reaches ten seconds back, so the face's rate outlives the face until the
+    // newest four seconds stop holding it (`recentEvidenceSeconds`). This used to be two
+    // seconds, but only because the step in brightness was refused as motion; without a
+    // step the rate stayed for five to seven (the next test).
+    let during = r.result.readings.filter { $0.elapsed >= 34 && $0.elapsed < 45 }
     #expect(during.allSatisfy { $0.heartRate.value == nil })
+    #expect(r.hr.allSatisfy { abs($0.1 - 72) <= 2 })
+  }
+
+  @Test func thePulseLeavesThePictureWithoutAnyStep() {
+    // The same skin colour and brightness, the pulse simply gone: nothing for a motion or
+    // brightness check to see. The newest seconds of each window have to hold the rhythm.
+    for seed in [7, 8, 9] as [UInt64] {
+      let person = qaScene { $0.seed = seed }.frames()
+      let empty = qaScene { $0.seed = seed; $0.pulseAmp = 0 }.frames()
+      let frames = zip(person, empty).map { $0.t - 5000 < 30 ? $0 : $1 }
+      let r = QAStats(result: SittingReplay.run(frames))
+      print(r.line("pulse gone at 30, no step, seed \(seed)", truth: { _ in 72 }))
+      #expect(r.result.readings.filter { $0.elapsed >= 34 }.allSatisfy { $0.heartRate.value == nil })
+      #expect(r.hr.allSatisfy { abs($0.1 - 72) <= 2 })
+    }
   }
 }
 

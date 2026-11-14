@@ -46,6 +46,10 @@ struct PulseAnalyzer {
     /// Share of what the colour-difference signals hold at the candidate that survives the
     /// projection. Nil when the check did not run.
     var projectionYield: Double?
+    /// Quality at the candidate in the newest `recentEvidenceSeconds` of the window alone.
+    /// Nil when there is no candidate to report or the window is too short to have a
+    /// newest part.
+    var recentQuality: Double?
   }
 
   /// POS (plane orthogonal to skin) projection with overlap-add. Each window is normalised
@@ -248,8 +252,21 @@ struct PulseAnalyzer {
       if let yield = detail.projectionYield, yield < configuration.minimumProjectionYield {
         return Outcome(peak: .illumination, weights: weights, detail: detail)
       }
+      detail.recentQuality = recentQuality(combined, usable: usable, at: reportedHz, rate: rate)
     }
     return Outcome(peak: reported, weights: weights, detail: detail)
+  }
+
+  /// Quality at `hz` in the newest `recentEvidenceSeconds` of the combined waveform. 0 when
+  /// more than half of them were cut: what cannot be seen does not vouch for the rate.
+  private func recentQuality(_ combined: [Double], usable: [Bool]?, at hz: Double, rate: Double) -> Double? {
+    let tail = Int((configuration.recentEvidenceSeconds * rate).rounded())
+    guard tail > 1, 2 * combined.count >= 3 * tail else { return nil }
+    if let usable, 2 * usable.suffix(tail).reduce(0, { $0 + ($1 ? 1 : 0) }) < tail { return 0 }
+    let newest = Array(combined.suffix(tail))
+    guard DSP.rootMeanSquare(newest) > 0 else { return 0 }
+    return spectrum(of: newest, rate: rate).quality(
+      at: hz, halfWidthHz: configuration.qualityHalfWidthResolutions * rate / Double(tail))
   }
 
   /// Whether what the regions carry at `hz` is something the projection cancels. The

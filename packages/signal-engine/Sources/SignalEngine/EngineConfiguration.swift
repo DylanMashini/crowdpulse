@@ -66,6 +66,14 @@ public struct EngineConfiguration: Codable, Sendable, Equatable {
   /// of the light keeps a few per cent.
   public var minimumProjectionYield: Double = 0.1
 
+  /// The newest part of a window, this many seconds, must hold the reported rhythm by
+  /// itself. A window is up to ten seconds long, and without this a rate could stay on
+  /// screen for seconds after the pulse left the picture (a hand over the face).
+  public var recentEvidenceSeconds: Double = 4
+  /// Quality at the reported frequency that those newest seconds need. They are short, so
+  /// their frequency resolution is coarse and noise alone scores about 0.27.
+  public var minimumRecentQuality: Double = 0.4
+
   // MARK: Motion
 
   /// The colour of a skin region is compared over two neighbouring stretches of this length,
