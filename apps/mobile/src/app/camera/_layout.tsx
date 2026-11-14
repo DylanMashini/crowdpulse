@@ -1,16 +1,14 @@
 import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 
 import { ThemeScope } from '@/components/ThemeScope';
 import { useTheme } from '@/theme';
 
-/** The camera role is always dark, whatever the device setting. */
+/** The camera role: check-in, face match, the sitting and its summary. */
 export default function CameraLayout() {
-  const theme = useTheme('dark');
+  const theme = useTheme();
   return (
     <ThemeScope name="dark">
-      <StatusBar style="light" />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.surface } }}>
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.surface0 } }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="match" />
         <Stack.Screen name="sitting" options={{ gestureEnabled: false }} />

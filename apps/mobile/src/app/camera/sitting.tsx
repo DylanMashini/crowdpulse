@@ -1,12 +1,14 @@
 import { useKeepAwake } from 'expo-keep-awake';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect } from 'react';
+import type { Reading } from '@triagecam/contracts';
+import { useCallback, useEffect, useState } from 'react';
 import { Alert, Linking, ScrollView, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import TriageCapture from 'triage-capture';
 
 import { Button } from '@/components/Button';
 import { CaptureStatus } from '@/components/CaptureStatus';
+import { LiveTrace } from '@/components/LiveTrace';
 import { LiveViewfinder } from '@/components/LiveViewfinder';
 import { Notice } from '@/components/Notice';
 import { ProvenanceTag } from '@/components/ProvenanceTag';
@@ -17,8 +19,10 @@ import { useScopedTheme } from '@/components/ThemeScope';
 import { PatientIdentity } from '@/components/PatientIdentity';
 import { usePatientRef } from '@/hooks/usePatientRef';
 import { readoutFor } from '@/lib/capture/readingFormat';
+import { type Trace, pushTrace } from '@/lib/capture/trace';
 import { type LiveViewState, useSittingController } from '@/lib/capture/useSittingController';
 import { tidy } from '@/lib/format';
+import { hairline } from '@/theme';
 import { sourceLabel } from '@/lib/nurse/worklistFormat';
 import { useDevice } from '@/lib/session/SessionProvider';
 import { Text } from '@/components/Text';
@@ -39,6 +43,15 @@ export default function Sitting() {
 }
 
 type Props = { patientNumber: number; kind: 'check_in' | 'recheck'; enrolFace: boolean; deviceId: string };
+
+/** The seconds of one sitting, and with them the width of the live traces. */
+const TRACE_SECONDS = 60;
+/** The smallest range a trace's height stands for, so a steady reading draws a level line. */
+const PULSE_SPAN_BPM = 12;
+const BREATHING_SPAN_PER_MIN = 6;
+
+type Traces = { last: Reading | null; pulse: Trace; breathing: Trace };
+const NO_TRACES: Traces = { last: null, pulse: [], breathing: [] };
 
 function SittingScreen({ patientNumber, kind, enrolFace, deviceId }: Props) {
   useKeepAwake();
@@ -68,6 +81,20 @@ function SittingScreen({ patientNumber, kind, enrolFace, deviceId }: Props) {
   const heart = readoutFor(running ? (reading?.heartRate ?? null) : null, source, sitting.lastValid.heartRate, now);
   const breathing = readoutFor(running ? (reading?.breathingRate ?? null) : null, source, sitting.lastValid.breathingRate, now);
 
+  // The readings of this sitting, one a second, for the trace under each value. Kept during
+  // render from the reading the controller already holds, so the two can never disagree.
+  const [traces, setTraces] = useState<Traces>(NO_TRACES);
+  if (!running && traces.last) {
+    setTraces(NO_TRACES);
+  } else if (running && reading && reading !== traces.last) {
+    const valid = (estimate: Reading['heartRate']) => (estimate.state === 'valid' ? estimate.value : null);
+    setTraces({
+      last: reading,
+      pulse: pushTrace(traces.pulse, valid(reading.heartRate), TRACE_SECONDS),
+      breathing: pushTrace(traces.breathing, valid(reading.breathingRate), TRACE_SECONDS),
+    });
+  }
+
   const leave = () => {
     if (!running) return router.back();
     Alert.alert('Leave this sitting?', 'The sitting stops and no summary is saved for this patient', [
@@ -88,7 +115,7 @@ function SittingScreen({ patientNumber, kind, enrolFace, deviceId }: Props) {
   if (phase === 'permission_denied' || phase === 'unavailable') {
     const denied = phase === 'permission_denied';
     return (
-      <SafeAreaView style={{ flex: 1, justifyContent: 'center', padding: space.space4, backgroundColor: colors.surface }}>
+      <SafeAreaView style={{ flex: 1, justifyContent: 'center', padding: space.space4, backgroundColor: colors.surface0 }}>
         <View style={{ width: '100%', maxWidth: 480, alignSelf: 'center' }}>
           <Notice
             title={denied ? 'Triage Cam cannot use the camera' : 'The camera did not start'}
@@ -116,32 +143,45 @@ function SittingScreen({ patientNumber, kind, enrolFace, deviceId }: Props) {
         {sourceTag ? <ProvenanceTag kind="recording" label={sourceTag} /> : null}
       </View>
       <SittingTimer elapsed={sitting.elapsedSeconds} doneLabel="Sitting complete" />
-      <View style={{ flexDirection: 'row', gap: space.space4 }}>
-        <View style={{ flex: 1 }}>
+      {/* The two readings share one instrument panel: two cells with a hairline between them. */}
+      <View
+        style={{
+          flexDirection: 'row',
+          borderWidth: hairline,
+          borderColor: colors.line,
+          borderRadius: theme.radius.radiusXl,
+          backgroundColor: colors.surface1,
+        }}
+      >
+        <View style={{ flex: 1, padding: space.space4, gap: space.space2 }}>
           <Readout
             label="Heart rate"
             icon="pulse"
             unit="bpm"
             size="lg"
+            live={running}
             state={heart.state}
             value={'value' in heart ? heart.value : undefined}
             foot={heart.foot}
           />
+          <LiveTrace trace={traces.pulse} capacity={TRACE_SECONDS} minSpan={PULSE_SPAN_BPM} />
         </View>
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, padding: space.space4, gap: space.space2, borderLeftWidth: hairline, borderLeftColor: colors.line }}>
           <Readout
             label="Breathing"
             icon="breath"
             unit="breaths per min"
             size="lg"
+            live={running}
             state={breathing.state}
             value={'value' in breathing ? breathing.value : undefined}
             foot={breathing.foot}
           />
+          <LiveTrace trace={traces.breathing} capacity={TRACE_SECONDS} minSpan={BREATHING_SPAN_PER_MIN} />
         </View>
       </View>
       {sitting.error ? (
-        <Text accessibilityLiveRegion="polite" style={[theme.type.caption, { color: colors.flag }]}>
+        <Text accessibilityLiveRegion="polite" style={[theme.type.caption, { color: colors.watch }]}>
           {tidy(sitting.error)}
         </Text>
       ) : null}
@@ -196,20 +236,20 @@ function SittingScreen({ patientNumber, kind, enrolFace, deviceId }: Props) {
   );
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface0 }}>
       {landscape ? (
         <View style={{ flex: 1, flexDirection: 'row', gap: space.space4, padding: space.space4 }}>
           {/* The picture gets the room; the readouts and controls share one column beside it. */}
           <View style={{ flex: 1 }}>{viewfinder}</View>
           <View style={{ width: Math.min(360, Math.round(width * 0.42)) }}>
-            <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', gap: space.space5 }}>
+            <ScrollView indicatorStyle="white" contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', gap: space.space6 }}>
               {patientPanel}
               {operatorPanel}
             </ScrollView>
           </View>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: space.space4, gap: space.space5 }}>
+        <ScrollView indicatorStyle="white" contentContainerStyle={{ padding: space.space4, gap: space.space6 }}>
           <View style={{ height: Math.round(width * 0.9) }}>{viewfinder}</View>
           {patientPanel}
           {operatorPanel}

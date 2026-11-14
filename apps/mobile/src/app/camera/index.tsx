@@ -90,8 +90,6 @@ export default function CheckIn() {
         )}
       </Section>
 
-      <View style={{ height: 1, backgroundColor: theme.colors.line }} />
-
       <Section heading="Re-check" body="For someone already in the waiting room. Tap them to start.">
         <PatientPicker onPick={(item) => startSitting(item.patientNumber, 'recheck', false)} />
         <Button
@@ -102,7 +100,7 @@ export default function CheckIn() {
           accessibilityHint="For patients who turned on face match at check-in"
           onPress={() => router.push('/camera/match')}
         />
-        <Text style={[theme.type.caption, { color: theme.colors.inkMuted }]}>
+        <Text style={[theme.type.caption, { color: theme.colors.inkFaint }]}>
           Face match works only for patients who turned it on at check-in
         </Text>
       </Section>
@@ -128,7 +126,7 @@ function Section({ heading, body, children }: { heading: string; body: string; c
         <Text accessibilityRole="header" style={[theme.type.heading, { color: theme.colors.ink }]}>
           {heading}
         </Text>
-        <Text style={[theme.type.bodyTouch, { color: theme.colors.inkMuted }]}>{body}</Text>
+        <Text style={[theme.type.body, { color: theme.colors.inkMuted }]}>{body}</Text>
       </View>
       {children}
     </View>
