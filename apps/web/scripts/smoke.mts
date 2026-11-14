@@ -4,6 +4,12 @@
 //   pnpm smoke                                   against http://localhost:3101
 //   SMOKE_URL=https://….ngrok-free.app pnpm smoke
 //
+// The server must not be in production mode. With NODE_ENV=production and no mail key the
+// server, by design, neither returns nor logs a verification link, so this script cannot get
+// past sign-up; and it refuses sitting files (403). To run this against a production build,
+// start that build with NODE_ENV=test: `NODE_ENV=test next start`. The bundle served is the
+// same one; only those two development allowances come back.
+//
 // Optional environment:
 //   SMOKE_SERVER_LOG   Path of the server's log. The verification link is then read from the
 //                      log, as a person would; otherwise devVerificationToken is used.
@@ -147,7 +153,12 @@ async function tokenFromLog(path: string): Promise<string> {
 const verificationToken = process.env.SMOKE_SERVER_LOG
   ? await tokenFromLog(process.env.SMOKE_SERVER_LOG)
   : resent.devVerificationToken;
-assert.ok(verificationToken, "No verification token: the server has RESEND_API_KEY set, so use a real mailbox");
+assert.ok(
+  verificationToken,
+  "No verification link came back. Either the server runs with NODE_ENV=production, where it never returns or logs one " +
+    "(start it with NODE_ENV=test instead, the build is the same), or it has RESEND_API_KEY set and sent a real email " +
+    "(unset it, or read the link from the log with SMOKE_SERVER_LOG).",
+);
 if (signedUp.devVerificationToken && again.devVerificationToken) {
   // Each new link replaces the one before it.
   await refused(410, "token_invalid", "POST", routes.auth.verifyEmail, { body: { token: signedUp.devVerificationToken } });
@@ -373,6 +384,11 @@ const upload = await call("PUT", routes.sittingFile(checkIn.id), {
   auth: mobile,
   raw: { body: `${JSON.stringify(header)}\n${JSON.stringify(frame)}\n`, contentType: "application/x-ndjson" },
 });
+assert.notEqual(
+  upload.status,
+  403,
+  "The server refused the sitting file: it runs with NODE_ENV=production, where sitting files are not accepted. Start it with NODE_ENV=test.",
+);
 assert.equal(upload.status, 204, await upload.text());
 await refused(400, "invalid_request", "PUT", routes.sittingFile(checkIn.id), {
   auth: mobile,
