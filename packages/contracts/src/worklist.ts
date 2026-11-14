@@ -58,6 +58,13 @@ export const FlagDetail = z.object({
 });
 export type FlagDetail = z.infer<typeof FlagDetail>;
 
+/**
+ * A baseline the flag was measured against is a re-check's, not the check-in's. Its label then
+ * says "baseline", never "check-in".
+ */
+export const hasReCheckBaseline = (detail: Pick<FlagDetail, 'pulse' | 'breathing'>): boolean =>
+  detail.pulse.baseAt != null || detail.breathing.baseAt != null;
+
 export const Flag = z.object({
   id: z.uuid(),
   patientNumber: PatientNumber,

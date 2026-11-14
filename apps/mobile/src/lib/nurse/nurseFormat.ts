@@ -156,12 +156,13 @@ export function withAcknowledgement(flags: Flag[], acknowledged: Flag): Flag[] {
  * What a flag is about, for its badge. An alert that tripped both trend rules carries both
  * badges on its one card.
  */
-export function flagRuleLabel(rule: FlagRule): string {
+export function flagRuleLabel(rule: FlagRule, reCheckBaseline = false): string {
   switch (rule) {
     case 'score_rise':
       return 'Score above check-in';
     case 'baseline_shift':
-      return 'Change from check-in';
+      // A baseline that is a re-check's is not called check-in.
+      return reCheckBaseline ? 'Change from baseline' : 'Change from check-in';
     case 'overdue':
       return 'Re-check overdue';
   }

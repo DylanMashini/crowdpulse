@@ -139,8 +139,9 @@ const RULES: Record<FlagRule, string> = {
   overdue: 'Overdue for a re-check',
 };
 
-export function ruleText(rule: FlagRule): string {
-  return RULES[rule];
+/** `reCheckBaseline`: a baseline the flag moved from is a re-check's, so the words do not say check-in. */
+export function ruleText(rule: FlagRule, reCheckBaseline = false): string {
+  return rule === 'baseline_shift' && reCheckBaseline ? 'Moved from baseline' : RULES[rule];
 }
 
 /** Whole years since a YYYY-MM-DD date of birth, in the browser's zone. Null when it is not known. */

@@ -1,6 +1,6 @@
 'use client';
 
-import { flagAlerts, isLowConfidence, patientLabel, type Flag, type FlagAlert, type Patient, type PatientDetailResponse } from '@triagecam/contracts';
+import { flagAlerts, hasReCheckBaseline, isLowConfidence, patientLabel, type Flag, type FlagAlert, type Patient, type PatientDetailResponse } from '@triagecam/contracts';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
@@ -71,7 +71,7 @@ function PatientView({ detail, updatedAt, refreshError, onChanged }: PatientView
   const row = worklist.data?.worklist.items.find((item) => item.patientNumber === patient.number);
   const [confirming, setConfirming] = useState(false);
   const [discharge, setDischarge] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
-  const timeline = useMemo(() => toTimelineItems(detail.timeline), [detail.timeline]);
+  const timeline = useMemo(() => toTimelineItems(detail.timeline, detail.flags), [detail.timeline, detail.flags]);
   const openFlags = detail.flags.filter((flag) => flag.closedAt === null);
 
   const onDischarge = async () => {
@@ -288,7 +288,7 @@ function FlagItem({ alert, onChanged }: { alert: FlagAlert; onChanged: () => voi
     <li className={`flex flex-col gap-3 rounded-lg bg-surface-raised p-[15px] ${flag.rule === 'overdue' ? 'border-2 border-ink' : 'border-2 border-flag'}`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <StatusBadge state={flag.rule === 'overdue' ? 'overdue' : 'flag'}>{flag.rule === 'overdue' ? 'Overdue' : 'Trend flag'}</StatusBadge>
-        <span className="font-semibold">{flags.map((each) => ruleText(each.rule)).join(' · ')}</span>
+        <span className="font-semibold">{flags.map((each) => ruleText(each.rule, hasReCheckBaseline(each.detail))).join(' · ')}</span>
         <span className="type-caption text-ink-muted">Opened at {clockTime(flag.openedAt)}</span>
       </div>
       <p>{flagNumbers(flag)}</p>

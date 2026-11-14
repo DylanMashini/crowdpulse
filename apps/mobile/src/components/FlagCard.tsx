@@ -1,4 +1,4 @@
-import type { FlagAlert } from '@triagecam/contracts';
+import { type FlagAlert, hasReCheckBaseline } from '@triagecam/contracts';
 import { useState } from 'react';
 import { View } from 'react-native';
 
@@ -98,7 +98,7 @@ export function FlagCard({ alert, hidePatient, onOpen, sentence = 'show' }: Prop
       )}
       <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: space.space3, rowGap: space.space1 }}>
         {alert.flags.map((each) => (
-          <StatusBadge key={each.id} state={overdue ? 'overdue' : 'flag'} label={flagRuleLabel(each.rule)} />
+          <StatusBadge key={each.id} state={overdue ? 'overdue' : 'flag'} label={flagRuleLabel(each.rule, hasReCheckBaseline(each.detail))} />
         ))}
         <Text style={[theme.type.caption, { color: colors.inkMuted, fontVariant: ['tabular-nums'] }]}>
           {closed ? `${flagOpenedText(flag, now)}, closed` : flagOpenedText(flag, now)}

@@ -287,6 +287,8 @@ test('a flag says when it opened and who acknowledged it', () => {
 test('each rule has its own badge words', () => {
   assert.equal(flagRuleLabel('score_rise'), 'Score above check-in');
   assert.equal(flagRuleLabel('baseline_shift'), 'Change from check-in');
+  assert.equal(flagRuleLabel('baseline_shift', true), 'Change from baseline');
+  assert.equal(flagRuleLabel('score_rise', true), 'Score above check-in');
   assert.equal(flagRuleLabel('overdue'), 'Re-check overdue');
 });
 
