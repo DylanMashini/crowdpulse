@@ -1,4 +1,3 @@
-import { PROTOTYPE_NOTICE } from '@triagecam/contracts';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Text, View } from 'react-native';
@@ -37,7 +36,7 @@ function RootNavigator() {
       >
         <View style={{ gap: theme.space.space1 }}>
           <Text style={[theme.type.title, { fontFamily: fonts.sans[600], color: theme.colors.ink }]}>Triage Cam</Text>
-          <Text style={[theme.type.bodyTouch, { color: theme.colors.inkMuted }]}>{PROTOTYPE_NOTICE}</Text>
+          <Text style={[theme.type.bodyTouch, { color: theme.colors.inkMuted }]}>Vitals station</Text>
         </View>
         {state.status === 'loading' ? (
           <Text accessibilityLiveRegion="polite" style={[theme.type.bodyTouch, { color: theme.colors.inkMuted }]}>
