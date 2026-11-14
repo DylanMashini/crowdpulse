@@ -73,6 +73,11 @@ test('intake text is trimmed, an empty box clears the field, and a left-out fiel
   assert.ok(!UpdatePatientRequest.safeParse({ painScore: 11 }).success);
   assert.ok(!UpdatePatientRequest.safeParse({ dateOfBirth: '14/11/1990' }).success);
   assert.ok(UpdatePatientRequest.safeParse({ dateOfBirth: '1990-11-14', sex: 'female' }).success);
+  // A date of birth is in the past, and not before 1900.
+  assert.ok(!UpdatePatientRequest.safeParse({ dateOfBirth: '2099-01-01' }).success);
+  assert.ok(!UpdatePatientRequest.safeParse({ dateOfBirth: '1800-01-01' }).success);
+  assert.ok(UpdatePatientRequest.safeParse({ dateOfBirth: new Date().toISOString().slice(0, 10) }).success);
+  assert.ok(UpdatePatientRequest.safeParse({ dateOfBirth: null }).success);
 });
 
 test('a patient without a name is called by their number', () => {

@@ -15,6 +15,18 @@ export type PatientSex = z.infer<typeof PatientSex>;
 export const CalendarDate = z.iso.date();
 export type CalendarDate = z.infer<typeof CalendarDate>;
 
+/** The earliest date of birth the intake form takes. */
+export const EARLIEST_DATE_OF_BIRTH = '1900-01-01';
+
+/**
+ * A date of birth as a request accepts it: not before 1900 and not after today. "Today" allows
+ * one day of slack, because the dashboard's calendar day may be ahead of the server's.
+ */
+export const DateOfBirth = CalendarDate.refine(
+  (value) => value >= EARLIEST_DATE_OF_BIRTH && value <= new Date(Date.now() + 86_400_000).toISOString().slice(0, 10),
+  { error: `The date of birth must be between ${EARLIEST_DATE_OF_BIRTH} and today` },
+);
+
 export const INTAKE_LIMITS = { name: 120, reasonForVisit: 280, allergies: 280, notes: 2000 } as const;
 
 /** Free text typed at intake: trimmed, and an empty box is stored as null. */
@@ -47,7 +59,7 @@ export type PatientIntake = z.infer<typeof PatientIntake>;
 /** The intake fields as a request accepts them. */
 const IntakeInput = z.object({
   name: intakeText(INTAKE_LIMITS.name),
-  dateOfBirth: CalendarDate.nullable(),
+  dateOfBirth: DateOfBirth.nullable(),
   sex: PatientSex.nullable(),
   reasonForVisit: intakeText(INTAKE_LIMITS.reasonForVisit),
   painScore: z.int().min(0).max(10).nullable(),
@@ -94,6 +106,11 @@ export type UpdatePatientRequest = z.infer<typeof UpdatePatientRequest>;
 export const PatientPhotoRequest = z.object({
   /** JPEG, base64 without a data: prefix. */
   jpegBase64: z.string().min(1).max(400_000),
+  /**
+   * False (the default) only fills a gap: the crop is dropped when the patient already has a
+   * photo, or when staff removed it. True replaces whatever is there.
+   */
+  replace: z.boolean().default(false),
 });
 export type PatientPhotoRequest = z.infer<typeof PatientPhotoRequest>;
 
