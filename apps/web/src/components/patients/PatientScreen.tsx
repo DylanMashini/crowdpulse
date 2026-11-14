@@ -171,8 +171,8 @@ function PatientView({ detail, updatedAt, refreshError, onChanged }: PatientView
                 <p className="text-ink-muted">No flag is open for this patient. A flag opens when a trend rule is met or a re-check is overdue.</p>
               ) : (
                 <ul className="flex flex-col gap-3">
-                  {openFlags.map((flag) => (
-                    <FlagItem key={flag.id} flag={flag} onChanged={onChanged} />
+                  {flagAlerts(openFlags).map((flags) => (
+                    <FlagItem key={flags.map((flag) => flag.id).join(' ')} flags={flags} onChanged={onChanged} />
                   ))}
                 </ul>
               )}
@@ -255,13 +255,41 @@ function flagNumbers(flag: Flag): string {
   return `${change('Pulse', pulse.base, pulse.now, heartRate)}, ${change('breathing', breathing.base, breathing.now, breathsPerMin)}${score}, ${minutes(minutesSinceCheckIn)} after check-in`;
 }
 
-function FlagItem({ flag, onChanged }: { flag: Flag; onChanged: () => void }) {
+/**
+ * Open flags as the alerts a nurse acts on. One deterioration usually trips both trend rules;
+ * the two flags then carry the same numbers and are one alert, acknowledged once.
+ */
+function flagAlerts(flags: Flag[]): Flag[][] {
+  const alerts: Flag[][] = [];
+  for (const flag of flags) {
+    const same =
+      flag.rule === 'overdue'
+        ? undefined
+        : alerts.find(([first]) => first && first.rule !== 'overdue' && flagNumbers(first) === flagNumbers(flag));
+    if (same) same.push(flag);
+    else alerts.push([flag]);
+  }
+  return alerts;
+}
+
+/** One alert: a flag, or the trend flags that one deterioration raised together. */
+function FlagItem({ flags, onChanged }: { flags: Flag[]; onChanged: () => void }) {
   const [state, setState] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
+  const flag = flags[0] as Flag;
+  const waiting = flags.filter((each) => each.acknowledgedAt === null);
+  const openedAt = flags.map((each) => each.openedAt).sort()[0] ?? flag.openedAt;
+  // The acknowledgement that completed the alert.
+  const acknowledged = flags
+    .filter((each) => each.acknowledgedAt !== null)
+    .sort((a, b) => (b.acknowledgedAt ?? '').localeCompare(a.acknowledgedAt ?? ''))[0];
 
   const acknowledge = async () => {
+    const next = waiting[0];
+    if (!next) return;
     setState({ busy: true, error: null });
     try {
-      await api.acknowledgeFlag(flag.id);
+      // The server acknowledges the patient's other open trend flag with this one.
+      await api.acknowledgeFlag(next.id);
       setState({ busy: false, error: null });
       onChanged();
     } catch (error) {
@@ -273,15 +301,15 @@ function FlagItem({ flag, onChanged }: { flag: Flag; onChanged: () => void }) {
     <li className={`flex flex-col gap-3 rounded-lg bg-surface-raised p-[15px] ${flag.rule === 'overdue' ? 'border-2 border-ink' : 'border-2 border-flag'}`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <StatusBadge state={flag.rule === 'overdue' ? 'overdue' : 'flag'}>{flag.rule === 'overdue' ? 'Overdue' : 'Trend flag'}</StatusBadge>
-        <span className="font-semibold">{ruleText(flag.rule)}</span>
-        <span className="type-caption text-ink-muted">Opened at {clockTime(flag.openedAt)}</span>
+        <span className="font-semibold">{flags.map((each) => ruleText(each.rule)).join(' · ')}</span>
+        <span className="type-caption text-ink-muted">Opened at {clockTime(openedAt)}</span>
       </div>
       <p>{flagNumbers(flag)}</p>
       <div className="flex flex-wrap items-center gap-3">
-        {flag.acknowledgedAt ? (
+        {waiting.length === 0 && acknowledged?.acknowledgedAt ? (
           <p className="inline-flex h-control-md items-center gap-2 font-semibold text-ink-muted">
             <Icon name="check" size={18} />
-            Acknowledged{flag.acknowledgedBy ? ` by ${flag.acknowledgedBy}` : ''} at {clockTime(flag.acknowledgedAt)}
+            Acknowledged{acknowledged.acknowledgedBy ? ` by ${acknowledged.acknowledgedBy}` : ''} at {clockTime(acknowledged.acknowledgedAt)}
           </p>
         ) : (
           <Button variant="primary" onClick={acknowledge} disabled={state.busy}>

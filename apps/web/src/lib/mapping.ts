@@ -1,4 +1,4 @@
-import type { CaptureSource, TimelineEntry, WorklistItem } from '@triagecam/contracts';
+import type { CaptureSource, FlagRule, TimelineEntry, WorklistItem } from '@triagecam/contracts';
 
 import type { Provenance, TimelineItem, WorklistRow } from '@/components/ds';
 
@@ -30,7 +30,7 @@ export function toWorklistRow(item: WorklistItem): WorklistRow & { measured: num
   };
 }
 
-function toTimelineItem(entry: TimelineEntry): TimelineItem {
+function toTimelineItem(entry: TimelineEntry, rules: Map<string, FlagRule>): TimelineItem {
   const time = clockTime(entry.at);
   switch (entry.type) {
     case 'created':
@@ -50,8 +50,12 @@ function toTimelineItem(entry: TimelineEntry): TimelineItem {
     }
     case 'flag_opened':
       return { time, title: 'Flag opened', state: entry.rule === 'overdue' ? 'overdue' : 'flag', note: ruleText(entry.rule) };
-    case 'flag_acknowledged':
-      return { time, title: 'Flag acknowledged', note: `Acknowledged by ${entry.by}` };
+    case 'flag_acknowledged': {
+      // Says which alert was acknowledged. One acknowledgement covers both trend flags.
+      const rule = rules.get(entry.flagId);
+      const which = rule === undefined ? 'Acknowledged' : rule === 'overdue' ? 'Overdue flag acknowledged' : 'Trend flag acknowledged';
+      return { time, title: 'Flag acknowledged', note: `${which} by ${entry.by}` };
+    }
     case 'flag_closed':
       return {
         time,
@@ -65,5 +69,9 @@ function toTimelineItem(entry: TimelineEntry): TimelineItem {
 
 /** The server sends the timeline newest first; the timeline component reads oldest first. */
 export function toTimelineItems(entries: TimelineEntry[]): TimelineItem[] {
-  return entries.map(toTimelineItem).reverse();
+  const rules = new Map<string, FlagRule>();
+  for (const entry of entries) {
+    if (entry.type === 'flag_opened') rules.set(entry.flagId, entry.rule);
+  }
+  return entries.map((entry) => toTimelineItem(entry, rules)).reverse();
 }
