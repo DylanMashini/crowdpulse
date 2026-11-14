@@ -181,7 +181,9 @@ Until the Swift functions exist in the build, `TriageCaptureModule.ts` hands bac
 | `getSource()` | `'camera' \| 'simulated' \| 'stub'` | Synchronous. Screens label anything but `camera`. |
 | `getCameraPermission()` | `Promise<'granted' \| 'denied' \| 'undetermined'>` | `granted` for simulated and stub |
 | `requestCameraPermission()` | same | |
-| `startCapture(options?)` | `Promise<void>` | `{ camera?: 'back' \| 'front', frameRate?: 30 \| 60 }`, defaults back and 60. Starts the camera and face tracking; `onStatus` and `onFaceRegions` begin. Safe to call twice. |
+| `startCapture(options?)` | `Promise<void>` | `{ camera?: 'back' \| 'front', frameRate?: 30 \| 60 }`. `camera` defaults to the one last chosen with `setCamera` (back until someone flips it), `frameRate` to 60. Starts the camera and face tracking; `onStatus` and `onFaceRegions` begin. Safe to call twice. |
+| `getCamera()` | `'back' \| 'front'` | Synchronous. The camera capture starts on. Kept between launches (`UserDefaults`; the stub keeps it until the app restarts). |
+| `setCamera(camera)` | `Promise<void>` | Remembers the choice and, while capture runs, swaps the session's input at once. The capture clock, the dropped-frame count, the live view and a running sitting carry on; exposure is metered afresh and the face comes back under a new `faceTrackId`, so the engine resets its history. The screens only offer the flip while framing, before a sitting starts. Rejects with `ERR_CAMERA_UNAVAILABLE` and stays on the working camera when the phone has no such camera. |
 | `stopCapture()` | `Promise<void>` | A running sitting is abandoned and its file deleted. |
 | `startSitting({ sittingId })` | `Promise<{ sittingId, startedAt }>` | `sittingId` from `POST /api/sittings`. Creates the engine and the sitting file on the next frame; `onReading` begins. `startedAt` is the phone wall clock at the first frame. |
 | `stopSitting()` | `Promise<SittingResult>` | `{ sittingId, endedAt, summary, fileUri }`. `summary` is `SignalEngine.finish()` unchanged and is the body of the finish request. `fileUri` is a `file://` URI, or null from the stub. The caller decides when 60 seconds are up. |
@@ -205,13 +207,18 @@ Optional values cross the bridge as `null`, never as a missing key (the zod sche
 | `onLiveUpload` | Once per second while the module uploads frames itself | `{ delivered, failed, viewers }`: frames the server accepted and refused in the last second, and the dashboards watching (null when nothing was accepted). |
 | `onError` | When something fails outside a call | `{ code, message }` |
 
-**Coordinates** are normalised to the camera frame as shown upright on screen: x to the right, y down, both 0 to 1, origin at the top-left corner. `aspectRatio` is that frame's width divided by its height. Only these outlines reach the viewfinder; it draws no picture.
+**Coordinates** are normalised to the camera frame as captured and shown upright: x to the right, y down, both 0 to 1, origin at the top-left corner. `aspectRatio` is that frame's width divided by its height. They are never mirrored, on either camera.
+
+### Preview view
+
+`import { CapturePreview } from 'triage-capture'` is a native view (`ios/CapturePreviewView.swift`) that draws the live picture with `AVCaptureVideoPreviewLayer` straight from the capture session: no frame crosses the bridge. It has no props beyond `style`, fills its box and crops the overflow (`resizeAspectFill`), and shows the front camera mirrored. The viewfinder draws the framing template and the outlines over it with the same cover arithmetic (`apps/mobile/src/lib/capture/viewfinderGeometry.ts`), flipping the outlines' x when the front camera is chosen, because only the picture is mirrored: frame records, outlines, the face crop and the frames uploaded to the live view stay as captured. On the simulator the view shows the test pattern (mirrored for `front`, so the flip can be seen). `hasNativePreview` and `hasCameraControls` are false in a development build made before the view and `setCamera` existed, and the viewfinder then falls back to outlines on a dark field with no flip control.
 
 ### Simulated source
 
 On the iOS simulator there is no camera, so the Swift module switches by itself (`#if targetEnvironment(simulator)`) to a simulated source: it generates frames with `SyntheticSitting` at the nominal rate in real time and feeds them through the same `SignalEngine`, sitting file writer and event path as camera frames. `getSource()` returns `'simulated'`, the sitting file header says `"source":"simulated"`, and the sitting is created on the server with `source: 'simulated'`.
 
 - `onFaceRegions` reports fixed plausible outlines; `onStatus` reports the generator's frame rate with `exposureLocked` following the synthetic frames.
+- `setCamera` keeps the choice and changes nothing that is generated; `CapturePreview` shows the test pattern.
 - `onPreviewFrame` and `captureFaceCrop()` return a generated flat or test-pattern JPEG, never a face. The server will answer `no_face_detected` to that crop, which is the expected result on the simulator.
 
 ## 4. HTTP API
@@ -572,7 +579,7 @@ All times are `timestamptz` on the server clock. No table stores video. The only
 
 **Mobile** (`apps/mobile/src/theme`): `const theme = useTheme()` for the nurse role, `useTheme('dark')` for the camera role. `theme.colors.inkMuted`, `theme.space.space4`, `theme.radius.radiusLg`, `theme.size.controlTouch`, `theme.shadow.shadowOverlay` (a `boxShadow` string, for sheets and the push banner only), and `theme.type.readoutXl` and the other type styles, which are spread into a `Text` style and already carry the right font file for their weight. The six static TTFs are in `apps/mobile/assets/fonts` and are embedded by the `expo-font` config plugin, so there is nothing to load at runtime.
 
-The design-system README's line "No surface shows a face or a video frame" is overridden for one place only: the dashboard's live view. The camera phone's viewfinder still draws outlines, not the picture.
+The design-system README's line "No surface shows a face or a video frame" is overridden in two places: the dashboard's live view, and the camera phone's viewfinder, which shows the live picture under the framing template and the outlines (section 3, Preview view). Neither stores video.
 
 ## 9. Ports and dev servers
 
