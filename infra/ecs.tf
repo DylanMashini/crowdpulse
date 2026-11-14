@@ -15,17 +15,47 @@ resource "aws_ecr_repository" "web" {
 resource "aws_ecr_lifecycle_policy" "web" {
   repository = aws_ecr_repository.web.name
 
+  # Three rules, because one rule over "any" image counts every manifest: an image built with
+  # Docker's attestations is an index plus two untagged manifests, and used three of the slots.
+  # ECR never expires a manifest that an index still refers to, so rule 1 only removes what is
+  # left behind once its index has gone. A rule with a lower number wins: the bootstrap image,
+  # which the task definition template names, is matched by rule 2 and so is out of rule 3's reach.
   policy = jsonencode({
-    rules = [{
-      rulePriority = 1
-      description  = "Keep the 20 newest images"
-      selection = {
-        tagStatus   = "any"
-        countType   = "imageCountMoreThan"
-        countNumber = 20
-      }
-      action = { type = "expire" }
-    }]
+    rules = [
+      {
+        rulePriority = 1
+        description  = "Untagged manifests go after a day"
+        selection = {
+          tagStatus   = "untagged"
+          countType   = "sinceImagePushed"
+          countUnit   = "days"
+          countNumber = 1
+        }
+        action = { type = "expire" }
+      },
+      {
+        rulePriority = 2
+        description  = "Keep the bootstrap image"
+        selection = {
+          tagStatus     = "tagged"
+          tagPrefixList = ["bootstrap"]
+          countType     = "imageCountMoreThan"
+          countNumber   = 1
+        }
+        action = { type = "expire" }
+      },
+      {
+        rulePriority = 3
+        description  = "Keep the 20 newest release images (tagged with a commit hash)"
+        selection = {
+          tagStatus      = "tagged"
+          tagPatternList = ["*"]
+          countType      = "imageCountMoreThan"
+          countNumber    = 20
+        }
+        action = { type = "expire" }
+      },
+    ]
   })
 }
 
