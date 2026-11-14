@@ -9,6 +9,10 @@ final class ExposureController {
   struct Face {
     /// Mean luma of the skin regions, 0 to 255.
     let luma: Double
+    /// The highest channel mean of any skin region, 0 to 255. Skin is reddest, so this is
+    /// red: when it nears 255 the red channel is clipping although the luma looks fine, and
+    /// a clipped channel carries no pulse.
+    let peak: Double
     /// Centre of the face in the camera's own coordinates (AVCaptureDevice points of interest).
     let devicePoint: CGPoint
   }
@@ -21,6 +25,14 @@ final class ExposureController {
 
   /// Skin that reads outside this range is clipped or buried in noise.
   private static let wellExposed = 50.0...215.0
+  /// A region whose strongest channel averages more than this has pixels at the ceiling.
+  /// (A sitting recorded at a red mean of 242 gave nothing; the others sat at 110 to 180.)
+  private static let clipped = 235.0
+  /// While metering a face that clips, the exposure target is lowered by this much, in
+  /// stops, no more often than `biasInterval`, down to `lowestBias`.
+  private static let biasStep: Float = 1.0 / 3
+  private static let lowestBias: Float = -2
+  private static let biasInterval = 0.5
   private static let settleSeconds = 0.5
   private static let badExposureSeconds = 1.0
   private static let faceGoneSeconds = 3.0
@@ -35,6 +47,8 @@ final class ExposureController {
   private var lastFaceAt = -Double.infinity
   private var lastAimAt = -Double.infinity
   private var lastAim = CGPoint(x: 0.5, y: 0.5)
+  private var bias: Float = 0
+  private var lastBiasAt = -Double.infinity
 
   init(device: AVCaptureDevice, queue: DispatchQueue) {
     self.device = device
@@ -46,7 +60,7 @@ final class ExposureController {
     lock.lock()
     defer { lock.unlock() }
     if face != nil { lastFaceAt = t }
-    let good = face.map { Self.wellExposed.contains($0.luma) } ?? false
+    let good = face.map { Self.wellExposed.contains($0.luma) && $0.peak <= Self.clipped } ?? false
 
     switch phase {
     case .metering(let goodSince):
@@ -55,6 +69,7 @@ final class ExposureController {
         return .adjusting
       }
       aim(at: face.devicePoint, t)
+      if face.peak > Self.clipped { darken(t) }
       guard good, !device.isAdjustingExposure else {
         phase = .metering(goodSince: nil)
         return .adjusting
@@ -96,7 +111,10 @@ final class ExposureController {
   private func release() {
     phase = .metering(goodSince: nil)
     lastAimAt = -.infinity
+    bias = 0
+    lastBiasAt = -.infinity
     queue.async { self.configure { device in
+      device.setExposureTargetBias(0, completionHandler: nil)
       if device.isExposureModeSupported(.continuousAutoExposure) { device.exposureMode = .continuousAutoExposure }
       if device.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) { device.whiteBalanceMode = .continuousAutoWhiteBalance }
       if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
@@ -118,6 +136,18 @@ final class ExposureController {
         device.focusPointOfInterest = point
         if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
       }
+    } }
+  }
+
+  /// Asks automatic exposure for a darker picture, one step at a time, while the face
+  /// clips. Caller holds the lock.
+  private func darken(_ t: Double) {
+    guard t - lastBiasAt >= Self.biasInterval, bias > Self.lowestBias else { return }
+    lastBiasAt = t
+    bias = max(Self.lowestBias, bias - Self.biasStep)
+    let target = bias
+    queue.async { self.configure { device in
+      device.setExposureTargetBias(max(device.minExposureTargetBias, target), completionHandler: nil)
     } }
   }
 

@@ -322,10 +322,21 @@ final class CameraSource: NSObject, FrameSource, AVCaptureVideoDataOutputSampleB
 
     tracker.submit(buffer, at: t)
     let track = tracker.current(at: t)
-    let (exposureController, angle) = lock.withLock { (exposure, rotationAngle) }
+    let (exposureController, angle, camera) = lock.withLock { (exposure, rotationAngle, activeDevice) }
 
     var record = FrameRecord(t: t, facePresent: track != nil, exposure: .adjusting, droppedFrames: droppedFrames, faceTrackId: track?.id)
+    // Recorded in the sitting file only, so that a replay can tell what moved: the face,
+    // the light or the camera's own settings.
+    if let box = track?.regions.face {
+      record.face = FaceBox(x: Double(box.minX), y: Double(box.minY), width: Double(box.width), height: Double(box.height))
+    }
+    if let camera {
+      record.iso = Double(camera.iso)
+      let shutter = camera.exposureDuration.seconds
+      if shutter.isFinite { record.exposureMs = shutter * 1000 }
+    }
     var faceLuma: Double?
+    var facePeak = 0.0
     let read: Void? = PlanarFrame.withLocked(buffer) { frame in
       lock.withLock { aspectRatio = Double(frame.width) / Double(frame.height) }
       guard let regions = track?.regions else {
@@ -338,12 +349,16 @@ final class CameraSource: NSObject, FrameSource, AVCaptureVideoDataOutputSampleB
       record.rightCheek = samples[2]?.color
       let lumas = samples.compactMap { $0?.luma }
       if !lumas.isEmpty { faceLuma = lumas.reduce(0, +) / Double(lumas.count) }
+      facePeak = samples.compactMap { $0?.color }.map { max($0.r, $0.g, $0.b) }.max() ?? 0
       record.chestMotion = chestMotion.update(chest: regions.chest, in: frame)
     }
     if read == nil { chestMotion.reset() }
 
     let face = track.flatMap { track in
-      faceLuma.map { ExposureController.Face(luma: $0, devicePoint: Self.devicePoint(track.regions.face, rotatedBy: angle)) }
+      faceLuma.map {
+        ExposureController.Face(
+          luma: $0, peak: facePeak, devicePoint: Self.devicePoint(track.regions.face, rotatedBy: angle))
+      }
     }
     record.exposure = exposureController?.update(at: t, face: face) ?? .adjusting
 
