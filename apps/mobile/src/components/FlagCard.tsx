@@ -1,4 +1,4 @@
-import type { FlagAlert } from '@triagecam/contracts';
+import { byFlagRule, type FlagAlert } from '@triagecam/contracts';
 import { useState } from 'react';
 import { View } from 'react-native';
 
@@ -6,7 +6,7 @@ import { errorMessage } from '@/lib/api';
 import { sentences } from '@/lib/format';
 import { useNurse } from '@/lib/nurse/NurseProvider';
 import { flagAcknowledgedText, flagOpenedText, flagRuleLabel } from '@/lib/nurse/nurseFormat';
-import { alertSeverity, ruleSeverity } from '@/lib/nurse/severity';
+import { alertSeverity } from '@/lib/nurse/severity';
 
 import { Button } from './Button';
 import { Card } from './Card';
@@ -33,13 +33,13 @@ type Props = {
 };
 
 /**
- * One alert: who, why (the handoff sentence with the numbers it was raised on, and a chip for
- * each rule it tripped), and the acknowledgement, made in place once for the whole alert.
+ * One alert: who, why (the handoff sentence with the numbers it was raised on, one chip in the
+ * alert's severity and the rules it tripped in words), and the acknowledgement, made in place once for the whole alert.
  * Acknowledging says "I have seen this"; it does not close the flag, which closes when an
  * observation is back inside the thresholds.
  *
  * An urgent alert nobody has acknowledged is the tinted card. Once it has been seen it steps
- * back to the plain card and keeps its chips; once it has closed the chips go grey too.
+ * back to the plain card and keeps its chip; once it has closed the chip goes grey too.
  */
 export function FlagCard({ alert, hidePatient, onOpen, sentence = 'show' }: Props) {
   const theme = useScopedTheme();
@@ -51,6 +51,11 @@ export function FlagCard({ alert, hidePatient, onOpen, sentence = 'show' }: Prop
   const closed = alert.closedAt != null;
   const waiting = alert.waiting.length > 0;
   // On the patient's own screen the handoff note above the card already carries the tint.
+  // The alert has one severity, so it has one chip: the rule that sets it. Any other rule it
+  // tripped is named beside the chip in plain text.
+  const rules = [...new Set(alert.flags.map((each) => each.rule))].sort(byFlagRule);
+  const leadRule = rules[0] ?? flag.rule;
+  const otherRules = rules.slice(1);
   const tinted = waiting && !hidePatient && alertSeverity(alert) === 'urgent';
 
   const press = async () => {
@@ -101,8 +106,11 @@ export function FlagCard({ alert, hidePatient, onOpen, sentence = 'show' }: Prop
         </View>
       )}
       <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: space.space2, rowGap: space.space2 }}>
-        {alert.flags.map((each) => (
-          <StatusBadge key={each.id} severity={closed ? 'stable' : ruleSeverity([each.rule])} label={flagRuleLabel(each.rule)} />
+        <StatusBadge severity={closed ? 'stable' : alertSeverity(alert)} label={flagRuleLabel(leadRule)} />
+        {otherRules.map((rule) => (
+          <Text key={rule} style={[theme.type.caption, { color: colors.inkMuted }]}>
+            {flagRuleLabel(rule)}
+          </Text>
         ))}
         <Text style={[theme.type.caption, { color: tinted ? colors.inkMuted : colors.inkFaint, fontVariant: ['tabular-nums'] }]}>
           {closed ? `${flagOpenedText(flag, now)}, closed` : flagOpenedText(flag, now)}
