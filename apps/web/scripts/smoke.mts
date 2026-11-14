@@ -620,6 +620,29 @@ if (probe.status === 503) {
   }
 }
 
+// --- profile photo --------------------------------------------------------------------------
+
+const crop = { jpegBase64: jpeg.toString("base64") };
+const photoOf = async () => (await ok(PatientDetailResponse, 200, "GET", routes.patient(second.number), { auth: web })).patient.photoUpdatedAt;
+assert.equal(await photoOf(), null);
+const filled = (await ok(PatientResponse, 200, "PUT", routes.patientPhoto(second.number), { auth: mobile, body: crop })).patient;
+assert.ok(filled.photoUpdatedAt, "the phone's crop fills the gap");
+const kept = (await ok(PatientResponse, 200, "PUT", routes.patientPhoto(second.number), { auth: mobile, body: crop })).patient;
+assert.equal(kept.photoUpdatedAt, filled.photoUpdatedAt, "a second crop does not replace the photo");
+const served = await call("GET", `${routes.patientPhoto(second.number)}?v=${encodeURIComponent(filled.photoUpdatedAt as string)}`, { auth: web });
+assert.equal(served.status, 200);
+assert.equal(served.headers.get("content-type"), "image/jpeg");
+await served.arrayBuffer();
+assert.equal((await call("DELETE", routes.patientPhoto(second.number), { auth: web })).status, 204);
+assert.equal(await photoOf(), null);
+const refusedCrop = (await ok(PatientResponse, 200, "PUT", routes.patientPhoto(second.number), { auth: mobile, body: crop })).patient;
+assert.equal(refusedCrop.photoUpdatedAt, null, "a removed photo is not put back by the phone's crop");
+await refused(404, "not_found", "GET", routes.patientPhoto(second.number), { auth: web });
+const retaken = (await ok(PatientResponse, 200, "PUT", routes.patientPhoto(second.number), { auth: web, body: { ...crop, replace: true } })).patient;
+assert.ok(retaken.photoUpdatedAt, "staff can take a photo again after removing one");
+assert.equal((await call("DELETE", routes.patientPhoto(second.number), { auth: web })).status, 204);
+done("profile photo: a crop fills a gap, a removal stands until staff take a photo again");
+
 // --- overdue (optional), discharge, sign out ------------------------------------------------------
 
 if (process.env.SMOKE_OVERDUE === "1") {

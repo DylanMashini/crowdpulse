@@ -1,5 +1,5 @@
 import { PATIENT_PHOTO_SIZE } from "@triagecam/contracts";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import sharp, { type Sharp } from "sharp";
 
 import { db, schema } from "../db/client.ts";
@@ -52,8 +52,14 @@ export async function portraitFromFrame(jpeg: Buffer): Promise<Buffer | null> {
 }
 
 /**
- * Stores the portrait and tells every open dashboard. With `onlyIfMissing` an existing photo
- * is left alone (the automatic capture must not overwrite one that staff or the phone chose).
+ * Stores the portrait and tells every open dashboard.
+ *
+ * With `onlyIfMissing` the photo is one nobody asked for (the automatic capture, or the phone's
+ * own crop): it only fills a gap. An existing photo is left alone, and so is a patient whose
+ * photo staff removed. That is decided by the row in the database, in the same transaction, so
+ * it holds across a server restart and against a removal that lands while a frame is being
+ * looked at. Without it the photo is one staff asked for: it replaces whatever is there and
+ * ends a removal.
  */
 export async function storePhoto(
   patient: PatientRow,
@@ -69,25 +75,21 @@ export async function storePhoto(
     createdAt: now,
   };
   const updated = await db.transaction(async (tx) => {
-    if (options.onlyIfMissing) {
-      const inserted = await tx
-        .insert(schema.patientPhotos)
-        .values(values)
-        .onConflictDoNothing()
-        .returning({ patientId: schema.patientPhotos.patientId });
-      if (inserted.length === 0) return null;
-    } else {
-      await tx
-        .insert(schema.patientPhotos)
-        .values(values)
-        .onConflictDoUpdate({ target: schema.patientPhotos.patientId, set: { jpeg: portrait, createdAt: now } });
-    }
     const [row] = await tx
       .update(schema.patients)
-      .set({ photoUpdatedAt: now })
-      .where(eq(schema.patients.id, patient.id))
+      .set({ photoUpdatedAt: now, photoRemovedAt: null })
+      .where(
+        options.onlyIfMissing
+          ? and(eq(schema.patients.id, patient.id), isNull(schema.patients.photoUpdatedAt), isNull(schema.patients.photoRemovedAt))
+          : eq(schema.patients.id, patient.id),
+      )
       .returning();
-    return row ?? null;
+    if (!row) return null;
+    await tx
+      .insert(schema.patientPhotos)
+      .values(values)
+      .onConflictDoUpdate({ target: schema.patientPhotos.patientId, set: { jpeg: portrait, createdAt: now } });
+    return row;
   });
   if (!updated) return patient;
   patientChanged(toPatientRef(updated));
@@ -103,12 +105,16 @@ export async function readPhoto(patientId: string): Promise<Buffer | null> {
   return row?.jpeg ?? null;
 }
 
+/**
+ * Removes the photo and records that staff removed it, so nothing takes a new one by itself
+ * (see storePhoto). The mark is on the patient row: a server restart does not forget it.
+ */
 export async function deletePhoto(patient: PatientRow): Promise<void> {
   const row = await db.transaction(async (tx) => {
     await tx.delete(schema.patientPhotos).where(eq(schema.patientPhotos.patientId, patient.id));
     const [updated] = await tx
       .update(schema.patients)
-      .set({ photoUpdatedAt: null })
+      .set({ photoUpdatedAt: null, photoRemovedAt: new Date() })
       .where(eq(schema.patients.id, patient.id))
       .returning();
     return updated;
