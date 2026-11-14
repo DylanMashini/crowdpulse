@@ -156,6 +156,28 @@ export async function finishSitting(sittingId: string, request: FinishSittingReq
   return wire;
 }
 
+/**
+ * Ends a sitting the phone gave up on (the operator left the screen, or called it off from the
+ * check-in page) without a summary, so nothing follows it as if it were still running. A
+ * sitting that has already ended is returned as it is.
+ */
+export async function abandonSitting(sittingId: string): Promise<Sitting> {
+  const { sitting, patient } = await findSitting(sittingId);
+  if (sitting.endedAt) return toSitting(sitting, patient.number);
+  const [ended] = await db
+    .update(schema.sittings)
+    .set({ endedAt: new Date() })
+    .where(and(eq(schema.sittings.id, sittingId), isNull(schema.sittings.endedAt)))
+    .returning();
+  // Finished by another request between the read and the update: answer with what is stored.
+  if (!ended) return toSitting((await findSitting(sittingId)).sitting, patient.number);
+  noteSittingEnded(ended.deviceId, ended.id);
+  const wire = toSitting(ended, patient.number);
+  publish({ type: "sitting_finished", sitting: wire });
+  worklistChanged();
+  return wire;
+}
+
 export async function sittingDetail(sittingId: string): Promise<SittingDetailResponse> {
   const { sitting, patient } = await findSitting(sittingId);
   const [readings, [beats]] = await Promise.all([
