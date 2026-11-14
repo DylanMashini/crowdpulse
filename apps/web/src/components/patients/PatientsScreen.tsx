@@ -128,7 +128,7 @@ export function PatientsScreen() {
                           {patient.reasonForVisit}
                         </span>
                       ) : (
-                        <span className="text-ink-faint">{patient.intakeCompletedAt ? 'Not given' : 'Intake not finished'}</span>
+                        <span className="block truncate text-ink-faint">{patient.intakeCompletedAt ? 'Not given' : 'Intake not finished'}</span>
                       )}
                     </td>
                     <td className={tableCell}>
