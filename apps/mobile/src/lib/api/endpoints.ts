@@ -19,7 +19,10 @@ import {
   SittingResponse,
   StartSittingResponse,
   PatientDetailResponse,
+  PatientListResponse,
   PatientResponse,
+  SettingsResponse,
+  type UpdateSettingsRequest,
   VerifyEmailResponse,
   WorklistResponse,
   routes,
@@ -92,9 +95,25 @@ export function createApi(client: ApiClient) {
     postLiveFrame: (deviceId: string, frame: LiveFrame) =>
       client.request({ method: 'POST', path: routes.liveFrame(deviceId), body: frame }, PostLiveFrameResponse),
 
+    /** Every patient of one status, newest first, a page at a time. */
+    patients: (status: 'waiting' | 'discharged' | 'all', cursor?: string) =>
+      client.request(
+        { method: 'GET', path: routes.patients, query: { status, limit: 100, cursor } },
+        PatientListResponse,
+      ),
+    dischargePatient: (number: number) =>
+      client.request({ method: 'POST', path: routes.patientDischarge(number) }, PatientResponse),
+
     worklist: () => client.request({ method: 'GET', path: routes.worklist }, WorklistResponse),
     openFlags: () =>
       client.request({ method: 'GET', path: routes.flags, query: { status: 'open', limit: 200 } }, FlagListResponse),
+    /** The most recent flags that have closed, newest first. */
+    closedFlags: (limit: number) =>
+      client.request({ method: 'GET', path: routes.flags, query: { status: 'closed', limit } }, FlagListResponse),
+
+    settings: () => client.request({ method: 'GET', path: routes.settings }, SettingsResponse),
+    updateSettings: (changes: UpdateSettingsRequest) =>
+      client.request({ method: 'PATCH', path: routes.settings, body: changes }, SettingsResponse),
     acknowledgeFlag: (flagId: string) =>
       client.request({ method: 'POST', path: routes.flagAcknowledge(flagId) }, FlagResponse),
   };
