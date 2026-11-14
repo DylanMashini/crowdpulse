@@ -25,6 +25,9 @@ type Props = {
   flipDisabled?: boolean;
 };
 
+/** What the cameras are called on screen. "Rear", not "back": on a control, Back reads as the way out. */
+const CAMERA_WORD: Record<CameraFacing, string> = { back: 'rear', front: 'front' };
+
 /** How long a failed flip stays in place of the framing guidance. */
 const FLIP_ERROR_MS = 6000;
 
@@ -61,7 +64,7 @@ export function LiveViewfinder({ state, message, flipDisabled = false }: Props) 
       setRegions(null);
       setCamera(next);
     } catch (failure) {
-      setFlipError(sentences(`The ${next} camera did not start`, captureErrorMessage(failure)));
+      setFlipError(sentences(`The ${CAMERA_WORD[next]} camera did not start`, captureErrorMessage(failure)));
     } finally {
       setFlipping(false);
     }
@@ -100,8 +103,8 @@ function FlipCameraButton({ camera, disabled, onPress }: FlipProps) {
       disabled={disabled}
       hitSlop={4}
       accessibilityRole="button"
-      accessibilityLabel={`Switch to the ${next} camera`}
-      accessibilityValue={{ text: `Using the ${camera} camera` }}
+      accessibilityLabel={`Switch to the ${CAMERA_WORD[next]} camera`}
+      accessibilityValue={{ text: `Using the ${CAMERA_WORD[camera]} camera` }}
       accessibilityState={{ disabled }}
       style={{ alignItems: 'center', gap: theme.space.space1, opacity: disabled ? 0.45 : 1 }}
     >
@@ -121,7 +124,6 @@ function FlipCameraButton({ camera, disabled, onPress }: FlipProps) {
           >
             <Icon name="flip-camera" size={20} color={colors.ink} />
           </View>
-          {/* "Rear", not "Back": beside a picture, Back reads as the way out of the screen. */}
           <View
             style={{
               paddingHorizontal: theme.space.space2,
