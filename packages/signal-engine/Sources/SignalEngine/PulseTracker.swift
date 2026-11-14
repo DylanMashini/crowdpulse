@@ -16,36 +16,48 @@ struct TickEstimate {
   }
 }
 
-/// Passes a rate only when the last `required` windows all produced one and they agree.
+/// Passes the newest window's rate only when `required` of the newest `span` windows, the
+/// newest among them, produced rates that all lie within `tolerance` of each other.
 struct AgreementGate {
   let required: Int
+  let span: Int
   let tolerance: Double
   private var recent: [Double?] = []
 
-  init(required: Int, tolerance: Double) {
+  init(required: Int, span: Int, tolerance: Double) {
     self.required = max(1, required)
+    self.span = max(self.required, span)
     self.tolerance = tolerance
   }
 
   mutating func push(_ rate: Double?) {
     recent.append(rate)
-    if recent.count > required { recent.removeFirst() }
+    if recent.count > span { recent.removeFirst() }
   }
 
-  var agreed: Bool {
+  /// The largest set of rates held that includes the newest window's and spans no more
+  /// than `tolerance`. Empty when the newest window produced none.
+  private var agreeing: [Double] {
+    guard let newest = recent.last ?? nil else { return [] }
     let rates = recent.compactMap { $0 }
-    guard rates.count == required, let low = rates.min(), let high = rates.max() else { return false }
-    return high - low <= tolerance
+    var best: [Double] = []
+    for lowest in rates where lowest <= newest && newest - lowest <= tolerance {
+      let set = rates.filter { $0 >= lowest && $0 - lowest <= tolerance }
+      if set.count > best.count { best = set }
+    }
+    return best
   }
+
+  var agreed: Bool { agreeing.count >= required }
 
   /// How many of the windows held produced a rate. For diagnostics.
   var passing: Int { recent.compactMap { $0 }.count }
 
-  /// Highest minus lowest rate when every one of the `required` windows produced one. For
+  /// Highest minus lowest of the agreeing rates when there are enough of them. For
   /// diagnostics.
   var spread: Double? {
-    let rates = recent.compactMap { $0 }
-    guard rates.count == required, let low = rates.min(), let high = rates.max() else { return nil }
+    let rates = agreeing
+    guard rates.count >= required, let low = rates.min(), let high = rates.max() else { return nil }
     return high - low
   }
 
@@ -326,7 +338,8 @@ struct PulseTracker {
     analyzer = PulseAnalyzer(configuration: configuration, fourier: fourier)
     colourChange = ColourChangeDetector(seconds: configuration.colourJumpSeconds)
     gate = AgreementGate(
-      required: configuration.agreeingWindows, tolerance: configuration.agreementToleranceBpm)
+      required: configuration.agreeingWindows, span: configuration.agreementSpanWindows,
+      tolerance: configuration.agreementToleranceBpm)
   }
 
   /// Returns true when the tracked face changed with this frame.

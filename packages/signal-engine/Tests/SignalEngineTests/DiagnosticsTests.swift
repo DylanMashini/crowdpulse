@@ -93,7 +93,7 @@ private func brightnessStep(at second: Double, factor: Double) -> [FrameRecord] 
     for diagnostic in valid {
       #expect(diagnostic.candidateBpm == diagnostic.value)
       #expect(diagnostic.candidateQuality == diagnostic.quality)
-      #expect(diagnostic.passingWindows == 3)
+      #expect((diagnostic.passingWindows ?? 0) >= 3)
       #expect((diagnostic.agreementSpreadBpm ?? .infinity) <= 5)
       #expect((diagnostic.motionShare ?? 1) <= 0.3)
     }

@@ -90,21 +90,67 @@ private let search = PulseAnalyzer(configuration: .default, fourier: Fourier()).
     #expect(one.summary.timeToFirstReadingSeconds == three.summary.timeToFirstReadingSeconds.map { $0 - 2 })
   }
 
-  @Test func windowsMustAgreeAndBeConsecutive() {
-    var gate = AgreementGate(required: 3, tolerance: 5)
+  @Test func threeOfTheNewestFiveWindowsMustAgreeAndTheNewestIsOneOfThem() {
+    var gate = AgreementGate(required: 3, span: 5, tolerance: 5)
     gate.push(70)
     gate.push(72)
     #expect(!gate.agreed)
     gate.push(74)
     #expect(gate.agreed)
+    #expect(gate.spread == 4)
+    // A rate that agrees with nothing is not shown, whatever came before it.
     gate.push(80)
     #expect(!gate.agreed)
+    // Nor is a window that was refused.
+    gate.push(nil)
+    #expect(!gate.agreed)
+    // One refused window and one stray rate do not cost the reading after them: 72, 74
+    // and 73 are three of the newest five.
+    gate.push(73)
+    #expect(gate.agreed)
+    // Five windows on, the old rates are gone.
+    for _ in 0..<3 { gate.push(nil) }
+    gate.push(73)
+    #expect(!gate.agreed)
+  }
+
+  @Test func ratesThatSpanMoreThanTheToleranceDoNotAgree() {
+    // 70 and 78 are each within 5 of 74, but not of each other.
+    var gate = AgreementGate(required: 3, span: 5, tolerance: 5)
+    gate.push(70)
+    gate.push(78)
+    gate.push(74)
+    #expect(!gate.agreed)
+    #expect(gate.spread == nil)
+    gate.push(75)
+    #expect(gate.agreed)
+    #expect((gate.spread ?? 9) <= 5)
+  }
+
+  @Test func aSpanOfThreeIsThreeInARow() {
+    var gate = AgreementGate(required: 3, span: 3, tolerance: 5)
+    gate.push(70)
+    gate.push(72)
+    gate.push(74)
+    #expect(gate.agreed)
     gate.push(nil)
     gate.push(80)
     gate.push(81)
     #expect(!gate.agreed)
     gate.push(82)
     #expect(gate.agreed)
+  }
+
+  /// 45 bpm at 30 frames per second: one early window lands within the margin of the
+  /// search edge and is refused. Three in a row then starts counting again.
+  @Test func oneRefusedWindowDoesNotRestartTheCount() {
+    let slow = sitting { $0.heartRateBpm = 45; $0.frameRate = 30; $0.seed = 45 }
+    let fiveWide = replay(slow)
+    let inARow = replay(slow) { $0.agreementSpanWindows = 3 }
+    #expect(fiveWide.heartRates.count > inARow.heartRates.count)
+    #expect(fiveWide.heartRates.allSatisfy { abs($0.bpm - 45) <= 2 })
+    let diagnostics = SittingReplay.run(slow.frames(), diagnostics: true).diagnostics
+    #expect(diagnostics.filter { $0.state == .valid }.allSatisfy { ($0.passingWindows ?? 0) >= 3 })
   }
 }
 

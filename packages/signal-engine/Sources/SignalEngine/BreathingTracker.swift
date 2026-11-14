@@ -31,7 +31,7 @@ struct BreathingTracker {
     self.configuration = configuration
     self.fourier = fourier
     gate = AgreementGate(
-      required: configuration.agreeingWindows,
+      required: configuration.agreeingWindows, span: configuration.agreeingWindows,
       tolerance: configuration.breathingAgreementTolerancePerMin)
   }
 

@@ -39,8 +39,8 @@ public enum PulseGate: String, Codable, Sendable, CaseIterable {
   /// Quality at the peak is under `qualityThreshold`, or under `minimumRecentQuality` in
   /// the newest seconds of the window. Reason `low_quality`.
   case quality
-  /// The last `agreeingWindows` windows did not all pass, or their rates differ by more
-  /// than `agreementToleranceBpm`. Reason `awaiting_agreement`.
+  /// Fewer than `agreeingWindows` of the newest `agreementSpanWindows` windows passed with
+  /// a rate within `agreementToleranceBpm` of this one. Reason `awaiting_agreement`.
   case agreement
 }
 
@@ -97,11 +97,11 @@ public struct PulseDiagnostic: Codable, Sendable, Equatable {
   /// Quality at the candidate in the newest `recentEvidenceSeconds` of the window alone
   /// (`minimumRecentQuality`). Nil when the check did not run.
   public var recentQuality: Double?
-  /// How many of the last `agreeingWindows` windows passed every check before agreement,
-  /// this one included.
+  /// How many of the newest `agreementSpanWindows` windows passed every check before
+  /// agreement, this one included.
   public var passingWindows: Int?
-  /// Highest minus lowest rate of those windows, in bpm (`agreementToleranceBpm`). Nil
-  /// unless all of them passed.
+  /// Highest minus lowest rate of the windows that agree with this one, in bpm
+  /// (`agreementToleranceBpm`). Nil when fewer than `agreeingWindows` do.
   public var agreementSpreadBpm: Double?
 
   public init() {}

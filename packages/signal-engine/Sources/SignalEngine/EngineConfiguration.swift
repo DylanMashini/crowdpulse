@@ -14,8 +14,12 @@ public struct EngineConfiguration: Codable, Sendable, Equatable {
   public var breathingBandHz: ClosedRange<Double> = 0.1...0.7
   /// Quality (0 to 1) an estimate needs to be valid. Calibrated on negative controls.
   public var qualityThreshold: Double = 0.5
-  /// Consecutive agreeing windows needed before a reading is shown.
+  /// Windows that must agree before a reading is shown: this one and others among the
+  /// newest `agreementSpanWindows`.
   public var agreeingWindows: Int = 3
+  /// How many of the newest windows the agreeing ones are looked for in. With 3 of 5, one
+  /// refused window does not cost the two readings after it as well.
+  public var agreementSpanWindows: Int = 5
   /// Windows agree when their rates differ by no more than this, in bpm.
   public var agreementToleranceBpm: Double = 5
   /// With no frame for this long, `reading(at:)` reports `stale`.
