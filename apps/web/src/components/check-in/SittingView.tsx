@@ -1,6 +1,8 @@
 'use client';
 
 import {
+  EXPOSURE_STUCK,
+  EXPOSURE_STUCK_AFTER_SECONDS,
   isLowConfidence,
   LOWER_CONFIDENCE,
   LOWER_CONFIDENCE_DETAIL,
@@ -15,7 +17,7 @@ import { useMemo } from 'react';
 
 import { PatientIdentity, QualityMeter, Readout, SittingChart, buttonClass, type IconName, type ReadoutState } from '@/components/ds';
 import { Panel } from '@/components/ui/Panel';
-import { clockTime, rate, reasonText, seconds, secondsAgo } from '@/lib/format';
+import { clockTime, exposureIsStuck, rate, reasonText, seconds, secondsAgo } from '@/lib/format';
 import { provenanceOf } from '@/lib/mapping';
 
 /** No reading from the phone for this long: the last value is struck through as stale. */
@@ -70,9 +72,11 @@ function liveContent(readings: StoredReading[], pick: (reading: StoredReading) =
     return { state: 'valid', value: rate(estimate.value), age: secondsAgo(at, serverNow), coverage: estimate.coverage };
   }
   // The engine's own stale state arrives without a value, so there is nothing to strike through.
+  // Exposure that has not settled for seconds on end will not: say what to do about it.
+  const stuck = exposureIsStuck(readings.slice(-EXPOSURE_STUCK_AFTER_SECONDS).map((reading) => pick(reading).reason));
   return {
     state: estimate.state === 'settling' ? 'settling' : 'none',
-    reason: reasonText(estimate.reason),
+    reason: stuck ? EXPOSURE_STUCK : reasonText(estimate.reason),
     coverage: estimate.coverage,
   };
 }

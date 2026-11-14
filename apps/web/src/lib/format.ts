@@ -1,4 +1,4 @@
-import type { CaptureSource, EstimateReason, FlagRule, TileState, Trend } from '@triagecam/contracts';
+import { EXPOSURE_STUCK_AFTER_SECONDS, type CaptureSource, type EstimateReason, type FlagRule, type TileState, type Trend } from '@triagecam/contracts';
 
 /** A true minus sign, so a negative number lines up with a positive one. */
 const MINUS = '\u2212';
@@ -120,6 +120,16 @@ const REASONS: Record<EstimateReason, string> = {
 
 export function reasonText(reason: EstimateReason | null): string | undefined {
   return reason ? REASONS[reason] : undefined;
+}
+
+/**
+ * Whether the camera has been unable to set its exposure for too long to be settling: the
+ * newest `EXPOSURE_STUCK_AFTER_SECONDS` one-second readings, oldest first in `reasons`, all
+ * say so. The screen then says what to do about it (`EXPOSURE_STUCK`).
+ */
+export function exposureIsStuck(reasons: Array<EstimateReason | null>): boolean {
+  if (reasons.length < EXPOSURE_STUCK_AFTER_SECONDS) return false;
+  return reasons.slice(-EXPOSURE_STUCK_AFTER_SECONDS).every((reason) => reason === 'exposure_adjusting');
 }
 
 const SOURCES: Record<CaptureSource, string> = {

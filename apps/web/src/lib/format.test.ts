@@ -6,6 +6,7 @@ import {
   breathingRate,
   breathsPerMin,
   decimal,
+  exposureIsStuck,
   heartRate,
   milliseconds,
   minutes,
@@ -108,4 +109,15 @@ test('the waiting room counts a lower-confidence patient as that, not as without
     waitingSummary([item('no-reading'), item('no-reading')], 30),
     '2 patients waiting: 2 without a reading. Overdue after 30 min without an observation.',
   );
+});
+
+test('exposure that has not settled for eight readings in a row is stuck (QA round 3, R5)', () => {
+  const adjusting = Array.from({ length: 8 }, () => 'exposure_adjusting' as const);
+  assert.equal(exposureIsStuck(adjusting), true);
+  assert.equal(exposureIsStuck([null, 'warming_up', ...adjusting]), true);
+  // Seven is still the camera settling, and anything else in between starts the count again.
+  assert.equal(exposureIsStuck(adjusting.slice(1)), false);
+  assert.equal(exposureIsStuck([...adjusting.slice(0, 4), 'no_face', ...adjusting.slice(0, 7)]), false);
+  assert.equal(exposureIsStuck([...adjusting, 'warming_up']), false);
+  assert.equal(exposureIsStuck([]), false);
 });
