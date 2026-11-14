@@ -41,7 +41,7 @@ scripts/build-tokens.mjs      tokens.json -> web CSS and mobile TypeScript
 - **Native dependencies of the mobile app are fixed** to what `apps/mobile/package.json` lists now (expo-router, expo-dev-client, expo-font, expo-notifications, expo-secure-store, expo-device, expo-keep-awake, expo-constants, expo-linking, expo-build-properties, safe-area-context, screens, svg). Adding one means a new native build: report it instead of adding it mid-pass. JavaScript-only packages are fine.
 - **Next.js configuration.** `cacheComponents` is off: pages and routes render on request. API routes that hold state in memory (live view, the readings stream) need the Node.js runtime, which is the default; do not opt them into the edge runtime. Next 16 differs from older versions: read `node_modules/next/dist/docs/` before using an API you have not checked.
 - **Schema changes** go through `apps/web/src/db/schema.ts` and `pnpm db:generate`, which writes one new SQL file. Only the API owner generates migrations; everyone else reports the column they need.
-- **Copy.** `PRIVACY_CAPTURE`, `PRIVACY_FACE` and `PROTOTYPE_NOTICE` in `@triagecam/contracts` are shown word for word. The live view exists, so nothing may say "no video leaves the phone". The sentence is "Video is shown live to the operator and is not stored. Only numbers are saved."
+- **Copy.** `PRIVACY_CAPTURE`, `PRIVACY_FACE` and `PROTOTYPE_NOTICE` in `@triagecam/contracts` are shown word for word. The live view exists and a profile photo is kept, so nothing may say "no video leaves the phone" or "no picture is stored". The sentence is "Video is shown live to staff and is not stored. One profile photo is kept with the patient record."
 
 ## 1. Frame record and sitting file
 
@@ -186,8 +186,8 @@ Until the Swift functions exist in the build, `TriageCaptureModule.ts` hands bac
 | `startSitting({ sittingId })` | `Promise<{ sittingId, startedAt }>` | `sittingId` from `POST /api/sittings`. Creates the engine and the sitting file on the next frame; `onReading` begins. `startedAt` is the phone wall clock at the first frame. |
 | `stopSitting()` | `Promise<SittingResult>` | `{ sittingId, endedAt, summary, fileUri }`. `summary` is `SignalEngine.finish()` unchanged and is the body of the finish request. `fileUri` is a `file://` URI, or null from the stub. The caller decides when 60 seconds are up. |
 | `deleteSittingFile(fileUri)` | `Promise<void>` | After upload, or when the file is not wanted |
-| `setLivePreview(options)` | `Promise<void>` | `{ enabled, fps?: 1 to 5 (default 2), maxLongSide?: up to 640 (default 480), quality?: 0 to 1 (default 0.5) }`. Off by default. Frames are never written to disk. |
-| `captureFaceCrop()` | `Promise<{ jpegBase64, width, height }>` | The tracked face from the current frame, at most 512 px on the long side. Call it only for a ticket that opted in. |
+| `setLivePreview(options)` | `Promise<void>` | `{ enabled, fps?: 1 to 30 (default 2), maxLongSide?: up to 640 (default 480), quality?: 0 to 1 (default 0.5), uploadUrl?, uploadHeaders? }`. Off by default. With `uploadUrl` (the absolute live-view frame route) the module posts each frame itself as a raw `image/jpeg` body with `uploadHeaders`, at most two in flight and the rest dropped, and reports through `onLiveUpload`; without it, frames arrive as `onPreviewFrame`. Frames are never written to disk. |
+| `captureFaceCrop()` | `Promise<{ jpegBase64, width, height }>` | The tracked face from the current frame, at most 512 px on the long side. Sent once per check-in sitting as the profile photo (`PUT /api/patients/:number/photo`), and for face enrolment when the patient opted in. |
 | `addListener(name, listener)` | `{ remove() }` | |
 
 Every promise rejects with an `Error` whose `code` is one of `ERR_CAMERA_PERMISSION`, `ERR_CAMERA_UNAVAILABLE`, `ERR_CAPTURE_INTERRUPTED`, `ERR_NOT_CAPTURING`, `ERR_SITTING_RUNNING`, `ERR_NO_SITTING`, `ERR_NO_FACE`, `ERR_FILE`.
@@ -201,7 +201,8 @@ Optional values cross the bridge as `null`, never as a missing key (the zod sche
 | `onReading` | Once per second during a sitting | `{ sittingId, reading }`. `reading` is the wire `Reading` (section 4), ready to post: `t` is the phone wall clock in ISO 8601 UTC (`startedAt + (engine t - captureStart)`), `elapsedMs` is `round(elapsed * 1000)`, `heartRate` and `breathingRate` are the engine's `Estimate`s with nil written as null. |
 | `onStatus` | Once per second while capture runs | `{ source, fps, droppedFrames, exposureLocked, thermalState, facePresent, viewfinder, sittingId, sittingElapsedMs }`. `fps` is frames delivered in the last second. `droppedFrames` counts from the sitting's start, or from capture start when none is running. `thermalState` is `nominal`, `fair`, `serious` or `critical`. `viewfinder` is `searching`, `locking`, `measuring` or `lost`, the states of the design system's `Viewfinder`. |
 | `onFaceRegions` | About 10 per second while capture runs | `{ aspectRatio, face, forehead, leftCheek, rightCheek, chest }`. `face` and `chest` are `{ x, y, width, height }`; the three skin regions are closed polygons of 4 to 12 `{ x, y }` points. All are null when not tracked. |
-| `onPreviewFrame` | The rate set by `setLivePreview` | `{ jpegBase64, width, height, t }`: the wire `LiveFrame`. Post it to the live-view route as it is. |
+| `onPreviewFrame` | The rate set by `setLivePreview`, only when it has no `uploadUrl` | `{ jpegBase64, width, height, t }`: the wire `LiveFrame`. Post it to the live-view route as it is. The stub uses this path. |
+| `onLiveUpload` | Once per second while the module uploads frames itself | `{ delivered, failed, viewers }`: frames the server accepted and refused in the last second, and the dashboards watching (null when nothing was accepted). |
 | `onError` | When something fails outside a call | `{ code, message }` |
 
 **Coordinates** are normalised to the camera frame as shown upright on screen: x to the right, y down, both 0 to 1, origin at the top-left corner. `aspectRatio` is that frame's width divided by its height. Only these outlines reach the viewfinder; it draws no picture.
@@ -248,21 +249,39 @@ All routes are under `/api` on the Next.js server. Bodies are JSON (`Content-Typ
 
 `Device` is `{ id, role, label, hasPushToken, lastSeenAt, liveAt }`. `liveAt` is when a camera device last posted a live-view frame, or null if that was more than 5 seconds ago. The phone registers at role choice, stores the returned `id`, and registers again with that `id` whenever the role or push token changes. The push token is never returned.
 
-### Tickets
+### Patients
 
-A ticket is addressed by its public number everywhere: `/api/tickets/14`. No payload carries a ticket's database id.
+A patient is one visit to the waiting room. The record is created empty the moment intake starts on a camera phone, and is filled in from the dashboard's check-in page while the first sitting runs. On screen the photo and the name lead; the short visit number (`number`) addresses the patient in every URL (`/api/patients/14`) and shows as secondary text ("No. 14"). No payload carries a patient's database id.
 
 | Method and path | Auth | Request | Response |
 |---|---|---|---|
-| `POST /api/tickets` | staff | `CreateTicketRequest` `{ faceOptIn?: boolean }` (default false) | 201 `TicketResponse` `{ ticket }` |
-| `GET /api/tickets` | staff | Query `TicketListQuery`: `status=waiting\|discharged\|all` (default `waiting`), `limit`, `cursor` | 200 `TicketListResponse` `{ items, nextCursor }`, newest first |
-| `GET /api/tickets/:number` | staff | none | 200 `TicketDetailResponse` `{ ticket, state, baseline, sittings, flags, timeline, handoff }` |
-| `PATCH /api/tickets/:number` | staff | `UpdateTicketRequest` `{ faceOptIn }` | 200 `TicketResponse`. Setting false deletes the stored embedding. 409 `ticket_discharged`. |
-| `POST /api/tickets/:number/discharge` | staff | none | 200 `TicketResponse`. Sets status, closes open flags, deletes face embeddings. Calling it again returns the same ticket. |
+| `POST /api/patients` | staff | `CreatePatientRequest`: any subset of the intake fields, and `faceOptIn?` (default false). `{}` is the normal body from the phone. | 201 `PatientResponse` `{ patient }` |
+| `GET /api/patients` | staff | Query `PatientListQuery`: `status=waiting\|discharged\|all` (default `waiting`), `limit`, `cursor` | 200 `PatientListResponse` `{ items, nextCursor }`, newest first |
+| `GET /api/patients/:number` | staff | none | 200 `PatientDetailResponse` `{ patient, state, baseline, sittings, flags, timeline, handoff }` |
+| `PATCH /api/patients/:number` | staff | `UpdatePatientRequest`: any subset of the intake fields, `faceOptIn?`, `intakeComplete?` | 200 `PatientResponse`. A field left out keeps its value; `null` or an empty string clears it. The check-in page sends this as staff type (about 0.4 s after the last key), so it is cheap and safe to repeat. `faceOptIn: false` deletes the stored embedding; changing `faceOptIn` on a discharged patient is 409 `patient_discharged`, intake fields can still be corrected. |
+| `POST /api/patients/:number/discharge` | staff | none | 200 `PatientResponse`. Sets status, closes open flags, deletes face embeddings. The name, intake details and photo stay. Calling it again returns the same patient. |
+| `GET /api/patients/:number/photo` | staff | Optional query `v=<photoUpdatedAt>` | 200 `image/jpeg`, a 384 px square (`PATIENT_PHOTO_SIZE`). With `v` it is `Cache-Control: private, max-age=31536000, immutable`. 404 `not_found` when there is no photo. |
+| `PUT /api/patients/:number/photo` | staff | `PatientPhotoRequest` `{ jpegBase64 }`: the phone's face crop | 200 `PatientResponse`. Replaces an earlier photo. |
+| `POST /api/patients/:number/photo/capture` | staff | `CapturePatientPhotoRequest` `{ deviceId }` | 200 `PatientResponse`. Cuts the portrait from the frame that camera phone is sending to the live view now. 409 `conflict` when the phone is not live, 422 `no_face_detected`, 503 `face_unavailable`. |
+| `DELETE /api/patients/:number/photo` | staff | none | 204 |
 
-`Ticket` is `{ number, status: 'waiting' \| 'discharged', createdAt, dischargedAt, faceOptIn, faceEnrolled }`.
+`Patient` is the intake fields plus `{ number, status: 'waiting' \| 'discharged', createdAt, dischargedAt, intakeCompletedAt, photoUpdatedAt, faceOptIn, faceEnrolled }`.
 
-In `TicketDetailResponse`: `state` is the tile state (null once discharged); `baseline` is the sitting trends are measured against; `sittings` are oldest first; `flags` newest first; `timeline` is newest first and each `TimelineEntry` has a `type` of `created`, `sitting`, `flag_opened`, `flag_acknowledged`, `flag_closed` or `discharged`, with `at` and the fields in `tickets.ts`; `handoff` is the templated sentence.
+| Intake field (`PatientIntake`) | Type | Meaning |
+|---|---|---|
+| `name` | string or null, at most 120 | Null until staff have typed it. Show `patientLabel(patient)`, which falls back to "Patient 14". |
+| `dateOfBirth` | `YYYY-MM-DD` or null | A calendar date, no time or zone |
+| `sex` | `'female' \| 'male' \| 'other'` or null | |
+| `reasonForVisit` | string or null, at most 280 | The chief complaint |
+| `painScore` | integer 0 to 10 or null | As the patient reports it |
+| `allergies` | string or null, at most 280 | |
+| `notes` | string or null, at most 2000 | Symptoms, history, medication |
+
+Text is trimmed on the way in and an empty string is stored as null. `intakeCompletedAt` is stamped by `intakeComplete: true` and cleared by `false`. `photoUpdatedAt` is when the profile photo was last stored, null when there is none, and the `v` to put on the photo URL.
+
+**`PatientRef`** `{ number, name, photoUpdatedAt }` is enough to draw an avatar and a name. Every payload about one patient carries it as `patient`, beside the older `patientNumber`: `WorklistItem`, `Flag`, the `sitting_started` and `patient_changed` stream events, and a matched `MatchFaceResponse`. Clients show the photo at `routes.patientPhoto(number) + '?v=' + photoUpdatedAt` (the phone adds its bearer header) and initials when `photoUpdatedAt` is null.
+
+**The profile photo** is taken once per patient, three ways, and is the only picture the system stores: (1) automatically, by the server, from the live-view frames during a sitting for a patient with no photo: about twice a second it looks for a face, and the first frame with a clear one is cropped and stored; (2) by the phone, which sends its own sharper `captureFaceCrop()` once the viewfinder is measuring during a check-in sitting; this replaces (1); (3) by staff, with "Retake photo" on the check-in page (the capture route).
 
 ### Sittings
 
@@ -270,7 +289,7 @@ The order of calls for one sitting is in section 6.
 
 | Method and path | Auth | Request | Response |
 |---|---|---|---|
-| `POST /api/sittings` | staff | `StartSittingRequest` `{ ticketNumber, deviceId, kind: 'check_in' \| 'recheck', source, clientTime }` | 201 `StartSittingResponse` `{ sitting, serverTime }`. The server stores `clockOffsetMs = server now - clientTime`. 404 unknown ticket or device, 409 `ticket_discharged`. An unfinished sitting of the same ticket is ended without a summary first. |
+| `POST /api/sittings` | staff | `StartSittingRequest` `{ patientNumber, deviceId, kind: 'check_in' \| 'recheck', source, clientTime }` | 201 `StartSittingResponse` `{ sitting, serverTime }`. The server stores `clockOffsetMs = server now - clientTime`. 404 unknown patient or device, 409 `patient_discharged`. An unfinished sitting of the same patient is ended without a summary first. |
 | `POST /api/sittings/:id/readings` | staff | `PostReadingsRequest` `{ readings: Reading[] }`, 1 to 30 | 200 `PostReadingsResponse` `{ accepted }`. Once per second. A reading whose `t` is already stored is skipped, so a retry is safe. 409 `sitting_finished`. |
 | `POST /api/sittings/:id/finish` | staff | `FinishSittingRequest` `{ endedAt, summary: SittingSummary }` | 200 `SittingResponse` `{ sitting }`. Stores the summary and beat intervals, then runs the trend rules. Calling it again returns the stored sitting. |
 | `GET /api/sittings/:id` | staff | none | 200 `SittingDetailResponse` `{ sitting, readings, referenceReadings, beatIntervals, meanAbsoluteErrorBpm, pairedReadings, within5BpmShare }` |
@@ -279,7 +298,7 @@ The order of calls for one sitting is in section 6.
 
 - `Reading` (phone to server): `{ t, elapsedMs, heartRate: Estimate, breathingRate: Estimate }`. `t` is the phone's wall clock; the server stores `t + clockOffsetMs`. `Estimate` is exactly the engine's (section 2), with `value` in bpm or breaths per minute.
 - `StoredReading` (server to dashboard): `{ t, heartRate, breathingRate }` with `t` on the server clock.
-- `Sitting`: `{ id, ticketNumber, deviceId, kind, source, startedAt, endedAt, clockOffsetMs, summary }`. `startedAt` and `endedAt` are on the server clock. `summary` is null until finished, then `{ durationSeconds, heartRate, breathingRate, rmssd, sdnn, timeToFirstReadingSeconds, longestDropoutSeconds, frameCount, droppedFrames }` where the four vitals are `{ value, coverage }`.
+- `Sitting`: `{ id, patientNumber, deviceId, kind, source, startedAt, endedAt, clockOffsetMs, summary }`. `startedAt` and `endedAt` are on the server clock. `summary` is null until finished, then `{ durationSeconds, heartRate, breathingRate, rmssd, sdnn, timeToFirstReadingSeconds, longestDropoutSeconds, frameCount, droppedFrames }` where the four vitals are `{ value, coverage }`.
 - `source` is `camera`, `simulated`, `stub` or `recording` (a replayed sitting file). Anything but `camera` is labelled on every screen that shows the sitting.
 - `ReferenceReading`: `{ t, heartRate, rrIntervalsMs, breathingRate?, source: 'chest_strap' \| 'oximeter' \| 'manual' }`. `t` is the laptop's clock, which is the server clock. `rrIntervalsMs` is empty when the device reports none.
 - In `SittingDetailResponse`, a **paired reading** is a valid heart-rate reading with a reference sample within 1.5 s of it; the three agreement fields are null or 0 when nothing pairs.
@@ -290,13 +309,13 @@ The order of calls for one sitting is in section 6.
 |---|---|---|---|
 | `GET /api/worklist` | staff | none | 200 `WorklistResponse` `{ generatedAt, recheckIntervalMin, items }` |
 
-Every waiting ticket appears once, in rank order (`rank` 1 first). Clients do not sort. `WorklistItem`:
+Every waiting patient appears once, in rank order (`rank` 1 first). Clients do not sort. `WorklistItem`:
 
 | Field | Meaning |
 |---|---|
-| `rank`, `ticketNumber` | |
+| `rank`, `patientNumber` | |
 | `state` | `observed`, `flag`, `overdue` or `no-reading`. Rules in section 6. |
-| `waitingSince` | Ticket creation time |
+| `waitingSince` | Patient creation time |
 | `lastObservedAt`, `minutesSinceObserved` | End of the last sitting that produced a valid heart or breathing rate; whole minutes since then at `generatedAt`. Both null if never observed. |
 | `pulse`, `breathing` | `Trend` `{ base, now }`: the baseline sitting's value and the latest sitting's value, in bpm and breaths per minute. `now: null` means the latest sitting gave no reading for it. |
 | `score`, `scoreAtCheckIn` | Partial NEWS2 band, 0 to 3: the higher of the two parameter bands. Null when nothing was measured. |
@@ -304,16 +323,18 @@ Every waiting ticket appears once, in rank order (`rank` 1 first). Clients do no
 | `source` | Source of the latest sitting, or null |
 | `flags` | Open `Flag`s, trend rules before overdue |
 | `handoff` | The templated handoff sentence |
-| `sittingInProgress` | A sitting is running for this ticket |
+| `patient` | `PatientRef`: the name and photo for the row |
+| `reasonForVisit`, `ageYears` | From intake; null until entered. `ageYears` is whole years from the date of birth. |
+| `sittingInProgress` | A sitting is running for this patient |
 
 ### Flags
 
 | Method and path | Auth | Request | Response |
 |---|---|---|---|
-| `GET /api/flags` | staff | Query `FlagListQuery`: `status=open\|closed\|all` (default `open`), `ticket=<number>`, `limit`, `cursor` | 200 `FlagListResponse` `{ items, nextCursor }`, newest first |
+| `GET /api/flags` | staff | Query `FlagListQuery`: `status=open\|closed\|all` (default `open`), `patient=<number>`, `limit`, `cursor` | 200 `FlagListResponse` `{ items, nextCursor }`, newest first |
 | `POST /api/flags/:id/acknowledge` | staff | none | 200 `FlagResponse` `{ flag }`. Records who and when. Acknowledging twice changes nothing. Acknowledging does not close the flag. |
 
-`Flag`: `{ id, ticketNumber, rule: 'score_rise' \| 'baseline_shift' \| 'overdue', openedAt, closedAt, detail, acknowledgedAt, acknowledgedBy, handoff }`. `detail` (`FlagDetail`) holds the numbers the flag was raised on: `{ pulse: Trend, breathing: Trend, scoreAtCheckIn, scoreNow, minutesSinceCheckIn, minutesSinceObserved }`. `acknowledgedBy` is the staff member's email (the first to acknowledge).
+`Flag`: `{ id, patientNumber, rule: 'score_rise' \| 'baseline_shift' \| 'overdue', openedAt, closedAt, detail, acknowledgedAt, acknowledgedBy, handoff }`. `detail` (`FlagDetail`) holds the numbers the flag was raised on: `{ pulse: Trend, breathing: Trend, scoreAtCheckIn, scoreNow, minutesSinceCheckIn, minutesSinceObserved }`. `acknowledgedBy` is the staff member's email (the first to acknowledge).
 
 ### Settings
 
@@ -324,12 +345,12 @@ Every waiting ticket appears once, in rank order (`rank` 1 first). Clients do no
 
 | `Settings` field | Default | Range | Meaning |
 |---|---|---|---|
-| `recheckIntervalMin` | 30 | 1 to 240 | Minutes without a valid observation before a ticket is overdue |
+| `recheckIntervalMin` | 30 | 1 to 240 | Minutes without a valid observation before a patient is overdue |
 | `pulseDeltaBpm` | 20 | 1 to 100 | Pulse movement from baseline that flags |
 | `breathingDeltaPerMin` | 6 | 1 to 30 | Breathing movement from baseline that flags |
 | `scoreRiseEnabled`, `baselineShiftEnabled`, `overdueEnabled` | true | | Turn each rule on or off |
-| `notifyCooldownMin` | 10 | 0 to 240 | Minimum minutes between two pushes for one ticket |
-| `faceMatchMinConfidence` | 0.8 | 0 to 1 | Below this, a face match asks for the ticket number |
+| `notifyCooldownMin` | 10 | 0 to 240 | Minimum minutes between two pushes for one patient |
+| `faceMatchMinConfidence` | 0.8 | 0 to 1 | Below this, a face match offers the waiting-room list instead |
 
 ### Statistics
 
@@ -339,56 +360,60 @@ Every waiting ticket appears once, in rank order (`rank` 1 first). Clients do no
 
 | Field | Meaning |
 |---|---|
-| `totals` | `ticketsWaiting`, `ticketsDischarged`, `sittings`, `sittingsWithReference`, `openFlags`, `personHours` (sum over tickets of time spent waiting inside the range) |
+| `totals` | `patientsWaiting`, `patientsDischarged`, `sittings`, `sittingsWithReference`, `openFlags`, `personHours` (sum over patients of time spent waiting inside the range) |
 | `heartRate` | `Agreement` over every paired reading in the range: `pairedReadings`, `meanAbsoluteErrorBpm`, `biasBpm` (mean of estimate minus reference), `within5BpmShare` |
 | `sittings` | `attempted` (finished sittings), `withReading`, `accurateAcceptedShare` (of attempted sittings that have a reference, the share whose summary heart rate is within 5 bpm of the reference mean; no reading counts as a miss), `meanCoverage`, `medianTimeToFirstReadingSeconds`, `longestDropoutSeconds` |
 | `flags` | `episodes` opened in the range, `episodesPerPersonHour`, `acknowledged`, `medianMinutesToAcknowledge` |
-| `perTicket` | One `TicketStatistics` per ticket with a sitting in the range: the `Agreement` fields plus `ticketNumber`, `sittings`, `coverage` |
+| `perPatient` | One `PatientStatistics` per patient with a sitting in the range: the `Agreement` fields plus `patientNumber`, `sittings`, `coverage` |
 
 A share or mean with nothing under it is null, never 0. Sittings whose source is `stub` are left out of every number here.
 
 ### Face match
 
-The embedding is computed and compared on the server. The phone sends one face crop, and only for a ticket whose `faceOptIn` is true. The crop is used in memory and not stored; the database keeps the embedding (`real[]`) and the model's name.
+The embedding is computed and compared on the server. The phone sends one face crop, and only for a patient whose `faceOptIn` is true. The crop is used in memory and not stored; the database keeps the embedding (`real[]`) and the model's name.
 
 | Method and path | Auth | Request | Response |
 |---|---|---|---|
-| `POST /api/tickets/:number/face` | staff | `EnrolFaceRequest` `{ jpegBase64 }` | 201 `EnrolFaceResponse` `{ ticketNumber, model }`. Replaces an earlier embedding for the ticket. 403 `face_not_opted_in`, 409 `ticket_discharged`, 422 `no_face_detected`. |
-| `POST /api/face/match` | staff | `MatchFaceRequest` `{ jpegBase64 }` | 200 `MatchFaceResponse` `{ outcome, ticketNumber, confidence }`. 422 `no_face_detected`. |
-| `DELETE /api/tickets/:number/face` | staff | none | 204, whether or not an embedding existed |
+| `POST /api/patients/:number/face` | staff | `EnrolFaceRequest` `{ jpegBase64 }` | 201 `EnrolFaceResponse` `{ patientNumber, model }`. Replaces an earlier embedding for the patient. 403 `face_not_opted_in`, 409 `patient_discharged`, 422 `no_face_detected`. |
+| `POST /api/face/match` | staff | `MatchFaceRequest` `{ jpegBase64 }` | 200 `MatchFaceResponse` `{ outcome, patientNumber, patient, confidence }`. `patient` is the matched `PatientRef`, so the phone can ask "Is this you?" by name. 422 `no_face_detected`. |
+| `DELETE /api/patients/:number/face` | staff | none | 204, whether or not an embedding existed |
 
 - `jpegBase64` has no `data:` prefix and is at most 400,000 characters.
-- Matching compares against waiting, opted-in tickets only, and only embeddings from the same model.
-- `outcome` is `matched` (`ticketNumber` set, `confidence` at or above `faceMatchMinConfidence`), `low_confidence` (someone resembles the crop but not surely; `ticketNumber` is null and the screen asks for the ticket number) or `no_match` (`confidence` null). A low-confidence guess is never disclosed.
+- Matching compares against waiting, opted-in patients only, and only embeddings from the same model.
+- `outcome` is `matched` (`patientNumber` set, `confidence` at or above `faceMatchMinConfidence`), `low_confidence` (someone resembles the crop but not surely; `patientNumber` is null and the screen offers the waiting-room list) or `no_match` (`confidence` null). A low-confidence guess is never disclosed.
 - `confidence` is 0 to 1 for the best candidate. How cosine similarity maps onto it belongs to the face implementation and is stated beside the model.
 
 ### Live view
 
-A camera-role phone whose operator turned the live view on posts low-rate JPEG frames. The server keeps only the newest frame per device, in memory, and relays it to dashboards that are watching. Nothing is written to disk or to the database. This works only with one server process, which is how the app runs.
+While a camera phone has its camera on for a sitting it posts JPEG frames, 15 a second. The server keeps only the newest frame per device, in memory, and relays it to the dashboards that are watching. Nothing is written to disk or to the database, with one deliberate exception: the profile photo (see Patients). This works only with one server process, which is how the app runs.
+
+The transport is plain HTTP on the app's own port, so it works unchanged under `next dev`, `next start` and through an ngrok tunnel: one small POST per frame over a kept-alive connection from the phone, and one long multipart response to each dashboard. Measured on one machine with 640x480 frames of 25 kB: 15 fps on the dashboard, 4 ms median from capture to dashboard (95th percentile 6 ms), server relay 1 ms. `pnpm --filter @triagecam/web intake:sim` repeats the measurement.
 
 | Method and path | Auth | Request | Response |
 |---|---|---|---|
-| `POST /api/live/:deviceId/frame` | staff | `LiveFrame` `{ jpegBase64, width, height, t }` | 200 `PostLiveFrameResponse` `{ viewers }`. The device must be the caller's own camera device. With `viewers` 0 the phone may slow to 1 frame per second. |
-| `GET /api/live/:deviceId/stream` | staff | none | 200 `multipart/x-mixed-replace; boundary=frame`: one `image/jpeg` part per frame, so `<img src>` shows it. Stays open; if the device has posted nothing in the last 5 seconds it sends nothing until a frame arrives. |
+| `POST /api/live/:deviceId/frame` | staff | Either the JPEG itself (`Content-Type: image/jpeg`, at most 300 kB, with the header `x-frame-captured-at: <phone clock, ms since the epoch>`), or the JSON `LiveFrame` `{ jpegBase64, width, height, t }` | 200 `PostLiveFrameResponse` `{ viewers }`. The device must be the caller's own camera device; the check is remembered for 10 seconds so it does not cost two queries per frame. 429 `rate_limited` above 30 frames a second. With `viewers` 0 and no sitting running the phone slows to 2 frames a second. |
+| `GET /api/live/:deviceId/stream` | staff | none | 200 `multipart/x-mixed-replace; boundary=frame`: one `image/jpeg` part per frame, so `<img src>` shows it. Each part has `Content-Length` and the headers `x-frame-received-at` (server clock, ms), `x-frame-sequence`, and `x-frame-captured-at` when the phone sent it. Stays open; a reader that falls behind is sent only the newest frame, never a backlog. |
 
-Limits (`LIVE_VIEW`): at most 5 frames per second, 640 px on the long side, JPEG quality 0.5; a device with no frame for 5 seconds is no longer live. `GET /api/devices` reports which camera devices are live through `liveAt`.
+The dashboard reads the stream with `fetch`, cuts it into parts by `Content-Length` (`apps/web/src/lib/live-feed.ts`), decodes each JPEG with `createImageBitmap` and draws it on a canvas, skipping frames when decoding falls behind. It shows the frame rate and the server-to-screen delay beside the picture.
+
+Limits (`LIVE_VIEW`): `fps` 15, `maxFps` 30 (the server's ceiling), `idleFps` 2, 640 px on the long side, JPEG quality 0.5, 300 kB a frame; a device with no frame for 5 seconds is no longer live. `LIVE_FRAME_HEADERS` names the three headers. `GET /api/devices` reports which camera devices are live through `liveAt`.
 
 ### Readings stream
 
 | Method and path | Auth | Request | Response |
 |---|---|---|---|
-| `GET /api/stream` | staff | Optional query `ticket=<number>` to receive only that ticket's `reading` events | 200 `text/event-stream` |
+| `GET /api/stream` | staff | Optional query `patient=<number>` to receive only that patient's `reading` events | 200 `text/event-stream` |
 
 Each event's `event:` field is the `type` and its `data:` is the whole `StreamEvent` object as JSON. A comment line (`: ping`) goes out every 15 seconds. `EventSource` reconnects by itself; on reconnect, refetch what the page shows, because events are not replayed.
 
 | `type` | Payload | Sent when |
 |---|---|---|
-| `reading` | `{ sittingId, ticketNumber, reading: StoredReading }` | A reading is stored |
-| `sitting_started` | `{ sitting }` | |
+| `reading` | `{ sittingId, patientNumber, reading: StoredReading }` | A reading is stored |
+| `sitting_started` | `{ sitting, patient }` | `patient` is the `PatientRef`, so the check-in page can show who sat down without another request |
 | `sitting_finished` | `{ sitting }` | |
 | `flag_opened`, `flag_acknowledged`, `flag_closed` | `{ flag }` | |
 | `worklist_changed` | `{ at }` | Ranks or states may differ: refetch `GET /api/worklist` |
-| `ticket_changed` | `{ ticketNumber, at }` | A ticket was created, updated or discharged |
+| `patient_changed` | `{ patientNumber, patient, at }` | A patient was created, discharged, renamed or photographed, or any intake field was saved. `patient` is the new `PatientRef`. Refetch `GET /api/patients/:number` for the other fields. |
 | `live_changed` | `{ deviceId, live }` | A camera device started or stopped posting frames |
 
 The dashboard uses this stream. The nurse role of the mobile app polls `GET /api/worklist` every 5 seconds while it is on screen, and relies on push for the rest.
@@ -400,7 +425,7 @@ The dashboard uses this stream. The nurse role of the mobile app polls `GET /api
 Every non-2xx response has this body (`ErrorResponse`), and nothing else:
 
 ```json
-{ "error": { "code": "ticket_discharged", "message": "Ticket 14 has been discharged" } }
+{ "error": { "code": "patient_discharged", "message": "Patient 14 has been discharged" } }
 ```
 
 `message` is one plain sentence that is safe to show to staff. `details` is present for `invalid_request` and holds the zod issues. Codes and statuses (`ErrorCode`, `errorStatus`):
@@ -411,7 +436,7 @@ Every non-2xx response has this body (`ErrorResponse`), and nothing else:
 | 401 | `unauthenticated`, `invalid_credentials` |
 | 403 | `email_not_verified`, `forbidden`, `face_not_opted_in` |
 | 404 | `not_found` |
-| 409 | `conflict`, `email_taken`, `ticket_discharged`, `sitting_finished` |
+| 409 | `conflict`, `email_taken`, `patient_discharged`, `sitting_finished` |
 | 410 | `token_invalid` |
 | 413 | `payload_too_large` |
 | 422 | `no_face_detected` |
@@ -443,20 +468,20 @@ List routes take `limit` (1 to 200, default 50) and `cursor`, and return `{ item
 | Region colour | Mean 8-bit channel value, 0 to 255 |
 | Chest motion | Fraction of frame height per frame, positive downward |
 | Outline coordinates | 0 to 1 of the upright frame, origin top-left |
-| Ticket number | Positive integer, sequential, never reused |
+| Patient (visit) number | Positive integer, sequential, never reused |
 | Ids (sitting, device, flag, user) | UUID strings |
 
 ## 6. Server behaviour both sides rely on
 
 ### One sitting, end to end
 
-1. Operator creates a ticket (`POST /api/tickets`) or enters a number for a re-check, or the phone matches a face (`POST /api/face/match`).
+1. Operator taps "Check in a new patient" (`POST /api/patients` with `{}`), or picks a waiting patient from the list for a re-check, or the phone matches a face (`POST /api/face/match`).
 2. Phone: `startCapture()`. The viewfinder draws `onFaceRegions`.
 3. Phone: `POST /api/sittings` with `clientTime`, then `startSitting({ sittingId })`.
 4. Every second: `onReading` gives a `Reading`; the phone posts it to `/api/sittings/:id/readings`. If a post fails, keep the reading and send it with the next one (up to 30 per request).
-5. If the live view is on: `onPreviewFrame` frames are posted to `/api/live/:deviceId/frame`.
+5. The live view is on by default: the capture module posts frames to `/api/live/:deviceId/frame` itself (`setLivePreview` with `uploadUrl`), 15 a second. Staff watch them on the check-in page and type the intake form there (`PATCH /api/patients/:number`); the server takes the profile photo from them.
 6. At 60 seconds (or when the operator stops): `stopSitting()`, then `POST /api/sittings/:id/finish` with `endedAt` and `summary`.
-7. If the ticket opted in to face match and is not enrolled: `captureFaceCrop()` during the sitting, then `POST /api/tickets/:number/face`.
+7. Once the viewfinder is measuring: `captureFaceCrop()`, then `PUT /api/patients/:number/photo` (check-in sittings), and `POST /api/patients/:number/face` if the patient opted in to face match and is not enrolled.
 8. In development: `PUT /api/sittings/:id/file` with the file at `fileUri`, then `deleteSittingFile(fileUri)`.
 
 The dashboard's check-in page follows the same sitting through `GET /api/stream` (`sitting_started`, `reading`, `sitting_finished`) and posts reference samples to `/api/sittings/:id/reference`.
@@ -464,37 +489,37 @@ The dashboard's check-in page follows the same sitting through `GET /api/stream`
 ### Observations, baseline and score
 
 - An **observation** is a finished sitting whose summary has a heart rate or a breathing rate. A finished sitting with neither is a "no reading" attempt.
-- The **baseline** is the ticket's first observation (normally the check-in sitting).
+- The **baseline** is the patient's first observation (normally the check-in sitting).
 - **Parameter bands** (partial NEWS2): pulse 51 to 90 scores 0; 41 to 50 or 91 to 110 scores 1; 111 to 130 scores 2; 131 or above scores 3 (40 or below would score 3 but cannot be reported). Breathing 12 to 20 scores 0; 9 to 11 scores 1; 21 to 24 scores 2; 8 or below, or 25 or above, scores 3.
-- A ticket's **score** is the higher of its measured parameter bands, 0 to 3. Bands are not summed.
+- A patient's **score** is the higher of its measured parameter bands, 0 to 3. Bands are not summed.
 
 ### Flag rules
 
-A flag is one episode: it opens once, may be acknowledged, and closes. At most one flag per ticket and rule is open at a time.
+A flag is one episode: it opens once, may be acknowledged, and closes. At most one flag per patient and rule is open at a time.
 
 | Rule | Opens when | Closes when |
 |---|---|---|
 | `score_rise` | The two most recent observations both score higher than the baseline | An observation does not score higher than the baseline, or discharge |
 | `baseline_shift` | On the two most recent observations, pulse differs from baseline by more than `pulseDeltaBpm` or breathing by more than `breathingDeltaPerMin` | An observation is within both thresholds, or discharge |
-| `overdue` | No observation for longer than `recheckIntervalMin` (counted from ticket creation if there has been none) | An observation arrives, or discharge |
+| `overdue` | No observation for longer than `recheckIntervalMin` (counted from patient creation if there has been none) | An observation arrives, or discharge |
 
 Trend rules run when a sitting is finished. Overdue is checked by the server on a timer of at most 30 seconds and whenever the worklist is computed.
 
 ### Tile state and rank
 
-A waiting ticket's state is the first that applies:
+A waiting patient's state is the first that applies:
 
 1. `flag`: a `score_rise` or `baseline_shift` flag is open.
 2. `no-reading`: the latest finished sitting was a "no reading" attempt.
 3. `overdue`: an `overdue` flag is open.
-4. `observed`: otherwise. A ticket with no sitting yet is `observed` with `lastObservedAt` and `minutesSinceObserved` null until it becomes overdue; screens say "Not yet observed" for it.
+4. `observed`: otherwise. A patient with no sitting yet is `observed` with `lastObservedAt` and `minutesSinceObserved` null until it becomes overdue; screens say "Not yet observed" for it.
 
-Rank order: all `flag` tickets first (higher `score` first, then the flag that opened earliest); then `overdue` and `no-reading` tickets together, longest time since the last observation first; then `observed` tickets, longest time since the last observation first.
+Rank order: all `flag` patients first (higher `score` first, then the flag that opened earliest); then `overdue` and `no-reading` patients together, longest time since the last observation first; then `observed` patients, longest time since the last observation first.
 
 ### Handoff sentence and push
 
-- The handoff sentence is built on the server from a fixed template and sent as a string; clients show it as it is. Example: "Ticket 14: pulse 82 at check-in, 108 now (26 min later); breathing 16 to 24. Last observed 3 min ago."
-- When a flag opens, the server sends one push through Expo's push service to every `nurse` device that has a token, unless a push for the same ticket went out within `notifyCooldownMin`. Title: "Trend flag, ticket 14" (or "Overdue, ticket 14"). Body: the handoff sentence. `data`: `{ flagId, ticketNumber }`.
+- The handoff sentence is built on the server from a fixed template and sent as a string; clients show it as it is. It opens with `patientLabel(patient)`. Example: "Maya Chen: pulse 82 at check-in, 108 now (26 min later); breathing 16 to 24. Last observed 3 min ago." A flag keeps the numbers it was raised on, but its opening words follow the patient's current name.
+- When a flag opens, the server sends one push through Expo's push service to every `nurse` device that has a token, unless a push for the same patient went out within `notifyCooldownMin`. Title: "Trend flag: Maya Chen" (or "Overdue: Maya Chen"). Body: the handoff sentence. `data`: `{ flagId, patientNumber }`.
 - The nurse role shows the same flag in the app whether or not the push arrives.
 
 ### Not in this pass
@@ -514,17 +539,18 @@ Postgres 17 on this Mac, database `triagecam`, `DATABASE_URL=postgres://localhos
 | `email_verification_tokens` | `user_id`, `token_hash` (unique), `expires_at` |
 | `sessions` | `token_hash` (unique), `user_id`, `kind` web or mobile, `expires_at` |
 | `devices` | `user_id`, `role` camera or nurse, `label`, `expo_push_token`, `last_seen_at` |
-| `tickets` | `number` (identity, unique), `status`, `created_at`, `discharged_at`, `face_opt_in` |
-| `sittings` | `ticket_id`, `device_id`, `kind`, `source`, `started_at`, `ended_at`, `clock_offset_ms`, and the summary: `duration_seconds`, `heart_rate`, `heart_rate_coverage`, `breathing_rate`, `breathing_rate_coverage`, `rmssd`, `rmssd_coverage`, `sdnn`, `sdnn_coverage`, `time_to_first_reading_seconds`, `longest_dropout_seconds`, `frame_count`, `dropped_frames` |
-| `readings` | `sitting_id`, `ticket_id`, `t`, then the heart-rate estimate as `heart_rate`, `state`, `reason`, `quality`, `coverage`, `age_ms` and the breathing estimate as `breathing_rate`, `breathing_state`, `breathing_reason`, `breathing_quality`, `breathing_coverage`, `breathing_age_ms`. Unique on (`sitting_id`, `t`). |
+| `patients` | `number` (identity, unique), `status`, `created_at`, `discharged_at`, `face_opt_in`, and intake: `name`, `date_of_birth` (date), `sex` (enum `patient_sex`), `reason_for_visit`, `pain_score` (smallint), `allergies`, `notes`, `intake_completed_at`, `photo_updated_at`. Every intake column is nullable. Renamed from `tickets` by migration `0001_patients`; `sittings`, `readings`, `flags` and `face_embeddings` point at it through `patient_id`. |
+| `patient_photos` | One row per patient with a photo: `patient_id` (primary key), `jpeg bytea` (a 384 px square), `width`, `height`, `created_at`. Kept out of `patients` so listing patients never reads image bytes. |
+| `sittings` | `patient_id`, `device_id`, `kind`, `source`, `started_at`, `ended_at`, `clock_offset_ms`, and the summary: `duration_seconds`, `heart_rate`, `heart_rate_coverage`, `breathing_rate`, `breathing_rate_coverage`, `rmssd`, `rmssd_coverage`, `sdnn`, `sdnn_coverage`, `time_to_first_reading_seconds`, `longest_dropout_seconds`, `frame_count`, `dropped_frames` |
+| `readings` | `sitting_id`, `patient_id`, `t`, then the heart-rate estimate as `heart_rate`, `state`, `reason`, `quality`, `coverage`, `age_ms` and the breathing estimate as `breathing_rate`, `breathing_state`, `breathing_reason`, `breathing_quality`, `breathing_coverage`, `breathing_age_ms`. Unique on (`sitting_id`, `t`). |
 | `beat_intervals` | One row per sitting: `intervals_ms real[]` and `beat_times_ms real[]`, parallel arrays |
 | `reference_readings` | `sitting_id`, `t`, `heart_rate`, `rr_intervals_ms real[]`, `breathing_rate`, `source` |
-| `flags` | `ticket_id`, `rule`, `opened_at`, `closed_at`, `detail jsonb` (`FlagDetail`), `last_notified_at`. One open flag per ticket and rule. |
+| `flags` | `patient_id`, `rule`, `opened_at`, `closed_at`, `detail jsonb` (`FlagDetail`), `last_notified_at`. One open flag per patient and rule. |
 | `acknowledgements` | `flag_id`, `user_id`, `at`. One per flag and user. |
-| `face_embeddings` | `ticket_id`, `vector real[]` (L2-normalised), `model`, `created_at` |
+| `face_embeddings` | `patient_id`, `vector real[]` (L2-normalised), `model`, `created_at` |
 | `settings` | Single row, `id` 1: the `Settings` fields and `updated_at` |
 
-All times are `timestamptz` on the server clock. No table stores video, images or names.
+All times are `timestamptz` on the server clock. No table stores video. The only stored picture is the profile photo in `patient_photos`.
 
 ## 8. Design tokens
 
