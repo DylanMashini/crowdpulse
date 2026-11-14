@@ -1,6 +1,6 @@
 'use client';
 
-import { patientLabel, type WorklistItem } from '@triagecam/contracts';
+import { patientLabel } from '@triagecam/contracts';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
@@ -11,24 +11,10 @@ import { LiveStatus } from '@/components/ui/LiveStatus';
 import { PageHeader } from '@/components/ui/Panel';
 import { Segmented } from '@/components/ui/Segmented';
 import { StateMessage } from '@/components/ui/StateMessage';
+import { waitingSummary } from '@/lib/format';
 import { toWorklistRow } from '@/lib/mapping';
 
 type View = 'list' | 'wall';
-
-function plural(count: number, one: string, many: string): string {
-  return `${count} ${count === 1 ? one : many}`;
-}
-
-/** What the room holds, in one sentence, so the counts do not have to be read off the rows. */
-function summarise(items: WorklistItem[], recheckIntervalMin: number): string {
-  const count = (state: WorklistItem['state']) => items.filter((item) => item.state === state).length;
-  const parts = [
-    count('flag') ? plural(count('flag'), 'trend flag', 'trend flags') : null,
-    count('overdue') ? `${count('overdue')} overdue` : null,
-    count('no-reading') ? `${count('no-reading')} without a reading` : null,
-  ].filter(Boolean);
-  return `${plural(items.length, 'patient', 'patients')} waiting${parts.length ? `: ${parts.join(', ')}` : ''}. Overdue after ${recheckIntervalMin} min without an observation.`;
-}
 
 /** The nurse view: every waiting patient in the order to walk to them. */
 export function WaitingRoomScreen() {
@@ -41,7 +27,7 @@ export function WaitingRoomScreen() {
 
   return (
     <>
-      <PageHeader title="Waiting room" description={loaded && loaded.items.length > 0 ? summarise(loaded.items, loaded.recheckIntervalMin) : undefined}>
+      <PageHeader title="Waiting room" description={loaded && loaded.items.length > 0 ? waitingSummary(loaded.items, loaded.recheckIntervalMin) : undefined}>
         <LiveStatus updatedAt={worklist.updatedAt} />
         <Segmented
           label="View"

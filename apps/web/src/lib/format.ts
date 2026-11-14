@@ -1,4 +1,4 @@
-import type { CaptureSource, EstimateReason, FlagRule } from '@triagecam/contracts';
+import type { CaptureSource, EstimateReason, FlagRule, TileState, Trend } from '@triagecam/contracts';
 
 /** A true minus sign, so a negative number lines up with a positive one. */
 const MINUS = '\u2212';
@@ -139,9 +139,34 @@ const RULES: Record<FlagRule, string> = {
   overdue: 'Overdue for a re-check',
 };
 
+const RULES_FROM_A_RE_CHECK: Partial<Record<FlagRule, string>> = {
+  score_rise: 'Partial score rose from baseline',
+  baseline_shift: 'Moved from baseline',
+};
+
 /** `reCheckBaseline`: a baseline the flag moved from is a re-check's, so the words do not say check-in. */
 export function ruleText(rule: FlagRule, reCheckBaseline = false): string {
-  return rule === 'baseline_shift' && reCheckBaseline ? 'Moved from baseline' : RULES[rule];
+  return (reCheckBaseline ? RULES_FROM_A_RE_CHECK[rule] : undefined) ?? RULES[rule];
+}
+
+const counted = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
+
+/**
+ * What the waiting room holds, in one sentence, so the counts do not have to be read off the
+ * rows. A patient whose latest sitting gave a lower-confidence pulse has a reading, tagged, so
+ * is counted as that and not as "without a reading".
+ */
+export function waitingSummary(items: Array<{ state: TileState; pulse: Pick<Trend, 'lowConfidence'> }>, recheckIntervalMin: number): string {
+  const count = (state: TileState) => items.filter((item) => item.state === state).length;
+  const lowConfidence = items.filter((item) => item.state === 'no-reading' && item.pulse.lowConfidence != null).length;
+  const noReading = count('no-reading') - lowConfidence;
+  const parts = [
+    count('flag') ? counted(count('flag'), 'trend flag', 'trend flags') : null,
+    count('overdue') ? `${count('overdue')} overdue` : null,
+    noReading ? `${noReading} without a reading` : null,
+    lowConfidence ? `${lowConfidence} lower confidence` : null,
+  ].filter(Boolean);
+  return `${counted(items.length, 'patient', 'patients')} waiting${parts.length ? `: ${parts.join(', ')}` : ''}. Overdue after ${recheckIntervalMin} min without an observation.`;
 }
 
 /** Whole years since a YYYY-MM-DD date of birth, in the browser's zone. Null when it is not known. */

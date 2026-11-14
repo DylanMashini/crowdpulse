@@ -13,9 +13,11 @@ import {
   percent,
   rate,
   rateChange,
+  ruleText,
   seconds,
   secondsAgo,
   timeOrDayTime,
+  waitingSummary,
   years,
 } from './format.ts';
 
@@ -77,4 +79,33 @@ test('a time on another day carries its date', () => {
   assert.equal(timeOrDayTime(new Date(2026, 10, 14, 14, 32).toISOString(), now), '14:32');
   assert.equal(timeOrDayTime(new Date(2026, 10, 13, 4, 0).toISOString(), now), '13 Nov, 04:00');
   assert.equal(timeOrDayTime(new Date(2025, 10, 14, 14, 32).toISOString(), now), '14 Nov, 14:32');
+});
+
+test('a flag names the check-in only when its baseline is the check-in\'s (QA round 3, N4)', () => {
+  assert.equal(ruleText('score_rise'), 'Partial score rose from check-in');
+  assert.equal(ruleText('baseline_shift'), 'Moved from the check-in baseline');
+  assert.equal(ruleText('score_rise', true), 'Partial score rose from baseline');
+  assert.equal(ruleText('baseline_shift', true), 'Moved from baseline');
+  assert.equal(ruleText('overdue', true), 'Overdue for a re-check');
+});
+
+test('the waiting room counts a lower-confidence patient as that, not as without a reading (QA round 3, N6)', () => {
+  const item = (state: 'observed' | 'flag' | 'overdue' | 'no-reading', lowConfidence?: number) => ({
+    state,
+    pulse: lowConfidence === undefined ? {} : { lowConfidence },
+  });
+  const room = [item('observed'), item('no-reading'), item('no-reading', 102), item('no-reading', 61.5), item('flag'), item('overdue')];
+  assert.equal(
+    waitingSummary(room, 30),
+    '6 patients waiting: 1 trend flag, 1 overdue, 1 without a reading, 2 lower confidence. Overdue after 30 min without an observation.',
+  );
+  assert.equal(waitingSummary([item('observed')], 20), '1 patient waiting. Overdue after 20 min without an observation.');
+  assert.equal(
+    waitingSummary([item('no-reading', 99), item('flag'), item('flag')], 30),
+    '3 patients waiting: 2 trend flags, 1 lower confidence. Overdue after 30 min without an observation.',
+  );
+  assert.equal(
+    waitingSummary([item('no-reading'), item('no-reading')], 30),
+    '2 patients waiting: 2 without a reading. Overdue after 30 min without an observation.',
+  );
 });
