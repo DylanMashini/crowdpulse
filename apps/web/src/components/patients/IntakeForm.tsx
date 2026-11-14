@@ -1,6 +1,6 @@
 'use client';
 
-import { INTAKE_LIMITS, type Patient, type PatientSex, type UpdatePatientRequest } from '@triagecam/contracts';
+import { EARLIEST_DATE_OF_BIRTH, INTAKE_LIMITS, type Patient, type PatientSex, type UpdatePatientRequest } from '@triagecam/contracts';
 import { useCallback, useEffect, useId, useRef, useState, type FocusEvent } from 'react';
 
 import { Button, Field, PatientAvatar } from '@/components/ds';
@@ -31,6 +31,27 @@ const SEXES: Array<{ value: PatientSex; label: string }> = [
 ];
 
 const PAIN = Array.from({ length: 11 }, (_, score) => score);
+
+/** Today on this screen's calendar, as YYYY-MM-DD. */
+function today(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+/** What is wrong with a typed date of birth, or null. A date box reports half-typed years too. */
+function dateOfBirthError(value: string | undefined): string | null {
+  if (!value) return null;
+  if (value > today()) return 'The date of birth cannot be in the future';
+  if (value < EARLIEST_DATE_OF_BIRTH) return `Enter a date from ${EARLIEST_DATE_OF_BIRTH.slice(0, 4)} on`;
+  return null;
+}
+
+/** The part of the draft the server will take. A date of birth out of range waits in its box. */
+function sendable(draft: Draft): Draft {
+  const sending = { ...draft };
+  if (dateOfBirthError(sending.dateOfBirth)) delete sending.dateOfBirth;
+  return sending;
+}
 
 function toRequest(draft: Draft): UpdatePatientRequest {
   const request: UpdatePatientRequest = {};
@@ -67,6 +88,8 @@ export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoF
   const [save, setSave] = useState<SaveState>({ kind: 'idle' });
   const [photo, setPhoto] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
   const [completing, setCompleting] = useState(false);
+  /** Staff removed the photo on this form: nothing takes a new one until they ask. */
+  const [removed, setRemoved] = useState(false);
 
   const draftRef = useRef<Draft>({});
   const focused = useRef<DraftKey | null>(null);
@@ -84,7 +107,7 @@ export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoF
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
     if (inFlight.current) return;
-    const sending = { ...draftRef.current };
+    const sending = sendable(draftRef.current);
     if (Object.keys(sending).length === 0) return;
     inFlight.current = true;
     setSave({ kind: 'saving' });
@@ -117,7 +140,7 @@ export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoF
   useEffect(
     () => () => {
       if (timer.current) clearTimeout(timer.current);
-      const unsent = draftRef.current;
+      const unsent = sendable(draftRef.current);
       if (Object.keys(unsent).length > 0 && !inFlight.current) void api.updatePatient(number, toRequest(unsent)).catch(() => {});
     },
     [number],
@@ -147,6 +170,8 @@ export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoF
   const sexId = useId();
   const painId = useId();
   const complete = patient.intakeCompletedAt !== null;
+  const named = text('name').trim() !== '';
+  const nameHintId = useId();
 
   const run = async (action: () => Promise<{ patient: Patient } | void>) => {
     setPhoto({ busy: true, error: null });
@@ -180,9 +205,11 @@ export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoF
           <p className="type-caption text-ink-muted">
             {patient.photoUpdatedAt
               ? `Photo taken at ${clockTime(patient.photoUpdatedAt)}`
-              : cameraLive
-                ? 'The photo is taken by itself as soon as the camera sees a face'
-                : 'No photo yet. It is taken from the camera during check-in.'}
+              : removed
+                ? 'Photo removed. No new one is taken unless you ask for it.'
+                : cameraLive
+                  ? 'The photo is taken by itself as soon as the camera sees a face'
+                  : 'No photo yet. It is taken from the camera during check-in.'}
           </p>
           <div className="flex flex-wrap gap-2">
             {cameraDeviceId ? (
@@ -195,7 +222,7 @@ export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoF
               </Button>
             ) : null}
             {patient.photoUpdatedAt ? (
-              <Button variant="quiet" disabled={photo.busy} onClick={() => void run(() => api.deletePatientPhoto(number))}>
+              <Button variant="quiet" disabled={photo.busy} onClick={() => void run(() => api.deletePatientPhoto(number).then(() => setRemoved(true)))}>
                 Remove
               </Button>
             ) : null}
@@ -240,12 +267,14 @@ export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoF
           block
           type="date"
           label="Date of birth"
-          max={new Date().toISOString().slice(0, 10)}
+          min={EARLIEST_DATE_OF_BIRTH}
+          max={today()}
+          error={dateOfBirthError(draft.dateOfBirth) ?? undefined}
           value={draft.dateOfBirth ?? patient.dateOfBirth ?? ''}
           onChange={(event) => change('dateOfBirth', event.target.value)}
           name="dateOfBirth"
-        onFocus={onFocus}
-        onBlur={onBlur}
+          onFocus={onFocus}
+          onBlur={onBlur}
         />
         <div className="flex flex-col gap-1">
           <span id={sexId} className="type-label">
@@ -352,9 +381,16 @@ export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoF
             </Button>
           </div>
         ) : (
-          <Button variant="primary" disabled={completing} onClick={() => void setComplete(true)}>
-            {completing ? 'Saving' : 'Complete intake'}
-          </Button>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {named ? null : (
+              <span id={nameHintId} className="type-caption text-ink-muted">
+                Enter the patient&apos;s name to complete intake
+              </span>
+            )}
+            <Button variant="primary" disabled={completing || !named} aria-describedby={named ? undefined : nameHintId} onClick={() => void setComplete(true)}>
+              {completing ? 'Saving' : 'Complete intake'}
+            </Button>
+          </div>
         )}
       </div>
     </form>

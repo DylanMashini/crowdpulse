@@ -96,7 +96,9 @@ export function ageInYears(dateOfBirth: string | null, now = new Date()): number
   if (!dateOfBirth) return null;
   const [year = 0, month = 1, day = 1] = dateOfBirth.split('-').map(Number);
   const hadBirthday = now.getMonth() + 1 > month || (now.getMonth() + 1 === month && now.getDate() >= day);
-  return Math.max(0, now.getFullYear() - year - (hadBirthday ? 0 : 1));
+  const age = now.getFullYear() - year - (hadBirthday ? 0 : 1);
+  // A date in the future has no age to show.
+  return age < 0 ? null : age;
 }
 
 /** "34 y", or null when the date of birth is not known. */

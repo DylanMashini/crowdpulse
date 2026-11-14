@@ -89,6 +89,10 @@ export async function deleteFaceEmbeddings(patientId: string): Promise<void> {
 export async function updatePatient(number: number, request: UpdatePatientRequest): Promise<Patient> {
   const { faceOptIn, intakeComplete, ...intake } = request;
   const patient = faceOptIn === undefined ? await findPatient(number) : await findWaitingPatient(number);
+  // Completing intake needs at least a name, counting the one in this very request.
+  if (intakeComplete && !(intake.name === undefined ? patient.name : intake.name)) {
+    throw new ApiError("invalid_request", "Enter the patient's name before completing intake");
+  }
   const changes = {
     ...intake,
     ...(faceOptIn === undefined ? {} : { faceOptIn }),

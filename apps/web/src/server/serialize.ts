@@ -52,12 +52,16 @@ export const toPatient = (row: PatientRow, faceEnrolled: boolean): Patient => ({
   faceEnrolled,
 });
 
-/** Whole years between a YYYY-MM-DD date of birth and now; null when the date is not known. */
+/**
+ * Whole years between a YYYY-MM-DD date of birth and now; null when the date is not known, or
+ * lies in the future (a row saved before requests were checked).
+ */
 export function ageInYears(dateOfBirth: string | null, now = new Date()): number | null {
   if (!dateOfBirth) return null;
   const [year, month, day] = dateOfBirth.split("-").map(Number) as [number, number, number];
   const hadBirthday = now.getMonth() + 1 > month || (now.getMonth() + 1 === month && now.getDate() >= day);
-  return Math.max(0, now.getFullYear() - year - (hadBirthday ? 0 : 1));
+  const age = now.getFullYear() - year - (hadBirthday ? 0 : 1);
+  return age < 0 ? null : age;
 }
 
 /** A sitting has a summary once it was finished by the phone; one that was abandoned has none. */
