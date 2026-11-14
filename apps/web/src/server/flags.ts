@@ -38,6 +38,18 @@ export type FlagPatient = Pick<PatientRow, "number" | "name" | "photoUpdatedAt">
 const currentHandoff = (frozen: string, patient: FlagPatient): string =>
   frozen.replace(new RegExp(`^(Ticket|Patient) ${patient.number}: `), `${patientLabel(patient)}: `);
 
+/**
+ * Which alert a flag belongs to: the one definition of "one deterioration" that the server,
+ * the dashboard and the nurse app all use (CONTRACTS section 6, Flag rules).
+ *
+ * The trend flags that one sitting raises for a patient are one alert. `applyRules` opens them
+ * with the same `openedAt`, so the patient and that instant name the alert. A trend flag that
+ * opens on a later sitting was raised on other numbers and is another alert. An overdue flag is
+ * always an alert on its own.
+ */
+export const alertIdOf = (row: Pick<FlagRow, "id" | "rule" | "openedAt">, patient: Pick<FlagPatient, "number">): string =>
+  row.rule === "overdue" ? row.id : `trend-${patient.number}-${row.openedAt.getTime()}`;
+
 const toFlag = (row: FlagRow, patient: FlagPatient, acknowledgement: Acknowledgement | undefined): Flag => {
   const { handoff, ...detail } = row.detail;
   return {
@@ -51,6 +63,7 @@ const toFlag = (row: FlagRow, patient: FlagPatient, acknowledgement: Acknowledge
     acknowledgedAt: isoOrNull(acknowledgement?.at ?? null),
     acknowledgedBy: acknowledgement?.email ?? null,
     handoff: currentHandoff(handoff, patient),
+    alertId: alertIdOf(row, patient),
   };
 };
 

@@ -139,6 +139,8 @@ function flagFor(seed: Seed): Flag | null {
     acknowledgedAt,
     acknowledgedBy: acknowledgedAt ? user.email : null,
     handoff: handoffFor(seed),
+    // The mock raises one flag per patient, so each is an alert on its own.
+    alertId: id,
   };
 }
 

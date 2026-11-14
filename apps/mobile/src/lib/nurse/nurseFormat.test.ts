@@ -64,6 +64,8 @@ function flag(overrides: Partial<Flag>): Flag {
     acknowledgedAt: null,
     acknowledgedBy: null,
     handoff: 'Maya Chen: pulse 82 at check-in, 108 now.',
+    // An alert on its own unless the test says which alert it belongs to.
+    alertId: overrides.id ?? '00000000-0000-4000-8000-000000000001',
     ...overrides,
   };
 }

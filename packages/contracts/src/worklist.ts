@@ -49,8 +49,70 @@ export const Flag = z.object({
   acknowledgedBy: z.string().nullable(),
   /** The templated handoff sentence for this flag. */
   handoff: z.string(),
+  /**
+   * Which alert the flag belongs to. Flags with the same `alertId` are one alert: the trend
+   * flags that one sitting raised together for one patient. An overdue flag is always an alert
+   * on its own. Opaque: compare it for equality and nothing else. Group with `flagAlerts`.
+   */
+  alertId: z.string().min(1),
 });
 export type Flag = z.infer<typeof Flag>;
+
+/**
+ * What a nurse is told about and acknowledges: one or more flags that share an `alertId`.
+ * Every screen counts, lists, announces and acknowledges alerts, never single flags.
+ */
+export type FlagAlert = {
+  /** The `alertId` its flags share. */
+  id: string;
+  /** In the order they were given. Never empty. */
+  flags: Flag[];
+  /** The first flag. An alert's flags share their patient, opening time, numbers and sentence. */
+  lead: Flag;
+  /** The open flags nobody has acknowledged. Acknowledging any one of them covers the rest. */
+  waiting: Flag[];
+  /** When the last of its flags was acknowledged. Null while any flag has not been. */
+  acknowledgedAt: string | null;
+  /** Who made that acknowledgement. */
+  acknowledgedBy: string | null;
+  /** When the last of its flags closed. Null while any flag is open. */
+  closedAt: string | null;
+};
+
+/** The latest of the times, or null when any of them is missing. */
+function latest(times: (string | null)[]): string | null {
+  let last: string | null = null;
+  for (const time of times) {
+    if (time === null) return null;
+    if (last === null || time > last) last = time;
+  }
+  return last;
+}
+
+/**
+ * Flags gathered into alerts, in the order each alert first appears. Pass the flags of one
+ * list (the open ones, or the closed ones): an alert is built only from the flags given.
+ */
+export function flagAlerts(flags: Flag[]): FlagAlert[] {
+  const groups = new Map<string, Flag[]>();
+  for (const flag of flags) {
+    const group = groups.get(flag.alertId);
+    if (group) group.push(flag);
+    else groups.set(flag.alertId, [flag]);
+  }
+  return [...groups].map(([id, members]) => {
+    const acknowledgedAt = latest(members.map((flag) => flag.acknowledgedAt));
+    return {
+      id,
+      flags: members,
+      lead: members[0] as Flag,
+      waiting: members.filter((flag) => flag.acknowledgedAt === null && flag.closedAt === null),
+      acknowledgedAt,
+      acknowledgedBy: members.find((flag) => flag.acknowledgedAt === acknowledgedAt)?.acknowledgedBy ?? null,
+      closedAt: latest(members.map((flag) => flag.closedAt)),
+    };
+  });
+}
 
 export const FlagListQuery = z.object({
   status: z.enum(['open', 'closed', 'all']).default('open'),

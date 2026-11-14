@@ -5,6 +5,7 @@ import {
   CreatePatientRequest,
   ErrorCode,
   Estimate,
+  type Flag,
   FrameRecord,
   Reading,
   Settings,
@@ -14,6 +15,7 @@ import {
   patientLabel,
   defaultSettings,
   errorStatus,
+  flagAlerts,
 } from './index.ts';
 
 test('a frame record line written by SignalEngine parses', () => {
@@ -84,4 +86,59 @@ test('a patient without a name is called by their number', () => {
   assert.equal(patientLabel({ number: 14, name: null }), 'Patient 14');
   assert.equal(patientLabel({ number: 14, name: '  ' }), 'Patient 14');
   assert.equal(patientLabel({ number: 14, name: 'Maya Chen' }), 'Maya Chen');
+});
+
+const flag = (id: string, rule: Flag['rule'], alertId: string, over: Partial<Flag> = {}): Flag => ({
+  id,
+  patientNumber: 14,
+  patient: { number: 14, name: 'Maya Chen', photoUpdatedAt: null },
+  rule,
+  openedAt: '2026-11-14T14:02:00.000Z',
+  closedAt: null,
+  detail: {
+    pulse: { base: 82, now: 108 },
+    breathing: { base: 16, now: 24 },
+    scoreAtCheckIn: 0,
+    scoreNow: 2,
+    minutesSinceCheckIn: 26,
+    minutesSinceObserved: null,
+  },
+  acknowledgedAt: null,
+  acknowledgedBy: null,
+  handoff: 'Maya Chen: pulse 82 bpm at check-in, 108 bpm now.',
+  alertId,
+  ...over,
+});
+
+test('flags that share an alert id are one alert, and an alert waits until all of them are acknowledged', () => {
+  const rise = flag('a', 'score_rise', 'trend-14-1');
+  const shift = flag('b', 'baseline_shift', 'trend-14-1');
+  const overdue = flag('c', 'overdue', 'c');
+  const later = flag('d', 'score_rise', 'trend-14-2', { openedAt: '2026-11-14T14:30:00.000Z' });
+
+  const alerts = flagAlerts([rise, shift, overdue, later]);
+  assert.deepEqual(alerts.map((alert) => alert.flags.map((each) => each.id)), [['a', 'b'], ['c'], ['d']]);
+  assert.equal(alerts[0]?.lead, rise);
+  assert.deepEqual(alerts[0]?.waiting, [rise, shift]);
+  assert.equal(alerts[0]?.acknowledgedAt, null);
+  assert.equal(alerts[0]?.closedAt, null);
+
+  // Half acknowledged is still waiting; the acknowledgement that completes it is the alert's.
+  const first = { acknowledgedAt: '2026-11-14T14:05:00.000Z', acknowledgedBy: 'one@ward.test' };
+  const second = { acknowledgedAt: '2026-11-14T14:06:00.000Z', acknowledgedBy: 'two@ward.test' };
+  const [half] = flagAlerts([flag('a', 'score_rise', 'x', first), flag('b', 'baseline_shift', 'x')]);
+  assert.equal(half?.acknowledgedAt, null);
+  assert.deepEqual(half?.waiting.map((each) => each.id), ['b']);
+  const [whole] = flagAlerts([flag('a', 'score_rise', 'x', first), flag('b', 'baseline_shift', 'x', second)]);
+  assert.equal(whole?.acknowledgedAt, second.acknowledgedAt);
+  assert.equal(whole?.acknowledgedBy, 'two@ward.test');
+  assert.deepEqual(whole?.waiting, []);
+
+  // A closed flag is not waiting, and an alert is closed only when all of its flags are.
+  const closedAt = '2026-11-14T15:00:00.000Z';
+  const [partly] = flagAlerts([flag('a', 'score_rise', 'x', { closedAt }), flag('b', 'baseline_shift', 'x')]);
+  assert.equal(partly?.closedAt, null);
+  assert.deepEqual(partly?.waiting.map((each) => each.id), ['b']);
+  assert.equal(flagAlerts([flag('a', 'score_rise', 'x', { closedAt })])[0]?.closedAt, closedAt);
+  assert.deepEqual(flagAlerts([]), []);
 });
