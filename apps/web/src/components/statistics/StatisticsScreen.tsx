@@ -327,12 +327,12 @@ function PatientRow({ row }: { row: PatientStatistics }) {
       </td>
       <td className={tableCell}>
         <span className="flex items-center gap-2">
-          <TrendValue trend={row.pulse} unit="bpm" notMeasuredYet={unmeasured} />
+          <TrendValue trend={row.pulse} unit="bpm" notMeasuredYet={unmeasured} stacked />
           <Sparkline values={row.heartRates} />
         </span>
       </td>
       <td className={tableCell}>
-        <TrendValue trend={row.breathing} unit="/min" notMeasuredYet={unmeasured} />
+        <TrendValue trend={row.breathing} unit="/min" notMeasuredYet={unmeasured} stacked />
       </td>
       <td className={tableCell}>{row.score != null ? <ScoreChip score={row.score} caption={false} /> : <span className={muted}>Not scored</span>}</td>
       <td className={cx(tableCell, 'tabular-nums')}>{row.flags === 0 ? <span className={muted}>None</span> : row.flags}</td>
