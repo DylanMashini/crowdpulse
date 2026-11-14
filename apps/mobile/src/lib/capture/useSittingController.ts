@@ -6,7 +6,7 @@ import { api, authHeaders, errorMessage, isApiError } from '@/lib/api';
 
 import { captureErrorCode, captureErrorMessage } from './captureErrors';
 import { type LastValid, ReasonTally, type Vital } from './readingFormat';
-import { handOffSittingFile } from './sittingFile';
+import { createSittingFileShelf } from './sittingFile';
 import { type FaceEnrolment, createUploadQueue, rememberFinishedSitting } from './sittingSession';
 import type { SittingUploadQueue } from './uploadQueue';
 
@@ -353,15 +353,22 @@ async function beginCapture(): Promise<{ phase: SittingPhase; error: string | nu
   }
 }
 
-/** In development the sitting file goes to the server; it leaves the phone once the server has it. */
+const sittingFiles = createSittingFileShelf();
+
+/**
+ * In development the sitting file goes to the server; it leaves the phone once the server has
+ * it or has refused it for good. A file that could not be sent is offered again after the next
+ * one gets through.
+ */
 async function handOffFile(sittingId: string, fileUri: string | null): Promise<void> {
   if (!fileUri) return;
-  await handOffSittingFile({
+  await sittingFiles.handOff({
     wanted: __DEV__,
     upload: async () => {
       const file = await (await fetch(fileUri)).blob();
       await api.uploadSittingFile(sittingId, file);
     },
     remove: () => TriageCapture.deleteSittingFile(fileUri),
+    permanent: (failure) => isApiError(failure) && !failure.retryable,
   });
 }
