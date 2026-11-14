@@ -46,7 +46,7 @@ export function CheckInScreen() {
 
   const picker = (
     <Section heading="Camera phone" className="max-xl:order-4">
-      <div role="radiogroup" aria-label="Camera phone" className="-mx-2 flex flex-col gap-[2px]">
+      <div role="radiogroup" aria-label="Camera phone" className="flex flex-col gap-[2px]">
         {cameras.map((device) => {
           const on = device.id === selected?.id;
           const seenMinutes = Math.max(0, Math.floor((serverNow - new Date(device.lastSeenAt).getTime()) / 60_000));
@@ -58,7 +58,7 @@ export function CheckInScreen() {
               aria-checked={on}
               onClick={() => setChosen(device.id)}
               className={cx(
-                'flex h-row w-full cursor-pointer items-center gap-3 rounded-md px-2 text-left transition-colors',
+                'flex h-row w-full cursor-pointer items-center gap-3 rounded-md px-3 text-left transition-colors',
                 on ? 'bg-surface-3 shadow-[inset_0_1px_0_var(--line)]' : 'hover:bg-surface-2',
               )}
             >
