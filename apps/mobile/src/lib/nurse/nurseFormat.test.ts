@@ -11,6 +11,8 @@ import {
   demographics,
   filterPatients,
   flagAcknowledgedText,
+  alertsToAcknowledge,
+  announcements,
   flagGroups,
   flagOpenedText,
   flagRuleLabel,
@@ -18,7 +20,10 @@ import {
   minutesSince,
   patientCountsText,
   sittingRows,
+  toAcknowledgeText,
   vitalSeries,
+  withAcknowledgement,
+  followAlerts,
 } from './nurseFormat.ts';
 
 const NOW = new Date(2026, 10, 14, 14, 30, 0).getTime();
@@ -159,6 +164,110 @@ test('unacknowledged flags lead; trend before overdue; longest open first; close
     groups.acknowledged.map((item) => item.id),
     ['acked'],
   );
+});
+
+// One deterioration as the server sends it: both trend rules tripped on one sitting, so two
+// flags with one alert id, the same opening time and the same sentence.
+const deterioration = (alertId = 'trend-1-a', openedAt = at(14, 10)): [Flag, Flag] => [
+  flag({ id: `${alertId}/rise`, rule: 'score_rise', alertId, openedAt }),
+  flag({ id: `${alertId}/shift`, rule: 'baseline_shift', alertId, openedAt }),
+];
+
+test('one deterioration is one alert to acknowledge, on the tab, the badge and the worklist card', () => {
+  const [rise, shift] = deterioration();
+  const groups = flagGroups([rise, shift]);
+  assert.equal(groups.unacknowledged.length, 1);
+  assert.deepEqual(groups.unacknowledged[0]?.flags, [rise, shift]);
+  assert.deepEqual(groups.acknowledged, []);
+  assert.equal(alertsToAcknowledge([rise, shift]), 1);
+  assert.equal(toAcknowledgeText([rise, shift]), '1 flag to acknowledge');
+
+  // An overdue flag, and a trend flag raised by a later sitting, are alerts of their own.
+  const overdue = flag({ id: 'overdue', rule: 'overdue', openedAt: at(14, 20) });
+  const [later] = deterioration('trend-1-b', at(14, 25));
+  assert.equal(alertsToAcknowledge([rise, shift, overdue, later]), 3);
+  assert.equal(toAcknowledgeText([rise, shift, overdue]), '2 flags to acknowledge');
+  assert.equal(toAcknowledgeText([]), null);
+
+  // Acknowledged, it leaves the count and moves to the acknowledged group as one card.
+  const by = { acknowledgedAt: at(14, 12), acknowledgedBy: 'nurse@ward.test' };
+  const acknowledged = flagGroups([{ ...rise, ...by }, { ...shift, ...by }]);
+  assert.equal(acknowledged.unacknowledged.length, 0);
+  assert.equal(acknowledged.acknowledged.length, 1);
+  assert.equal(toAcknowledgeText([{ ...rise, ...by }, { ...shift, ...by }]), null);
+});
+
+test('one deterioration is announced once, however its flags arrive', () => {
+  const [rise, shift] = deterioration();
+  const launch = announcements([], new Set());
+
+  // Both flags in one refresh: one banner.
+  const together = announcements([rise, shift], launch.seen);
+  assert.equal(together.alerts.length, 1);
+  assert.deepEqual(together.alerts[0]?.flags, [rise, shift]);
+  assert.deepEqual(announcements([rise, shift], together.seen).alerts, []);
+
+  // The second flag a refresh after the first: still one banner, which then holds both flags.
+  const first = announcements([rise], launch.seen);
+  assert.equal(first.alerts.length, 1);
+  const second = announcements([rise, shift], first.seen);
+  assert.deepEqual(second.alerts, []);
+  assert.deepEqual(followAlerts(first.alerts, [rise, shift])[0]?.flags, [rise, shift]);
+
+  // Opened from a tapped push, which names one of the two flags: no banner for either.
+  assert.deepEqual(announcements([rise, shift], new Set([shift.id])).alerts, []);
+
+  // Open when the app launched, or already acknowledged by someone: not news.
+  const atLaunch = announcements([rise, shift], new Set());
+  assert.deepEqual(announcements([rise, shift], atLaunch.seen).alerts, []);
+  const by = { acknowledgedAt: at(14, 12), acknowledgedBy: 'nurse@ward.test' };
+  assert.deepEqual(announcements([{ ...rise, ...by }, { ...shift, ...by }], launch.seen).alerts, []);
+
+  // A later deterioration of the same patient, and an overdue flag, are announced: three in all.
+  const [laterRise] = deterioration('trend-1-b', at(14, 25));
+  const overdue = flag({ id: 'overdue', rule: 'overdue', openedAt: at(14, 20) });
+  const more = announcements([rise, shift, laterRise, overdue], together.seen);
+  assert.deepEqual(more.alerts.map((alert) => alert.id), ['trend-1-b', 'overdue']);
+});
+
+test('acknowledging covers the whole alert and nothing else, and leaves one acknowledged banner', () => {
+  const [rise, shift] = deterioration();
+  const [otherRise] = deterioration('trend-1-b', at(14, 25));
+  const overdue = flag({ id: 'overdue', rule: 'overdue', openedAt: at(14, 20) });
+  const elsewhere = flag({ id: 'other-patient', patientNumber: 2, alertId: 'trend-2-a' });
+  const closed = flag({ id: 'closed', alertId: rise.alertId, closedAt: at(14, 11) });
+  const open = [rise, shift, otherRise, overdue, elsewhere, closed];
+  const banners = announcements([rise, shift], new Set()).alerts;
+
+  // The server answers with the one flag that was pressed.
+  const answer = { ...rise, acknowledgedAt: at(14, 12), acknowledgedBy: 'nurse@ward.test' };
+  const after = withAcknowledgement(open, answer);
+  assert.deepEqual(
+    after.map((each) => [each.id, each.acknowledgedAt]),
+    [
+      [rise.id, at(14, 12)],
+      [shift.id, at(14, 12)],
+      [otherRise.id, null],
+      [overdue.id, null],
+      [elsewhere.id, null],
+      [closed.id, null],
+    ],
+  );
+  assert.equal(after[1]?.acknowledgedBy, 'nurse@ward.test');
+
+  // The banner now says acknowledged, and there is no second one queued behind it.
+  const showing = followAlerts(banners, after);
+  assert.equal(showing.length, 1);
+  assert.equal(showing[0]?.acknowledgedAt, at(14, 12));
+  assert.deepEqual(showing[0]?.waiting, []);
+  assert.equal(alertsToAcknowledge(after), 3);
+
+  // An acknowledgement someone made earlier is kept, not overwritten.
+  const earlier = { ...shift, acknowledgedAt: at(14, 11), acknowledgedBy: 'first@ward.test' };
+  assert.equal(withAcknowledgement([rise, earlier], answer)[1]?.acknowledgedBy, 'first@ward.test');
+
+  // A banner follows its alert: closed, it goes away.
+  assert.deepEqual(followAlerts(banners, [overdue]), []);
 });
 
 test('a flag says when it opened and who acknowledged it', () => {
