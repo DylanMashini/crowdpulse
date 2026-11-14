@@ -113,7 +113,7 @@ export function PatientsScreen() {
                 const item = states.get(patient.number);
                 return (
                   <tr key={patient.number} className={`relative ${tableRow}`}>
-                    <td className={`${tableCell} max-w-0 min-w-[220px]`}>
+                    <td className={`${tableCell} w-[30%] max-w-0 min-w-[280px]`}>
                       <Link
                         href={`/patients/${patient.number}`}
                         aria-label={`Open ${patientLabel(patient)}`}

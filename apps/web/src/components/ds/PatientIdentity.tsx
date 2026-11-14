@@ -60,7 +60,7 @@ export function PatientIdentity({ patient, size = 'md', detail, heading, quiet, 
   );
   const meta = (
     <>
-      {named ? <VisitNumber number={patient.number} /> : <span className="whitespace-nowrap">Name not entered yet</span>}
+      {named ? <VisitNumber number={patient.number} /> : <span className="truncate">Name not entered yet</span>}
       {detail ? <span className="truncate">, {detail}</span> : null}
     </>
   );
