@@ -43,6 +43,8 @@ export const ErrorCode = z.enum([
   'token_invalid',
   'patient_discharged',
   'sitting_finished',
+  'camera_offline',
+  'camera_busy',
   'face_not_opted_in',
   'no_face_detected',
   'face_unavailable',
@@ -65,6 +67,10 @@ export const errorStatus: Record<ErrorCode, number> = {
   token_invalid: 410,
   patient_discharged: 409,
   sitting_finished: 409,
+  /** The camera phone is not reporting: open the app on it in the camera role. */
+  camera_offline: 409,
+  /** The phone is not in a state to carry the command out, such as Start while a sitting runs. */
+  camera_busy: 409,
   face_not_opted_in: 403,
   no_face_detected: 422,
   /** The face models are not installed on the server. Choose the patient from the waiting-room list instead. */

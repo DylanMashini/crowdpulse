@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+  CameraState,
   CreatePatientRequest,
+  Device,
+  LiveRegions,
+  PostLiveStateRequest,
+  SendCameraCommandRequest,
+  routes,
   ErrorCode,
   Estimate,
   FLAG_RULE_ORDER,
@@ -287,4 +293,36 @@ test('the timeline tells an alert opening or closing once, however many rules it
       'created 00',
     ],
   );
+});
+
+test('a camera phone reports its state and outlines, and a command names what it needs', () => {
+  const idle = { phase: 'idle', patientNumber: null, kind: null, sittingId: null, viewfinder: null, facePresent: false, exposureLocked: false, error: null };
+  assert.equal(PostLiveStateRequest.parse({ state: idle, regions: null }).state.phase, 'idle');
+
+  const square = [{ x: 0.4, y: 0.2 }, { x: 0.6, y: 0.2 }, { x: 0.6, y: 0.3 }, { x: 0.4, y: 0.3 }];
+  const regions = {
+    aspectRatio: 4 / 3,
+    face: { x: 0.35, y: 0.15, width: 0.3, height: 0.5 },
+    forehead: square,
+    leftCheek: square,
+    rightCheek: square,
+    chest: null,
+  };
+  const framing = { ...idle, phase: 'framing', patientNumber: 14, kind: 'check_in', viewfinder: 'locking', facePresent: true };
+  assert.equal(PostLiveStateRequest.parse({ state: framing, regions }).regions?.forehead?.length, 4);
+  // A polygon is a closed shape: two points are not one.
+  assert.equal(LiveRegions.safeParse({ ...regions, forehead: square.slice(0, 2) }).success, false);
+  assert.equal(CameraState.safeParse({ ...idle, phase: 'dancing' }).success, false);
+
+  assert.equal(SendCameraCommandRequest.safeParse({ type: 'open' }).success, false);
+  assert.equal(SendCameraCommandRequest.safeParse({ type: 'open', patientNumber: 14, kind: 'check_in' }).success, true);
+  assert.equal(SendCameraCommandRequest.safeParse({ type: 'start' }).success, true);
+  assert.equal(SendCameraCommandRequest.safeParse({ type: 'reboot' }).success, false);
+
+  // A device from a server that predates the field has no camera state.
+  const device = { id: '6f1d1c6e-3c0a-4f5e-9a51-0d6a3b1f2c11', role: 'camera', label: 'Front desk phone', hasPushToken: false, lastSeenAt: '2026-11-14T03:21:07.512Z', liveAt: null };
+  assert.equal(Device.parse(device).camera, null);
+  assert.equal(Device.parse({ ...device, camera: framing }).camera?.phase, 'framing');
+  assert.equal(StreamEvent.parse({ type: 'camera_state', deviceId: device.id, state: null }).type, 'camera_state');
+  assert.equal(routes.liveState(device.id), `/api/live/${device.id}/state`);
 });

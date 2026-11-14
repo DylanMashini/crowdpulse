@@ -23,6 +23,8 @@ export const routes = {
   sitting: (id: string) => `/api/sittings/${id}`,
   sittingReadings: (id: string) => `/api/sittings/${id}/readings`,
   sittingFinish: (id: string) => `/api/sittings/${id}/finish`,
+  /** POST: the phone gave the sitting up. It ends without a summary. */
+  sittingAbandon: (id: string) => `/api/sittings/${id}/abandon`,
   sittingFile: (id: string) => `/api/sittings/${id}/file`,
   worklist: '/api/worklist',
   flags: '/api/flags',
@@ -32,5 +34,9 @@ export const routes = {
   faceMatch: '/api/face/match',
   liveFrame: (deviceId: string) => `/api/live/${deviceId}/frame`,
   liveStream: (deviceId: string) => `/api/live/${deviceId}/stream`,
+  /** POST, from the phone: its state and outlines. The answer carries a waiting command. */
+  liveState: (deviceId: string) => `/api/live/${deviceId}/state`,
+  /** POST, from the dashboard: a command for the phone. */
+  liveCommand: (deviceId: string) => `/api/live/${deviceId}/command`,
   stream: '/api/stream',
 } as const;
