@@ -1,13 +1,13 @@
 # Production hosting
 
-Triage Cam runs on AWS in `us-east-1` and is served at `https://crowdpulse.care` through Cloudflare. Everything in AWS and the DNS records are Terraform (`infra/`), applied by hand. Deploys of the app are a GitHub Actions workflow (`.github/workflows/deploy.yml`) that runs on every push to `main` that touches the web app, or the same steps run by hand (`infra/deploy.sh`, see "Deploying by hand") when Actions is not available, which is the case today.
+Triage Cam runs on AWS in `us-east-1` and is served at `https://crowdpulse.care` through Cloudflare. Everything in AWS and the DNS records are Terraform (`infra/`), applied by hand. Deploys of the app are a GitHub Actions workflow (`.github/workflows/deploy.yml`) that runs on every push to `main` that touches the web app, or the same steps run by hand (`infra/deploy.sh`, see "Deploying by hand") when Actions is not available.
 
 The repository is public. Account ids, zone ids, ARNs and IP addresses are kept out of it: they live in git-ignored `infra/terraform.tfvars` and `infra/backend.hcl`, in the Terraform state, and in GitHub Actions secrets.
 
 ## State on 14 November 2026
 
 - **Live in stage 2** (below): `https://crowdpulse.care` answers through Cloudflare, `www` redirects to it, and only Cloudflare's addresses can reach the load balancer. The Cloudflare zone went active at 18:07 UTC, during the build; stage 1 was brought up and checked first, then the switch described below was made.
-- **The deploy workflow has never run on GitHub.** Every run was refused before it started: "The job was not started because your account is locked due to a billing issue." Every deploy so far was made by hand: the image built and pushed from a laptop with the owner's credentials, then `infra/deploy.sh` ("Deploying by hand"). That path is proven; the build on GitHub's runner, the OIDC sign-in and the role's permissions in real use are not (the role's policy was checked call by call with IAM's policy simulator). Once the billing issue is cleared: `gh workflow run deploy.yml --ref main`, and watch it. The run for the merge of this work into `main` was refused the same way, so **production is behind `main`**: it runs the image of commit `96ec160`, and the `Retry-After` header on a 429 is not live until the next deploy.
+- **The deploy workflow works on GitHub.** Run 43639561197 (`gh workflow run deploy.yml --ref main`, 5 minutes 49 seconds) built the image on GitHub's runner, signed in through OIDC, ran the migrations, followed the blue/green deployment to `SUCCESSFUL` and left production on the image of commit `07b6616` (task definition revision 8), which carries the `Retry-After` header on a 429. The first run that got as far as AWS (43638733786) deployed its commit but failed while waiting, because the role could not describe the deployment; see "Who may deploy" for what that taught. Not yet seen: a run started by a push rather than by hand (the trigger paths below are untested), and a run that reuses an image already in ECR. Earlier deploys were made by hand ("Deploying by hand"), which stays the fallback.
 - **Nobody can sign in yet, and "Create an account" on the landing page leads nowhere**: there is no `RESEND_API_KEY`, so no verification email is sent (see Secrets). Set it before anyone is pointed at the site. The production database has the schema and no accounts.
 - **The origin check is written but not switched on** ("Who can reach the load balancer"): the Cloudflare token in use cannot manage transform rules. Until the owner applies it with a wider token, the load balancer accepts requests from any Cloudflare customer's zone or Worker that names this domain, not only from this zone.
 - The Cloudflare SSL/TLS mode could not be read (the token has DNS rights only). Cloudflare does reach the origin over HTTPS today; confirm in the dashboard that the mode is **Full (strict)**.
@@ -161,7 +161,7 @@ The workflow's actions are pinned to commit hashes, with the version in a commen
 
 ### Deploying by hand
 
-For when GitHub Actions is not available (today: the billing lock), and for redeploying or rolling back without a commit. It is the workflow's own steps: the image build, then the same script. Needs Docker, `jq` and the AWS CLI signed in as someone who may push to ECR and update the service (the owner's credentials; the deploy role is for GitHub only).
+For when GitHub Actions is not available, and for redeploying or rolling back without a commit. It is the workflow's own steps: the image build, then the same script. Needs Docker, `jq` and the AWS CLI signed in as someone who may push to ECR and update the service (the owner's credentials; the deploy role is for GitHub only).
 
 ```bash
 # From the repository root, on the commit to deploy, with nothing uncommitted: the image is
@@ -244,6 +244,8 @@ cd infra && terraform apply
 ```
 
 The trust policy today matches the repository under its current name, `DylanMashini/crowdpulse`.
+
+The role's policy (`infra/github.tf`) allows the calls the workflow and `infra/deploy.sh` make and nothing else, each on the one repository, parameter, cluster, service or log group where the action can be scoped. **Check a change to it with a real run, not with IAM's policy simulator.** The simulator answers for whatever resource ARN it is given, and ECS does not always authorise against the resource named in the request: `ecs:DescribeServiceDeployments` takes a deployment's ARN and is authorised against the service the deployment belongs to. The policy allowed it on the deployment ARNs only, the simulator passed it, and the first real run was refused. It is now allowed on the service and on its deployments (the service reference lists both resource types for the action). If the script gains an AWS call, look the action up in the Service Authorization Reference for ECS and add it here in the same change.
 
 ## Secrets
 
