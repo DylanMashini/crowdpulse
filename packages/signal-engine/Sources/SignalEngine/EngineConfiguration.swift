@@ -69,6 +69,17 @@ public struct EngineConfiguration: Codable, Sendable, Equatable {
   /// must survive the projection's sum. Blood keeps nearly all of it; a change in the colour
   /// of the light keeps a few per cent.
   public var minimumProjectionYield: Double = 0.1
+  /// The two colour-difference signals must also move together at the reported frequency:
+  /// the cosine of the angle between them there must be at least this. Blood moves them
+  /// together (near 1). Light that turns warmer and cooler in a rhythm, such as a screen
+  /// with a blinking element facing the patient, moves them against each other (near -1)
+  /// long before it is strong enough for the yield to fall. 0 is the line between the two
+  /// and was not tuned: of the 754 valid windows of the UBFC tuning set one is under it and
+  /// the lowest of the owner's phone sittings is at 0.35, while 855 of the 897 seconds a
+  /// flickering screen made valid on the phone's own noise are under it (results, section
+  /// 12). Light whose change is green against red and blue together is not caught: that is
+  /// blood's own colour. -1 switches the check off.
+  public var minimumColourPhase: Double = 0
 
   /// The newest part of a window, this many seconds, must hold the reported rhythm by
   /// itself. A window is up to ten seconds long, and without this a rate could stay on

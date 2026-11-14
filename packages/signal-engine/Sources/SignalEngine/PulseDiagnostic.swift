@@ -34,7 +34,9 @@ public enum PulseGate: String, Codable, Sendable, CaseIterable {
   /// delivered frame rate. Reason `low_quality`.
   case flicker
   /// Under `minimumProjectionYield` of the colour signal at the peak survives the
-  /// projection. Reason `low_quality`.
+  /// projection; or, after the movement check below, the two colour-difference signals move
+  /// against each other at the peak (`minimumColourPhase`). Either way the rhythm is the
+  /// light changing colour. Reason `low_quality`.
   case illumination
   /// At the peak the regions' brightness swings more than `maximumBrightnessRatio` times
   /// as far as their pulse signal, or the pulse signal swings further than
@@ -99,6 +101,10 @@ public struct PulseDiagnostic: Codable, Sendable, Equatable {
   /// Share of the colour signal at the candidate that survives the projection
   /// (`minimumProjectionYield`). Nil when the check did not run.
   public var projectionYield: Double?
+  /// Whether the two colour-difference signals move together at the candidate, from 1
+  /// (together, as blood moves them) to -1 (against each other, as light that changes
+  /// colour moves them) (`minimumColourPhase`). Nil when the check did not run.
+  public var colourPhase: Double?
   /// Quality at the candidate in the newest `recentEvidenceSeconds` of the window alone
   /// (`minimumRecentQuality`). Nil when the check did not run.
   public var recentQuality: Double?
@@ -133,6 +139,7 @@ extension PulseDiagnostic {
     halved = detail.halved
     flickerAlias = detail.flickerAlias
     projectionYield = detail.projectionYield
+    colourPhase = detail.colourPhase
     recentQuality = detail.recentQuality
     recentAmplitudeShare = detail.recentAmplitudeShare
     brightnessRatio = detail.brightnessRatio

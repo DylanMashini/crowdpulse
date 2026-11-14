@@ -624,7 +624,7 @@ struct PulseTracker {
       // projection left of a change in the light, is evidence of the lamp, not of a pulse.
       switch outcome.peak {
       case .flicker, .illumination, .flat, .drift: break
-      case .peak where movesInRhythm(outcome.detail): break
+      case .peak where movesInRhythm(outcome.detail) || lightChangesColour(outcome.detail): break
       case .peak, .bandEdge:
         evidence.append(
           WindowEvidence(
@@ -652,6 +652,10 @@ struct PulseTracker {
       gate.push(nil)
       diagnostic.gate = .rhythmicMovement
       return .withheld(.none, .motion, quality: quality)
+    case .peak where lightChangesColour(outcome.detail):
+      gate.push(nil)
+      diagnostic.gate = .illumination
+      return .withheld(.none, .lowQuality)
     case .peak(_, let quality) where quality < configuration.qualityThreshold:
       gate.push(nil)
       diagnostic.gate = .quality
@@ -692,6 +696,14 @@ struct PulseTracker {
   private func movesInRhythm(_ detail: PulseAnalyzer.Detail) -> Bool {
     (detail.brightnessRatio ?? 0) > configuration.maximumBrightnessRatio
       || (detail.pulseAmplitude ?? 0) > configuration.maximumPulseAmplitude
+  }
+
+  /// Whether the rhythm a window holds is the light changing colour, not blood: the two
+  /// colour-difference signals move against each other at its rate (`minimumColourPhase`).
+  /// A reading already established does not excuse it, as it may excuse movement: light
+  /// that flickers at the patient's own heart rate is still not a measurement of it.
+  private func lightChangesColour(_ detail: PulseAnalyzer.Detail) -> Bool {
+    (detail.colourPhase ?? 1) < configuration.minimumColourPhase
   }
 
   /// A rhythm that could be movement is believed only where one that could not be was read

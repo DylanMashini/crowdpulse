@@ -53,6 +53,12 @@ struct PulseAnalyzer {
     /// Share of what the colour-difference signals hold at the candidate that survives the
     /// projection. Nil when the check did not run.
     var projectionYield: Double?
+    /// Whether the two colour-difference signals move together at the candidate: the cosine
+    /// of the angle between them there, 1 when they rise and fall together, -1 when one
+    /// rises as the other falls. Nil when the check did not run. The tracker refuses the
+    /// window on it (`minimumColourPhase`), after the movement checks, which need the rest of
+    /// what is measured here.
+    var colourPhase: Double?
     /// Quality at the candidate in the newest `recentEvidenceSeconds` of the window alone.
     /// Nil when there is no candidate to report or the window is too short to have a
     /// newest part.
@@ -407,8 +413,10 @@ struct PulseAnalyzer {
       detail.candidateQuality = quality
     }
     if case .peak = reported {
-      detail.projectionYield = projectionYield(regions, weights: weights, at: reportedHz, rate: rate)
-      if let yield = detail.projectionYield, yield < configuration.minimumProjectionYield {
+      let colour = projectionYield(regions, weights: weights, at: reportedHz, rate: rate)
+      detail.projectionYield = colour?.yield
+      detail.colourPhase = colour?.phase
+      if let colour, colour.yield < configuration.minimumProjectionYield {
         return finished(.illumination)
       }
       // A sample counts as seen when the regions that carry half the weight could use it.
@@ -489,10 +497,24 @@ struct PulseAnalyzer {
   /// for a pulse on quality alone. So when less than `minimumProjectionYield` of what the
   /// two signals hold at `hz` survives their sum, the peak is that remainder.
   ///
-  /// Returns the share that survives, or nil when the regions hold nothing at `hz`.
-  private func projectionYield(_ regions: [RegionSeries], weights: [Double], at hz: Double, rate: Double) -> Double? {
+  /// Cancelling is the far end of something that shows much earlier. Blood absorbs green
+  /// most, blue less and red least, so with a pulse both signals rise and fall together
+  /// whatever its size. Light that turns warmer or cooler moves red one way and blue the
+  /// other, so one signal rises as the other falls. When the light's rhythm is small against
+  /// the sensor's noise the scale is set by the noise, little cancels, and the yield stays
+  /// high (a screen flickering 1% between two colours gave 0.3 to 0.9), but the two signals
+  /// are still in opposite phase at that rate. `phase` is the cosine of the angle between
+  /// them there, weighted like the yield (`minimumColourPhase`).
+  ///
+  /// Returns the share that survives and that cosine, or nil when the regions hold nothing
+  /// at `hz`.
+  private func projectionYield(
+    _ regions: [RegionSeries], weights: [Double], at hz: Double, rate: Double
+  ) -> (yield: Double, phase: Double)? {
     var kept = 0.0
     var held = 0.0
+    var together = 0.0
+    var sizes = 0.0
     for (region, weight) in zip(regions, weights) where weight > 0 {
       let meanR = vDSP.mean(region.r)
       let meanG = vDSP.mean(region.g)
@@ -520,9 +542,11 @@ struct PulseAnalyzer {
       kept += weight * (sum.re * sum.re + sum.im * sum.im).squareRoot()
       held += weight
         * ((a.re * a.re + a.im * a.im).squareRoot() + alpha * (b.re * b.re + b.im * b.im).squareRoot())
+      together += weight * alpha * (a.re * b.re + a.im * b.im)
+      sizes += weight * alpha * ((a.re * a.re + a.im * a.im) * (b.re * b.re + b.im * b.im)).squareRoot()
     }
     guard held > 0 else { return nil }
-    return kept / held
+    return (kept / held, sizes > 0 ? together / sizes : 1)
   }
 
   /// Lamps flicker at the mains frequency and twice it. A camera whose frame rate is not an
