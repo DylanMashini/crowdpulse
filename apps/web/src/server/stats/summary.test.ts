@@ -48,16 +48,26 @@ test("bins reach below the usual range when a rate is there", () => {
   assert.equal(result.bins.reduce((sum, bin) => sum + bin.sittings, 0), 1);
 });
 
-test("breathing bins of three cover 12 to 20 exactly", () => {
-  const result = distribution([16, 24], BREATHING_RATE_BINS);
+test("breathing bins follow the score bands: threes, with 21 to 24 as one bin", () => {
+  const result = distribution([16, 24, 24.6, 30], BREATHING_RATE_BINS);
   assert.deepEqual(
     result.bins.map((bin) => [bin.from, bin.to, bin.sittings]),
     [
       [12, 14, 0],
       [15, 17, 1],
       [18, 20, 0],
-      [21, 23, 0],
-      [24, 26, 1],
+      [21, 24, 1],
+      [25, 27, 1],
+      [28, 30, 1],
+    ],
+  );
+  // Below the usual range the bins are still threes from 9.
+  assert.deepEqual(
+    distribution([7, 10], BREATHING_RATE_BINS).bins.slice(0, 3).map((bin) => [bin.from, bin.to, bin.sittings]),
+    [
+      [6, 8, 1],
+      [9, 11, 1],
+      [12, 14, 0],
     ],
   );
 });

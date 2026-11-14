@@ -422,7 +422,7 @@ export function statistics(empty: boolean): Statistics {
       medianTimeToFirstReadingSeconds: 11.5,
     },
     heartRate: { sittings: 11, median: 78.42, lowest: 67.9, highest: 108.3, bins: bins(51, 10, [0, 2, 4, 2, 1, 2]) },
-    breathingRate: { sittings: 10, median: 16.2, lowest: 13.8, highest: 24.1, bins: bins(12, 3, [3, 4, 1, 1, 1]) },
+    breathingRate: { sittings: 10, median: 16.2, lowest: 13.8, highest: 24.1, bins: [...bins(12, 3, [3, 4, 1]), { from: 21, to: 24, sittings: 2 }] },
     flags: { raised: 3, byRule: { score_rise: 1, baseline_shift: 0, overdue: 2 }, acknowledged: acknowledged.size, medianMinutesToAcknowledge: acknowledged.size ? 4.3 : null, openNow: 2, unacknowledgedNow: 2 - Math.min(2, acknowledged.size) },
     perPatient: seeds.map((seed) => {
       const left = discharged.get(seed.number) ?? null;

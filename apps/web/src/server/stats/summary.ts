@@ -20,6 +20,12 @@ export type Binning = {
   width: number;
   /** Whole numbers the bins always reach, so the usual range is on the chart even when no sitting fell in it. */
   cover: [number, number];
+  /**
+   * One bin that is not `width` wide, so the bins can follow score bands that are not all the
+   * same size. It must start a whole number of widths from `origin`; bins above it count from
+   * the number after it.
+   */
+  band?: { from: number; to: number };
 };
 
 /**
@@ -27,8 +33,12 @@ export type Binning = {
  * scores 1, and so on).
  */
 export const HEART_RATE_BINS: Binning = { origin: 41, width: 10, cover: [51, 90] };
-/** Breathing bins of three: 12 to 20, the band that scores 0, is exactly three of them. */
-export const BREATHING_RATE_BINS: Binning = { origin: 9, width: 3, cover: [12, 20] };
+/**
+ * Breathing bins that never straddle a partial NEWS2 band: threes from 9 (9 to 11 scores 1; 12
+ * to 20, three bins, scores 0), then 21 to 24 as one bin of four (scores 2), then threes again
+ * from 25 (scores 3).
+ */
+export const BREATHING_RATE_BINS: Binning = { origin: 9, width: 3, cover: [12, 20], band: { from: 21, to: 24 } };
 
 /**
  * Counts rates into whole-number bins. A rate is rounded first, as it is on every screen, so
@@ -36,15 +46,21 @@ export const BREATHING_RATE_BINS: Binning = { origin: 9, width: 3, cover: [12, 2
  */
 export function distribution(values: number[], binning: Binning): RateDistribution {
   if (values.length === 0) return { sittings: 0, median: null, lowest: null, highest: null, bins: [] };
-  const { origin, width, cover } = binning;
-  const start = (value: number) => origin + Math.floor((Math.round(value) - origin) / width) * width;
+  const { origin, width, cover, band } = binning;
+  const start = (value: number) => {
+    const whole = Math.round(value);
+    if (band && whole >= band.from && whole <= band.to) return band.from;
+    const base = band && whole > band.to ? band.to + 1 : origin;
+    return base + Math.floor((whole - base) / width) * width;
+  };
+  const end = (from: number) => (band && from === band.from ? band.to : from + width - 1);
   const rounded = values.map((value) => Math.round(value));
   const first = Math.min(start(cover[0]), ...rounded.map(start));
   const last = Math.max(start(cover[1]), ...rounded.map(start));
 
   const bins: RateDistribution["bins"] = [];
-  for (let from = first; from <= last; from += width) {
-    bins.push({ from, to: from + width - 1, sittings: rounded.filter((value) => start(value) === from).length });
+  for (let from = first; from <= last; from = end(from) + 1) {
+    bins.push({ from, to: end(from), sittings: rounded.filter((value) => start(value) === from).length });
   }
   return { sittings: values.length, median: median(values), lowest: lowest(values), highest: highest(values), bins };
 }
