@@ -9,6 +9,8 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    // Agents run dev servers and builds into .next-<port> (docs/CONTRACTS.md section 9).
+    ".next-*/**",
     "out/**",
     "build/**",
     "next-env.d.ts",
