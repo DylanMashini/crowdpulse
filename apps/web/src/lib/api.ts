@@ -44,14 +44,18 @@ export function errorMessage(error: unknown): string {
 
 type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 
-const sessionEndedListeners = new Set<() => void>();
+/** What was refused when the session ended: a change (`write`) or only a read. */
+export type SessionEnded = { write: boolean };
+
+const sessionEndedListeners = new Set<(refused: SessionEnded) => void>();
 
 /**
  * Calls `listener` when any request is refused with `unauthenticated`: the session has expired
  * or was ended elsewhere, and nothing on the page can succeed until staff sign in again. One
- * place (the app shell) listens and sends them to sign-in, so no screen handles it itself.
+ * place (the app shell) listens and sends them to sign-in, so no screen handles it itself. The
+ * listener is told whether the refused request was a change, which was therefore not made.
  */
-export function onSessionEnded(listener: () => void): () => void {
+export function onSessionEnded(listener: (refused: SessionEnded) => void): () => void {
   sessionEndedListeners.add(listener);
   return () => {
     sessionEndedListeners.delete(listener);
@@ -82,7 +86,7 @@ async function request<T>(schema: ZodType<T> | null, method: Method, path: strin
   if (!response.ok) {
     const parsed = ErrorResponse.safeParse(await response.json().catch(() => null));
     if (parsed.success) {
-      if (parsed.data.error.code === 'unauthenticated') sessionEndedListeners.forEach((listener) => listener());
+      if (parsed.data.error.code === 'unauthenticated') sessionEndedListeners.forEach((listener) => listener({ write: method !== 'GET' }));
       throw new ApiError(parsed.data.error.code, parsed.data.error.message, response.status);
     }
     throw new ApiError('bad_response', `The server answered with status ${response.status} and no explanation.`, response.status);

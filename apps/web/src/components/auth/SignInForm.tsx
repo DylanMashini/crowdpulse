@@ -6,8 +6,9 @@ import { useState, type FormEvent } from 'react';
 
 import { Button, Field } from '@/components/ds';
 import { ApiError, api, errorMessage } from '@/lib/api';
+import { sessionEndedText } from '@/lib/session-ended';
 
-import { FormError, textLink } from './AuthFrame';
+import { FormError, FormNotice, textLink } from './AuthFrame';
 import { emailProblem, rememberPending } from './validation';
 
 /** Only a path on this site is followed after sign-in. */
@@ -17,7 +18,7 @@ function safeNext(next: string | undefined): string {
 
 type Failure = { kind: 'message'; text: string } | { kind: 'unverified'; email: string };
 
-export function SignInForm({ next }: { next?: string }) {
+export function SignInForm({ next, reason }: { next?: string; reason?: string }) {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -27,6 +28,8 @@ export function SignInForm({ next }: { next?: string }) {
 
   const emailError = attempted ? emailProblem(email) : null;
   const passwordError = attempted && !password ? 'Enter your password' : null;
+  // Set when the dashboard sent staff here because their session ended under them.
+  const ended = sessionEndedText(reason);
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -51,6 +54,7 @@ export function SignInForm({ next }: { next?: string }) {
 
   return (
     <form method="post" onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
+      {ended && !failure ? <FormNotice>{ended}</FormNotice> : null}
       {failure?.kind === 'message' ? <FormError>{failure.text}</FormError> : null}
       {failure?.kind === 'unverified' ? (
         <FormError>

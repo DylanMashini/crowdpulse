@@ -38,4 +38,13 @@ export function FormError({ children }: { children: ReactNode }) {
   );
 }
 
+/** Why the person is looking at this form, when it is not an error of theirs. */
+export function FormNotice({ children }: { children: ReactNode }) {
+  return (
+    <p role="status" className="rounded-md border border-line-strong bg-surface-sunken px-3 py-2 font-medium text-ink">
+      {children}
+    </p>
+  );
+}
+
 export const textLink = 'font-medium text-signal underline underline-offset-[3px]';

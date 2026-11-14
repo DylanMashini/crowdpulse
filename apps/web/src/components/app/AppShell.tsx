@@ -9,6 +9,7 @@ import { StateMessage } from '@/components/ui/StateMessage';
 import { ApiError, api, errorMessage, onSessionEnded } from '@/lib/api';
 import { useNow } from '@/lib/clock';
 import { minutesAgo } from '@/lib/format';
+import { SESSION_ENDED, SESSION_ENDED_UNSAVED } from '@/lib/session-ended';
 import { useResource } from '@/lib/use-resource';
 
 import { LiveProvider, useLive, useLiveEvents, type LiveEvent } from './live';
@@ -57,21 +58,27 @@ export function AppShell({ children }: { children: ReactNode }) {
   const session = useResource('session', api.me);
   // Any request refused for want of a session, on any screen, ends up here: the session expired
   // or was ended elsewhere while the dashboard was open.
-  const [ended, setEnded] = useState(false);
+  const [ended, setEnded] = useState<{ unsaved: boolean } | null>(null);
   const signingOut = useRef(false);
   useEffect(
     () =>
-      onSessionEnded(() => {
+      onSessionEnded((refused) => {
         // Signing out on purpose goes to a plain sign-in page, not back to where staff were.
-        if (!signingOut.current) setEnded(true);
+        // A refused change (an acknowledgement, a typed field) was not made; sign-in says so.
+        if (!signingOut.current) setEnded((current) => ({ unsaved: (current?.unsaved ?? false) || refused.write }));
       }),
     [],
   );
-  const signedOut = ended || session.error?.code === 'unauthenticated';
+  const signedOut = ended !== null || session.error?.code === 'unauthenticated';
+  // Sign-in explains the jump only to someone who was signed in on this page a moment ago.
+  // Opening the dashboard signed out is not an ended session, and gets the plain form.
+  const reason = !session.data ? null : ended?.unsaved ? SESSION_ENDED_UNSAVED : SESSION_ENDED;
 
   useEffect(() => {
-    if (signedOut) router.replace(`/sign-in?next=${encodeURIComponent(pathname + window.location.search)}`);
-  }, [signedOut, router, pathname]);
+    if (!signedOut) return;
+    const next = encodeURIComponent(pathname + window.location.search);
+    router.replace(`/sign-in?next=${next}${reason ? `&reason=${reason}` : ''}`);
+  }, [signedOut, reason, router, pathname]);
   const onSigningOut = useCallback((active: boolean) => {
     signingOut.current = active;
   }, []);
