@@ -1,7 +1,7 @@
 import { PROTOTYPE_NOTICE } from '@triagecam/contracts';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Text, type TextInputInstance } from 'react-native';
+import { type TextInputInstance } from 'react-native';
 
 import { Button } from '@/components/Button';
 import { Field } from '@/components/Field';
@@ -11,6 +11,7 @@ import { errorMessage, isApiError } from '@/lib/api';
 import { useSession } from '@/lib/session/SessionProvider';
 import { emailError } from '@/lib/session/validation';
 import { useTheme } from '@/theme';
+import { Text } from '@/components/Text';
 
 export default function SignIn() {
   const theme = useTheme();

@@ -1,5 +1,5 @@
 import { type ReactNode, useState } from 'react';
-import { type LayoutRectangle, StyleSheet, Text, View } from 'react-native';
+import { type LayoutRectangle, StyleSheet, View } from 'react-native';
 import Svg, { Ellipse, Path, Polygon, Rect, Text as SvgText } from 'react-native-svg';
 import type { FaceRegionsEvent, Point, ViewfinderState } from 'triage-capture';
 
@@ -8,6 +8,7 @@ import { fonts } from '@/theme';
 
 import { Icon } from './Icon';
 import { useScopedTheme } from './ThemeScope';
+import { Text } from './Text';
 
 const MESSAGES: Record<ViewfinderState, string> = {
   searching: 'Looking for a face. Sit 0.6 to 0.9 m from the phone.',

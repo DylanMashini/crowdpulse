@@ -1,4 +1,4 @@
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 
 import { sentences } from '@/lib/format';
 import { fonts } from '@/theme';
@@ -7,6 +7,7 @@ import { Button } from './Button';
 import { Icon } from './Icon';
 import { useScopedTheme } from './ThemeScope';
 import { Touchable } from './Touchable';
+import { Text } from './Text';
 
 type Props = {
   /** "Trend flag, patient 14": the same words as the system push. */

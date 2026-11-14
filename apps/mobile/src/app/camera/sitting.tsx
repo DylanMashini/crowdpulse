@@ -1,7 +1,7 @@
 import { useKeepAwake } from 'expo-keep-awake';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect } from 'react';
-import { Alert, Linking, ScrollView, Text, View, useWindowDimensions } from 'react-native';
+import { Alert, Linking, ScrollView, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import TriageCapture from 'triage-capture';
 
@@ -21,6 +21,7 @@ import { type LiveViewState, useSittingController } from '@/lib/capture/useSitti
 import { tidy } from '@/lib/format';
 import { sourceLabel } from '@/lib/nurse/worklistFormat';
 import { useDevice } from '@/lib/session/SessionProvider';
+import { Text } from '@/components/Text';
 
 export default function Sitting() {
   const params = useLocalSearchParams<{ patient: string; kind: string; enrol?: string }>();

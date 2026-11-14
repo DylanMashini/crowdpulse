@@ -1,5 +1,5 @@
 import { PRIVACY_CAPTURE } from '@triagecam/contracts';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 import type { ThermalState } from 'triage-capture';
 
 import { fonts } from '@/theme';
@@ -7,6 +7,7 @@ import { fonts } from '@/theme';
 import { Icon } from './Icon';
 import { PrivacyNote } from './PrivacyNote';
 import { useScopedTheme } from './ThemeScope';
+import { Text } from './Text';
 
 const THERMAL: Record<ThermalState, string> = {
   nominal: 'Normal',

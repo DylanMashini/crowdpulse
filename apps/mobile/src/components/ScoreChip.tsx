@@ -1,10 +1,11 @@
 import type { Score } from '@triagecam/contracts';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 
 import { scoreCaption } from '@/lib/nurse/worklistFormat';
 import { fonts } from '@/theme';
 
 import { useScopedTheme } from './ThemeScope';
+import { Text } from './Text';
 
 type Props = {
   score: Score;
@@ -40,7 +41,13 @@ export function ScoreChip({ score, measured = 2, caption = true }: Props) {
           backgroundColor: look.background,
         }}
       >
-        <Text style={{ fontFamily: fonts.mono[600], fontSize: 15, lineHeight: 22, color: look.text }}>{score}</Text>
+        {/* The chip is a fixed 28 points, so its digit does not grow past it. */}
+        <Text
+          maxFontSizeMultiplier={1.2}
+          style={{ fontFamily: fonts.mono[600], fontSize: 15, lineHeight: 22, color: look.text }}
+        >
+          {score}
+        </Text>
       </View>
       {caption ? (
         <Text style={[theme.type.caption, { color: colors.inkMuted }]}>{scoreCaption(measured)}</Text>

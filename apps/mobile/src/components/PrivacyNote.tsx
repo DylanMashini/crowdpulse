@@ -1,7 +1,8 @@
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 
 import { Icon, type IconName } from './Icon';
 import { useScopedTheme } from './ThemeScope';
+import { Text } from './Text';
 
 type Props = {
   /** One plain sentence the build can defend. */

@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { type ReactNode, useState } from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 import TriageCapture from 'triage-capture';
 
 import { Button } from '@/components/Button';
@@ -12,6 +12,7 @@ import { PatientPicker } from '@/components/PatientPicker';
 import { api, errorMessage } from '@/lib/api';
 import { sentences } from '@/lib/format';
 import { sourceLabel } from '@/lib/nurse/worklistFormat';
+import { Text } from '@/components/Text';
 
 type NewPatient =
   | { step: 'idle' }

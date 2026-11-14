@@ -1,7 +1,7 @@
 import type { PatientRef } from '@triagecam/contracts';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Linking, Text, View } from 'react-native';
+import { Linking, View } from 'react-native';
 import TriageCapture, { type ViewfinderState } from 'triage-capture';
 
 import { Button } from '@/components/Button';
@@ -14,6 +14,7 @@ import { PatientPicker } from '@/components/PatientPicker';
 import { api, errorMessage, isApiError } from '@/lib/api';
 import { sentences } from '@/lib/format';
 import { captureErrorCode, captureErrorMessage } from '@/lib/capture/captureErrors';
+import { Text } from '@/components/Text';
 
 /** How long to wait for a face before offering the list of waiting patients. */
 const FACE_WAIT_MS = 15_000;

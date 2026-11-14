@@ -1,9 +1,10 @@
 import { type Ref, useState } from 'react';
-import { Text, TextInput, type TextInputInstance, type TextInputProps, View } from 'react-native';
+import { TextInput, type TextInputInstance, type TextInputProps, View } from 'react-native';
 
 import { tidy } from '@/lib/format';
 
 import { useScopedTheme } from './ThemeScope';
+import { MAX_TEXT_SCALE, Text } from './Text';
 
 type Props = Omit<TextInputProps, 'style' | 'placeholder'> & {
   /** Always visible. The unit goes in `unit`, never here. */
@@ -50,6 +51,7 @@ export function Field({ label, unit, hint, error, onFocus, onBlur, ref, ...input
             setFocused(false);
             onBlur?.(event);
           }}
+          maxFontSizeMultiplier={MAX_TEXT_SCALE}
           selectionColor={colors.signal}
           style={[
             theme.type.bodyTouch,

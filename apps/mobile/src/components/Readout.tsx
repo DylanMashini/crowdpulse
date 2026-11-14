@@ -1,10 +1,11 @@
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 
 import { fonts } from '@/theme';
 
 import { Icon, type IconName } from './Icon';
 import { ProvenanceTag } from './ProvenanceTag';
 import { useScopedTheme } from './ThemeScope';
+import { Text } from './Text';
 
 type Props = {
   label: string;

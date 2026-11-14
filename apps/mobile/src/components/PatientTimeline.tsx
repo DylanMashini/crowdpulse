@@ -1,4 +1,4 @@
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 
 import type { TimelineRow } from '@/lib/nurse/worklistFormat';
 import { fonts } from '@/theme';
@@ -7,6 +7,7 @@ import { ProvenanceTag } from './ProvenanceTag';
 import { ScoreChip } from './ScoreChip';
 import { StatusBadge } from './StatusBadge';
 import { useScopedTheme } from './ThemeScope';
+import { Text } from './Text';
 
 const TIME_WIDTH = 52;
 const MARK = 10;

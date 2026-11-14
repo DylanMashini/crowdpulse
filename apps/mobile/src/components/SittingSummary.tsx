@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 
 import type { SummaryItem } from '@/lib/capture/readingFormat';
 import { fonts } from '@/theme';
@@ -8,6 +8,7 @@ import { Icon, type IconName } from './Icon';
 import { QualityMeter } from './QualityMeter';
 import { Readout } from './Readout';
 import { useScopedTheme } from './ThemeScope';
+import { Text } from './Text';
 
 type Props = {
   items: SummaryItem[];
