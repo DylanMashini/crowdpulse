@@ -67,7 +67,7 @@ export const errorStatus: Record<ErrorCode, number> = {
   sitting_finished: 409,
   face_not_opted_in: 403,
   no_face_detected: 422,
-  /** The face models are not installed on the server. Ask for the patient number instead. */
+  /** The face models are not installed on the server. Choose the patient from the waiting-room list instead. */
   face_unavailable: 503,
   payload_too_large: 413,
   rate_limited: 429,

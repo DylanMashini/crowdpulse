@@ -4,9 +4,10 @@ import sharp, { type Sharp } from "sharp";
 
 import { db, schema } from "../db/client.ts";
 import { patientChanged } from "./events.ts";
-import { detectFace, type Landmarks } from "./face/detect.ts";
+import { detectFace } from "./face/detect.ts";
 import { decodeJpegBytes } from "./face/image.ts";
 import { faceModels } from "./face/models.ts";
+import { portraitSquare } from "./face/portrait.ts";
 import { ApiError } from "./http.ts";
 import type { PatientRow } from "./serialize.ts";
 import { toPatientRef } from "./serialize.ts";
@@ -14,35 +15,7 @@ import { toPatientRef } from "./serialize.ts";
 // The profile photo is the one picture the system keeps: a small square JPEG per patient,
 // taken during the intake sitting. Everything else the camera sees is relayed and dropped.
 
-/** A face narrower than this between the eyes, in frame pixels, makes too soft a portrait. */
-const MIN_EYE_DISTANCE_PX = 22;
-/** The portrait is this many eye-distances wide: the head, some hair and a little shoulder. */
-const PORTRAIT_SPAN = 3.4;
-
 const isJpeg = (bytes: Buffer) => bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8;
-
-type Point = { x: number; y: number };
-const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
-const midpoint = (a: Point, b: Point): Point => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
-
-/** The square around a detected face, kept inside the picture. Null when the face is too small. */
-export function portraitSquare(
-  landmarks: Landmarks,
-  width: number,
-  height: number,
-): { left: number; top: number; size: number } | null {
-  const [rightEye, leftEye, , rightMouth, leftMouth] = landmarks;
-  const eyes = midpoint(rightEye, leftEye);
-  const mouth = midpoint(rightMouth, leftMouth);
-  const eyeDistance = distance(rightEye, leftEye);
-  if (eyeDistance < MIN_EYE_DISTANCE_PX) return null;
-  // A turned head shortens the eye distance, so the eye-to-mouth distance sets a floor.
-  const unit = Math.max(eyeDistance, distance(eyes, mouth));
-  const size = Math.round(Math.min(unit * PORTRAIT_SPAN, width, height));
-  const centre = { x: eyes.x + (mouth.x - eyes.x) * 0.4, y: eyes.y + (mouth.y - eyes.y) * 0.4 };
-  const clamp = (value: number, max: number) => Math.round(Math.min(Math.max(value, 0), max));
-  return { left: clamp(centre.x - size / 2, width - size), top: clamp(centre.y - size / 2, height - size), size };
-}
 
 const encode = (image: Sharp) =>
   image.resize(PATIENT_PHOTO_SIZE, PATIENT_PHOTO_SIZE, { fit: "cover" }).jpeg({ quality: 86, mozjpeg: true }).toBuffer();

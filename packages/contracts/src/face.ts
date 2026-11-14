@@ -23,7 +23,7 @@ export type MatchFaceRequest = z.infer<typeof MatchFaceRequest>;
 export const MatchFaceResponse = z.object({
   /**
    * matched: patientNumber is set and confidence met the threshold.
-   * low_confidence: someone resembles the crop but not surely; ask for the patient number.
+   * low_confidence: someone resembles the crop but not surely; offer the waiting-room list instead.
    * no_match: nobody enrolled resembles the crop.
    */
   outcome: z.enum(['matched', 'low_confidence', 'no_match']),

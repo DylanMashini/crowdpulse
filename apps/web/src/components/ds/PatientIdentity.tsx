@@ -27,10 +27,10 @@ export interface PatientIdentityProps {
 /** A short visit number, for the places a patient is listed by it. */
 export function VisitNumber({ number, className }: { number: number; className?: string }) {
   return (
-    <span className={cx('font-mono whitespace-nowrap text-ink-muted tabular-nums', className)}>
+    <span className={cx('whitespace-nowrap text-ink-muted', className)}>
       <span className="sr-only">Visit number </span>
       <span aria-hidden>No. </span>
-      {number}
+      <span className="font-mono tabular-nums">{number}</span>
     </span>
   );
 }
