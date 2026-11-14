@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { clientAddress, forwardedClient, RateLimiter } from "./rate-limit.ts";
+import { forwardedClient, RateLimiter } from "./rate-limit.ts";
 
 describe("RateLimiter", () => {
   it("allows up to the limit inside a window, then says how long to wait", () => {
@@ -25,13 +25,10 @@ describe("RateLimiter", () => {
   });
 });
 
-describe("clientAddress", () => {
-  const request = (forwarded?: string) =>
-    new Request("http://localhost/api", { headers: forwarded ? { "x-forwarded-for": forwarded } : {} });
-
+describe("forwardedClient", () => {
   it("takes the first forwarded address in development, as the tunnel reports it", () => {
-    assert.equal(clientAddress(request("203.0.113.7, 10.0.0.1"), undefined), "203.0.113.7");
-    assert.equal(clientAddress(request(), undefined), "direct");
+    assert.equal(forwardedClient("203.0.113.7, 10.0.0.1", undefined), "203.0.113.7");
+    assert.equal(forwardedClient(null, undefined), "direct");
   });
 
   it("counts back from the right past the trusted proxies, so a forged entry is ignored", () => {

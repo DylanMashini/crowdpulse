@@ -70,6 +70,6 @@ export function forwardedClient(header: string | null, trustedProxies: number | 
 }
 
 /** The caller's address, for rate limits. `TRUSTED_PROXY_HOPS` says how many proxies of ours are in front. */
-export function clientAddress(request: Request, trustedProxies: number | undefined = env().TRUSTED_PROXY_HOPS): string {
-  return forwardedClient(request.headers.get("x-forwarded-for"), trustedProxies);
+export function clientAddress(request: Request): string {
+  return forwardedClient(request.headers.get("x-forwarded-for"), env().TRUSTED_PROXY_HOPS);
 }
