@@ -3,14 +3,12 @@ import { View } from 'react-native';
 
 import { toAcknowledgeText } from '@/lib/nurse/nurseFormat';
 import { patientSeverity } from '@/lib/nurse/severity';
-import { lastObservedText, sourceLabel, statusText } from '@/lib/nurse/worklistFormat';
+import { lastObservedText, scoreCaption, sourceLabel, statusText } from '@/lib/nurse/worklistFormat';
 import { weight } from '@/theme';
 
 import { cardStyle } from './Card';
 import { Icon } from './Icon';
 import { PatientIdentity } from './PatientIdentity';
-import { ProvenanceTag } from './ProvenanceTag';
-import { ScoreChip } from './ScoreChip';
 import { StatusBadge } from './StatusBadge';
 import { useScopedTheme } from './ThemeScope';
 import { Touchable } from './Touchable';
@@ -20,7 +18,8 @@ import { Text } from './Text';
 /**
  * One patient in the nurse worklist. The whole card is one touch target and opens the patient.
  * An urgent patient gets the tinted card with the name and readings in white; every other
- * patient keeps the plain card, so one card on the screen carries the colour.
+ * patient keeps the plain card, so one card on the screen carries the colour. Inside a card the
+ * state chip is the only chip: the score, the source and the age are caption text under it.
  */
 export function WorklistCard({ item, onPress }: { item: WorklistItem; onPress: () => void }) {
   const theme = useScopedTheme();
@@ -79,31 +78,28 @@ export function WorklistCard({ item, onPress }: { item: WorklistItem; onPress: (
         ))}
       </View>
 
-      <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: space.space3, rowGap: space.space2 }}>
+      {/* One chip: the patient's state. What a nurse has to do sits beside it in plain text. */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: space.space3, rowGap: space.space1 }}>
         <StatusBadge severity={severity} label={statusText(item.state, item.minutesSinceObserved)} />
-        {item.score != null ? (
-          <ScoreChip score={item.score} measured={item.parametersMeasured} />
-        ) : (
-          <Text style={[theme.type.caption, { color: colors.inkFaint }]}>Not scored</Text>
-        )}
-        {source ? <ProvenanceTag kind="recording" label={source} /> : null}
+        {toAcknowledge ? (
+          <Text style={[theme.type.caption, { fontWeight: weight.medium, color: colors.ink }]}>{toAcknowledge}</Text>
+        ) : null}
       </View>
 
-      {showsLastObserved || toAcknowledge ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: space.space3, rowGap: space.space1 }}>
-          {toAcknowledge ? (
-            <Text
-              style={[
-                theme.type.caption,
-                { fontWeight: weight.medium, color: urgent ? colors.urgent : severity === 'watch' ? colors.watch : colors.ink },
-              ]}
-            >
-              {toAcknowledge}
+      {/* Where the numbers stand and where they came from, as one quiet line of facts. */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: space.space3, rowGap: 2 }}>
+        {[
+          item.score != null ? `Score ${item.score}, ${scoreCaption(item.parametersMeasured)}` : 'Not scored',
+          source,
+          showsLastObserved ? lastObservedText(item) : null,
+        ]
+          .filter((fact): fact is string => fact != null)
+          .map((fact) => (
+            <Text key={fact} style={[theme.type.caption, { color: colors.inkFaint, fontVariant: ['tabular-nums'] }]}>
+              {fact}
             </Text>
-          ) : null}
-          {showsLastObserved ? <Text style={[theme.type.caption, { color: colors.inkFaint }]}>{lastObservedText(item)}</Text> : null}
-        </View>
-      ) : null}
+          ))}
+      </View>
     </Touchable>
   );
 }
