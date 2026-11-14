@@ -14,6 +14,11 @@ const Env = z.object({
   EXPO_ACCESS_TOKEN: optional(),
   EXPO_PUSH_URL: z.preprocess(emptyAsUndefined, z.url().default("https://exp.host/--/api/v2/push/send")),
   SITTING_FILES_DIR: z.preprocess(emptyAsUndefined, z.string().default("./recordings")),
+  /**
+   * How many proxies of ours stand in front of the server (production: Cloudflare and the load
+   * balancer, 2). Decides which X-Forwarded-For entry is the caller: see rate-limit.ts.
+   */
+  TRUSTED_PROXY_HOPS: z.preprocess(emptyAsUndefined, z.coerce.number().int().min(0).max(5).optional()),
   FACE_MODELS_DIR: z.preprocess(emptyAsUndefined, z.string().default("./.models")),
 });
 

@@ -225,6 +225,14 @@ On the iOS simulator there is no camera, so the Swift module switches by itself 
 
 All routes are under `/api` on the Next.js server. Bodies are JSON (`Content-Type: application/json`) unless a row says otherwise. Schemas are in `packages/contracts/src`; the name in the table is the exported schema and type. Conventions for errors, pagination, time and units are in section 5.
 
+### Health
+
+| Method and path | Auth | Request | Response |
+|---|---|---|---|
+| `GET /api/health` | public | none | 200 `HealthResponse` `{ status: 'ok' }` when the server can open a new connection to its database and run a query on it within 3 seconds; 503 `{ status: 'unavailable' }` when it cannot. Never cached. |
+
+This is the load balancer's health check (`docs/DEPLOY.md`). It does not read a session, so it does not start the background jobs of section 6, and it opens its own connection rather than borrowing one from the pool, so it also fails when the database password the process was started with has stopped working. Requests that arrive within five seconds of each other share one check, so the public route cannot be used to open database connections at will; the answer is therefore at most five seconds old.
+
 ### Authentication
 
 - **Web:** an httpOnly cookie named `tc_session` (`SESSION_COOKIE`), `SameSite=Lax`, `Path=/`, `Secure` when `APP_URL` is https, lifetime 7 days.
@@ -451,6 +459,8 @@ Every non-2xx response has this body (`ErrorResponse`), and nothing else:
 | 422 | `no_face_detected` |
 | 429 | `rate_limited` |
 | 500 | `internal` |
+
+Every 429 carries a `Retry-After` header in whole seconds: the time left in the limit's window for sign-in and the other counted limits, and 1 for the live view's frame rate. The message says the same in words.
 
 On the server, throw `new ApiError(code, message, details?)` and wrap each handler body in `try { … } catch (error) { return errorResponse(error) }` (`apps/web/src/server/http.ts`). `errorResponse` also turns a `ZodError` into `invalid_request` and anything else into `internal` without leaking its message.
 

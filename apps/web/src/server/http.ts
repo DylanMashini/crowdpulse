@@ -5,12 +5,15 @@ import * as z from "zod";
 export class ApiError extends Error {
   readonly code: ErrorCode;
   readonly details?: unknown;
+  /** For rate_limited: whole seconds until the caller may try again. Sent as `Retry-After`. */
+  readonly retryAfterSeconds?: number;
 
-  constructor(code: ErrorCode, message: string, details?: unknown) {
+  constructor(code: ErrorCode, message: string, details?: unknown, retryAfterSeconds?: number) {
     super(message);
     this.name = "ApiError";
     this.code = code;
     this.details = details;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -29,7 +32,14 @@ export function errorResponse(error: unknown): Response {
     console.error(error);
     body = { code: "internal", message: "Something went wrong on the server" };
   }
-  return Response.json({ error: body } satisfies ErrorResponse, { status: errorStatus[body.code] });
+  // Every 429 says when to come back, for clients that back off on the header. A limit that
+  // gives no time of its own (the live view's frames per second) is over within a second.
+  const headers: Record<string, string> = {};
+  if (body.code === "rate_limited") {
+    const seconds = error instanceof ApiError ? error.retryAfterSeconds : undefined;
+    headers["Retry-After"] = String(Math.max(1, Math.ceil(seconds ?? 1)));
+  }
+  return Response.json({ error: body } satisfies ErrorResponse, { status: errorStatus[body.code], headers });
 }
 
 type Handler<Context> = (request: Request, context: Context) => Promise<Response>;

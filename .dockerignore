@@ -1,0 +1,27 @@
+# The image is built from the repository root (apps/web/Dockerfile) and needs only
+# apps/web, packages/contracts, the fonts and the workspace manifests.
+**/node_modules
+**/.next*
+**/.DS_Store
+**/*.tsbuildinfo
+**/.env
+**/.env.*
+!**/.env.example
+.git
+.github
+.claude
+apps/mobile
+packages/signal-engine
+# The stylesheet takes its fonts from the design system; nothing else there is needed.
+design-system/*
+!design-system/fonts
+docs
+eval
+hardware
+infra
+scripts
+recordings
+apps/web/recordings
+apps/web/.models
+*.md
+*.docx

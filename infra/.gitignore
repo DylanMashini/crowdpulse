@@ -1,0 +1,16 @@
+# Provider binaries and local state
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+
+# Account-specific values: the AWS account id, Cloudflare ids, your own IP address.
+# The .example files are the committed reference.
+*.tfvars
+*.tfvars.json
+backend.hcl
+!*.tfvars.example
+!backend.hcl.example
+
+# Saved plans can contain values from the state
+*.tfplan
