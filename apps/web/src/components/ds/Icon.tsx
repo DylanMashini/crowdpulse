@@ -14,7 +14,7 @@ const GLYPHS = {
   'no-reading': [['circle', { cx: 12, cy: 12, r: 9, strokeDasharray: '3 3' }], ['path', { d: 'M8 12h8' }]],
   pulse: [['path', { d: 'M3 12h4l2-6 4 12 2-6h6' }]],
   breath: [['path', { d: 'M4 9c3-3 5 3 8 0s5 3 8 0' }], ['path', { d: 'M4 15c3-3 5 3 8 0s5 3 8 0' }]],
-  list: [['path', { d: 'M9 6h11M9 12h11M9 18h11' }], ['path', { d: 'M4.5 6h.01M4.5 12h.01M4.5 18h.01', strokeWidth: 2.5 }]],
+  list: [['path', { d: 'M9 6h11M9 12h11M9 18h11' }], ['path', { d: 'M4.5 6h.01M4.5 12h.01M4.5 18h.01', strokeWidth: 3.5 }]],
   sliders: [
     ['path', { d: 'M4 7h10M18 7h2M4 17h2M10 17h10' }],
     ['circle', { cx: 16, cy: 7, r: 2 }],
@@ -36,6 +36,7 @@ const GLYPHS = {
   video: [['rect', { x: 3, y: 7, width: 12, height: 10, rx: 2 }], ['path', { d: 'M15 11l6-3v8l-6-3' }]],
   thermal: [['path', { d: 'M10 14V5a2 2 0 0 1 4 0v9a4 4 0 1 1-4 0z' }]],
   chevron: [['path', { d: 'M9 6l6 6-6 6' }]],
+  back: [['path', { d: 'M15 6l-6 6 6 6' }]],
   selector: [['path', { d: 'M8 9.5l4-4 4 4M8 14.5l4 4 4-4' }]],
   panel: [['rect', { x: 3, y: 4.5, width: 18, height: 15, rx: 2.5 }], ['path', { d: 'M9 4.5v15' }]],
   phone: [['rect', { x: 7, y: 3, width: 10, height: 18, rx: 2.5 }], ['path', { d: 'M11 17.5h2' }]],
@@ -52,15 +53,19 @@ export type IconName = keyof typeof GLYPHS;
 
 export interface IconProps {
   name: IconName;
-  size?: 16 | 18 | 20 | 24;
+  size?: 12 | 14 | 16 | 18 | 20 | 24;
   /** Give a label only when the icon stands alone. Beside its word it is decoration. */
   label?: string;
   className?: string;
 }
 
-/** A line glyph on a 24px grid at 1.5 stroke, in the colour of the text beside it. */
-export function Icon({ name, size = 20, label, className }: IconProps) {
+/**
+ * A line glyph in the colour of the text beside it. Glyphs are drawn on a 24px grid; the stroke is
+ * scaled so it lands at 1.5px on screen at every size (1.25px at 14 and under), and 16 is the default.
+ */
+export function Icon({ name, size = 16, label, className }: IconProps) {
   const shapes: Shape[] = GLYPHS[name];
+  const stroke = ((size <= 14 ? 1.25 : 1.5) * 24) / size;
   return (
     <svg
       className={cx('block flex-none', className)}
@@ -69,7 +74,7 @@ export function Icon({ name, size = 20, label, className }: IconProps) {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth={1.5}
+      strokeWidth={stroke}
       strokeLinecap="round"
       strokeLinejoin="round"
       role={label ? 'img' : undefined}

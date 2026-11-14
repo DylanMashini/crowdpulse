@@ -75,7 +75,7 @@ test('the summary names the main reason a measurement failed and tags variabilit
     items.map((item) => [item.key, item.value, item.unit, item.experimental]),
     [
       ['heartRate', '72', 'bpm', false],
-      ['breathingRate', null, 'breaths per min', false],
+      ['breathingRate', null, 'per min', false],
       ['rmssd', '42', 'ms', true],
       ['sdnn', null, 'ms', true],
     ],

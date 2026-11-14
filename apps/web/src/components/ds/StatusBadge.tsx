@@ -5,22 +5,25 @@ import { LOWER_CONFIDENCE_REPEAT } from '@triagecam/contracts';
 import { cx } from '@/lib/cx';
 import { minutesAgo } from '@/lib/format';
 
-import { Icon, type IconName } from './Icon';
-import type { TileState } from './types';
+import { Icon } from './Icon';
+import type { Severity, TileState } from './types';
 
-const STATES: Record<TileState, { icon: IconName; className: string; text: (minutes?: number | null) => string }> = {
-  observed: {
-    icon: 'clock',
-    className: 'pl-0 font-normal text-ink-muted',
-    text: (minutes) => (minutes == null ? 'Not yet observed' : `Observed ${minutesAgo(minutes)}`),
-  },
-  flag: { icon: 'flag', className: 'border-flag bg-flag-soft text-flag', text: () => 'Trend flag' },
-  overdue: {
-    icon: 'clock',
-    className: 'bg-overdue text-on-overdue',
-    text: (minutes) => (minutes == null ? 'Overdue' : `Overdue, last seen ${minutesAgo(minutes)}`),
-  },
-  'no-reading': { icon: 'no-reading', className: 'border-dashed border-line-strong text-ink', text: () => 'No reading' },
+type Look = 'stable' | 'watch' | 'urgent' | 'overdue' | 'none';
+
+// Each look differs in form as well as colour: a soft chip, a solid chip, an inverse chip, a dashed outline.
+const LOOKS: Record<Look, string> = {
+  stable: 'bg-stable-soft text-stable',
+  watch: 'bg-watch-soft text-watch',
+  urgent: 'bg-urgent text-on-urgent',
+  overdue: 'bg-overdue text-on-overdue',
+  none: 'border border-dashed border-line-strong text-ink-muted',
+};
+
+const TEXT: Record<TileState, (minutes?: number | null) => string> = {
+  observed: (minutes) => (minutes == null ? 'Not yet observed' : `Observed ${minutesAgo(minutes)}`),
+  flag: () => 'Trend flag',
+  overdue: (minutes) => (minutes == null ? 'Overdue' : `Overdue, last seen ${minutesAgo(minutes)}`),
+  'no-reading': () => 'No reading',
 };
 
 /** The state in a word or two. */
@@ -33,6 +36,8 @@ const BRIEF: Record<TileState, (minutes?: number | null) => string> = {
 
 export interface StatusBadgeProps {
   state: TileState;
+  /** For a trend flag: amber for watch, the solid red chip for urgent. Watch when left out. */
+  severity?: Severity | null;
   /** Whole minutes since the last observation. */
   minutes?: number | null;
   /** Leaves out how long ago, for a table row that has its own column for it. */
@@ -46,19 +51,13 @@ export interface StatusBadgeProps {
   className?: string;
 }
 
-/** The state of a waiting patient: an icon, the words, and a form that differs for each state. */
-export function StatusBadge({ state, minutes, brief, lowConfidence, children, className }: StatusBadgeProps) {
-  const spec = STATES[state];
-  const words = state === 'no-reading' && lowConfidence ? LOWER_CONFIDENCE_REPEAT : brief ? BRIEF[state](minutes) : spec.text(minutes);
+/** The state of a waiting patient: a 22px chip with a dot and the words, in the severity colours. */
+export function StatusBadge({ state, severity, minutes, brief, lowConfidence, children, className }: StatusBadgeProps) {
+  const look: Look = state === 'flag' ? (severity ?? 'watch') : state === 'observed' ? 'stable' : state === 'overdue' ? 'overdue' : 'none';
+  const words = state === 'no-reading' && lowConfidence ? LOWER_CONFIDENCE_REPEAT : brief ? BRIEF[state](minutes) : TEXT[state](minutes);
   return (
-    <span
-      className={cx(
-        'inline-flex h-[26px] items-center gap-1 rounded-pill border border-transparent pr-[10px] pl-2 type-label whitespace-nowrap',
-        spec.className,
-        className,
-      )}
-    >
-      <Icon name={spec.icon} size={16} />
+    <span className={cx('inline-flex h-[22px] items-center gap-[6px] rounded-sm pr-2 pl-[7px] type-caption font-medium whitespace-nowrap', LOOKS[look], className)}>
+      {look === 'overdue' ? <Icon name="clock" size={12} /> : look === 'none' ? null : <span aria-hidden className="size-[6px] flex-none rounded-pill bg-current" />}
       <span>{children ?? words}</span>
     </span>
   );

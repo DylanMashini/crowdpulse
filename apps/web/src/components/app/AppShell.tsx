@@ -9,6 +9,7 @@ import { StateMessage } from '@/components/ui/StateMessage';
 import { ApiError, api, errorMessage, onSessionEnded } from '@/lib/api';
 import { useNow } from '@/lib/clock';
 import { minutesAgo } from '@/lib/format';
+import { rowSeverity } from '@/lib/mapping';
 import { SESSION_ENDED, SESSION_ENDED_UNSAVED } from '@/lib/session-ended';
 import { useResource } from '@/lib/use-resource';
 
@@ -90,14 +91,15 @@ export function AppShell({ children }: { children: ReactNode }) {
       <LiveProvider>
         <a
           href="#main"
-          className="sr-only rounded-md bg-surface-raised px-3 py-2 font-medium text-ink shadow-overlay focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50"
+          className="sr-only rounded-md border border-line-strong bg-surface-3 px-3 py-2 type-label text-ink shadow-overlay focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50"
         >
           Skip to content
         </a>
-        <div className="min-h-screen md:flex">
+        <div className="flex min-h-screen flex-col md:flex-row">
           <Navigation pathname={pathname} email={session.data.user.email} onSigningOut={onSigningOut} />
-          <main id="main" tabIndex={-1} className="min-w-0 flex-1 p-4 outline-none md:p-6">
-            <div className="mx-auto max-w-[1400px]">{children}</div>
+          {/* The page is one surface step above the rail. Each screen brings its own header bar. */}
+          <main id="main" tabIndex={-1} className="flex min-w-0 flex-1 flex-col bg-surface-1 outline-none">
+            {children}
           </main>
         </div>
       </LiveProvider>
@@ -105,8 +107,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <main className="p-4 md:p-6">
-      <BrandLockup className="mb-5" />
+    <main className="min-h-screen bg-surface-1">
+      <div className="px-5 pt-5">
+        <BrandLockup />
+      </div>
       {session.error && !signedOut ? (
         <StateMessage kind="error" title="The session could not be checked" onRetry={session.reload}>
           {session.error.message}
@@ -161,7 +165,7 @@ function stationDevice(devices: Device[] | undefined, serverNow: number): SideNa
     .filter((device) => device.role === 'camera')
     .sort((a, b) => Number(b.liveAt !== null) - Number(a.liveAt !== null) || b.lastSeenAt.localeCompare(a.lastSeenAt))[0];
   if (!camera) return { label: 'No camera phone', detail: 'Sign in on a phone to add one', connected: false };
-  if (camera.liveAt !== null) return { label: camera.label, detail: 'Live view on', connected: true };
+  if (camera.liveAt !== null) return { label: camera.label, detail: 'Live view on', connected: true, live: true };
   const silentMs = Math.max(0, serverNow - new Date(camera.lastSeenAt).getTime());
   if (silentMs < ONLINE_WITHIN_MS) return { label: camera.label, detail: 'Online', connected: true };
   // The same words as the camera phone list on Check-in.
@@ -198,12 +202,16 @@ function Navigation({
   const groups = useMemo(() => {
     // What still waits for a nurse: trend and overdue flags nobody has acknowledged. The station
     // card gives the totals, so the chip says "new" to keep the two numbers apart.
-    const unacknowledged = items?.filter((item) => item.flags.some((flag) => flag.acknowledgedAt === null)).length;
+    const waiting = items?.filter((item) => item.flags.some((flag) => flag.acknowledgedAt === null));
+    const unacknowledged = waiting?.length;
+    // The count takes the colour of the worst patient it counts; an overdue flag alone is plain.
+    const severities = waiting?.map(rowSeverity) ?? [];
+    const alertTone = severities.includes('urgent') ? ('urgent' as const) : severities.includes('watch') ? ('watch' as const) : undefined;
     const sitting = items?.some((item) => item.sittingInProgress);
     return DESTINATIONS.map((group) => ({
       ...group,
       items: group.items.map((item) => {
-        if (item.id === 'waiting-room') return { ...item, alert: unacknowledged, alertWord: 'new', alertLabel: 'with an unacknowledged flag' };
+        if (item.id === 'waiting-room') return { ...item, alert: unacknowledged, alertWord: 'new', alertLabel: 'with an unacknowledged flag', alertTone };
         if (item.id === 'check-in' && sitting) return { ...item, live: 'Sitting in progress' };
         return item;
       }),
@@ -219,7 +227,12 @@ function Navigation({
     title: 'Waiting room',
     stats: items && [
       { id: 'waiting', label: 'waiting', value: items.length },
-      { id: 'flagged', label: 'flagged', value: items.filter((item) => item.state === 'flag').length, tone: 'flag' },
+      {
+        id: 'flagged',
+        label: 'flagged',
+        value: items.filter((item) => item.state === 'flag').length,
+        tone: items.some((item) => item.state === 'flag' && rowSeverity(item) === 'urgent') ? 'urgent' : 'watch',
+      },
       { id: 'overdue', label: 'overdue', value: items.filter((item) => item.state === 'overdue').length },
     ],
     statsHref: '/waiting-room',
@@ -246,7 +259,6 @@ function Navigation({
       groups={groups}
       active={active}
       homeHref={HOME}
-      descriptor="Vitals station"
       station={station}
       account={{ name: email, note: 'Staff account', onSignOut, busy: signOut.busy, error: signOut.error }}
       collapsed={rail.collapsed}

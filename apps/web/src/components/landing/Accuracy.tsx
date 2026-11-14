@@ -42,7 +42,7 @@ export function Accuracy() {
   const date = longDate(evaluatedOn) ?? evaluatedOn;
 
   return (
-    <section id="accuracy" className="lp-section lp-accuracy">
+    <section id="accuracy" className="lp-section">
       <div className="lp-wrap">
         <header className="lp-section-head">
           <h2 className="lp-h2">Checked against a contact sensor, second by second</h2>

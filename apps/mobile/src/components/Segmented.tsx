@@ -1,6 +1,6 @@
 import { View } from 'react-native';
 
-import { fonts } from '@/theme';
+import { hairline, weight } from '@/theme';
 
 import { useScopedTheme } from './ThemeScope';
 import { Touchable } from './Touchable';
@@ -16,7 +16,10 @@ type Props<Value extends string> = {
   onChange: (value: Value) => void;
 };
 
-/** Two to four views of one list, one of them always chosen. Each segment is a full touch target. */
+/**
+ * Two to four views of one list, one of them always chosen. A `surface-0` well; the chosen
+ * segment is one step of surface with a highlight along its top edge.
+ */
 export function Segmented<Value extends string>({ label, options, value, onChange }: Props<Value>) {
   const theme = useScopedTheme();
   const { colors } = theme;
@@ -26,10 +29,12 @@ export function Segmented<Value extends string>({ label, options, value, onChang
       accessibilityLabel={label}
       style={{
         flexDirection: 'row',
-        padding: 3,
-        gap: 3,
+        padding: 2,
+        gap: 2,
+        borderWidth: hairline,
+        borderColor: colors.line,
         borderRadius: theme.radius.radiusLg,
-        backgroundColor: colors.surfaceSunken,
+        backgroundColor: colors.surface0,
       }}
     >
       {options.map((option) => {
@@ -41,18 +46,18 @@ export function Segmented<Value extends string>({ label, options, value, onChang
             accessibilityRole="tab"
             accessibilityLabel={option.count != null ? `${option.label}, ${option.count}` : option.label}
             accessibilityState={{ selected: on }}
-            style={{
+            hitSlop={{ top: 4, bottom: 4 }}
+            style={({ pressed }) => ({
               flex: 1,
-              minHeight: theme.size.controlTouch - 6,
+              minHeight: theme.size.controlLg,
               alignItems: 'center',
               justifyContent: 'center',
               paddingHorizontal: theme.space.space2,
               paddingVertical: theme.space.space1,
-              borderRadius: theme.radius.radiusMd,
-              borderWidth: 1,
-              borderColor: on ? colors.lineStrong : 'transparent',
-              backgroundColor: on ? colors.surfaceRaised : 'transparent',
-            }}
+              borderRadius: theme.radius.radiusMd + 2,
+              backgroundColor: on ? colors.surface3 : pressed ? colors.surface2 : 'transparent',
+              boxShadow: on ? `inset 0 1px 0 ${colors.lineStrong}` : undefined,
+            })}
           >
             <Text
               numberOfLines={1}
@@ -60,12 +65,12 @@ export function Segmented<Value extends string>({ label, options, value, onChang
               minimumFontScale={0.75}
               style={[
                 theme.type.body,
-                { textAlign: 'center', fontFamily: fonts.sans[on ? 600 : 400], color: on ? colors.ink : colors.inkMuted },
+                { textAlign: 'center', fontWeight: on ? weight.medium : weight.normal, color: on ? colors.ink : colors.inkMuted },
               ]}
             >
               {option.label}
               {option.count != null ? (
-                <Text style={{ fontFamily: fonts.sans[400], color: colors.inkMuted, fontVariant: ['tabular-nums'] }}>
+                <Text style={{ fontWeight: weight.normal, color: colors.inkFaint, fontVariant: ['tabular-nums'] }}>
                   {`  ${option.count}`}
                 </Text>
               ) : null}

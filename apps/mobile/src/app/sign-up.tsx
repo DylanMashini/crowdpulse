@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
-import type { TextInputInstance } from 'react-native';
+import { type TextInputInstance, View } from 'react-native';
 
 import { Button } from '@/components/Button';
 import { Field } from '@/components/Field';
@@ -8,8 +8,10 @@ import { Notice } from '@/components/Notice';
 import { Screen } from '@/components/Screen';
 import { api, errorMessage, isApiError } from '@/lib/api';
 import { emailError, newPasswordError } from '@/lib/session/validation';
+import { useTheme } from '@/theme';
 
 export default function SignUp() {
+  const theme = useTheme();
   const router = useRouter();
   const passwordInput = useRef<TextInputInstance>(null);
 
@@ -44,6 +46,7 @@ export default function SignUp() {
 
   return (
     <Screen title="Create an account" subtitle="For staff who run the camera or the worklist" onBack={() => router.back()}>
+      <View style={{ gap: theme.space.space4 }}>
       <Field
         label="Email"
         value={email}
@@ -72,6 +75,7 @@ export default function SignUp() {
         returnKeyType="go"
         onSubmitEditing={() => void submit()}
       />
+      </View>
       {failure ? <Notice title="Account not created" body={failure} /> : null}
       <Button
         variant="primary"

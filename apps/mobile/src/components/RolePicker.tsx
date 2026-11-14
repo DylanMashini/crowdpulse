@@ -1,7 +1,7 @@
 import type { DeviceRole } from '@triagecam/contracts';
 import { View } from 'react-native';
 
-import { fonts } from '@/theme';
+import { hairline } from '@/theme';
 
 import { Icon, type IconName } from './Icon';
 import { useScopedTheme } from './ThemeScope';
@@ -22,6 +22,7 @@ type Props = {
   disabled?: boolean;
 };
 
+/** The choice between the app's roles. The chosen one steps up a surface and its icon turns ice. */
 export function RolePicker({ value, onChange, disabled }: Props) {
   const theme = useScopedTheme();
   const { colors, space } = theme;
@@ -29,7 +30,6 @@ export function RolePicker({ value, onChange, disabled }: Props) {
     <View accessibilityRole="radiogroup" accessibilityLabel="Role" style={{ gap: space.space2 }}>
       {ROLES.map((role) => {
         const on = value === role.id;
-        const border = on ? 2 : 1;
         return (
           <Touchable
             key={role.id}
@@ -38,34 +38,39 @@ export function RolePicker({ value, onChange, disabled }: Props) {
             accessibilityRole="radio"
             accessibilityLabel={`${role.label}. ${role.hint}`}
             accessibilityState={{ checked: on, disabled: Boolean(disabled) }}
-            style={{
+            style={({ pressed }) => ({
               flexDirection: 'row',
               alignItems: 'center',
-              gap: space.space4,
+              gap: space.space3,
               minHeight: 72,
-              paddingVertical: space.space3 - (border - 1),
-              paddingHorizontal: space.space4 - (border - 1),
-              borderWidth: border,
-              borderColor: on ? colors.signal : colors.lineStrong,
+              paddingVertical: space.space3,
+              paddingHorizontal: space.space4,
+              borderWidth: hairline,
+              borderColor: on ? colors.lineStrong : colors.line,
               borderRadius: theme.radius.radiusXl,
-              backgroundColor: on ? colors.signalSoft : colors.surfaceRaised,
-              opacity: disabled ? 0.5 : 1,
-            }}
+              backgroundColor: on || pressed ? colors.surface3 : colors.surface2,
+              opacity: disabled ? 0.4 : 1,
+            })}
           >
-            <Icon name={role.icon} size={20} color={on ? colors.signal : colors.ink} />
-            <View style={{ flex: 1 }}>
-              <Text style={[theme.type.bodyTouch, { fontFamily: fonts.sans[600], color: colors.ink }]}>{role.label}</Text>
-              <Text style={[theme.type.caption, { color: colors.inkMuted }]}>{role.hint}</Text>
+            <Icon name={role.icon} size={20} color={on ? colors.signal : colors.inkMuted} />
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={[theme.type.subheading, { color: colors.ink }]}>{role.label}</Text>
+              <Text style={[theme.type.dense, { color: colors.inkMuted }]}>{role.hint}</Text>
             </View>
             <View
               style={{
                 width: 20,
                 height: 20,
                 borderRadius: 10,
-                borderWidth: on ? 6 : 2,
-                borderColor: on ? colors.signal : colors.lineStrong,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderWidth: on ? 0 : 1.5,
+                borderColor: colors.lineHover,
+                backgroundColor: on ? colors.signalStrong : 'transparent',
               }}
-            />
+            >
+              {on ? <Icon name="check" size={12} color={colors.onSignal} /> : null}
+            </View>
           </Touchable>
         );
       })}

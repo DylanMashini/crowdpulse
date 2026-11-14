@@ -190,7 +190,7 @@ export function summaryItems(
       label: 'Breathing',
       icon: 'breath',
       value: value(summary.breathingRate.value),
-      unit: 'breaths per min',
+      unit: 'per min',
       reason: summary.breathingRate.value == null ? summaryReason(mainReasons.breathingRate) : null,
       coverage: summary.breathingRate.coverage,
       experimental: false,

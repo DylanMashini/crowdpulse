@@ -2,7 +2,7 @@ import type { Score } from '@triagecam/contracts';
 import { View } from 'react-native';
 
 import { scoreCaption } from '@/lib/nurse/worklistFormat';
-import { fonts } from '@/theme';
+import { weight } from '@/theme';
 
 import { useScopedTheme } from './ThemeScope';
 import { Text } from './Text';
@@ -15,15 +15,15 @@ type Props = {
   caption?: boolean;
 };
 
-/** The partial NEWS2 band for the parameters the camera measures. Always prints the digit. */
+/** The partial NEWS2 band for the parameters the camera measures. Always prints the digit; only 3 is solid. */
 export function ScoreChip({ score, measured = 2, caption = true }: Props) {
   const theme = useScopedTheme();
   const { colors } = theme;
   const look = [
-    { background: colors.score0, text: colors.ink, border: colors.lineStrong },
-    { background: colors.score1, text: colors.ink, border: colors.score1 },
-    { background: colors.score2, text: colors.onScore2, border: colors.score2 },
-    { background: colors.score3, text: colors.onCritical, border: colors.score3 },
+    { fill: colors.score0, text: colors.onScore0 },
+    { fill: colors.score1, text: colors.onScore1 },
+    { fill: colors.score2, text: colors.onScore2 },
+    { fill: colors.score3, text: colors.onScore3 },
   ][score]!;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space.space2 }}>
@@ -31,27 +31,23 @@ export function ScoreChip({ score, measured = 2, caption = true }: Props) {
         accessible
         accessibilityLabel={`Partial score ${score}`}
         style={{
-          width: 28,
-          height: 28,
+          width: 22,
+          height: 22,
           alignItems: 'center',
           justifyContent: 'center',
           borderRadius: theme.radius.radiusSm,
-          borderWidth: 1,
-          borderColor: look.border,
-          backgroundColor: look.background,
+          backgroundColor: look.fill,
         }}
       >
-        {/* The chip is a fixed 28 points, so its digit does not grow past it. */}
+        {/* The chip is a fixed 22 points, so its digit does not grow past it. */}
         <Text
           maxFontSizeMultiplier={1.2}
-          style={{ fontFamily: fonts.mono[600], fontSize: 15, lineHeight: 22, color: look.text }}
+          style={[theme.type.caption, { fontWeight: weight.medium, letterSpacing: 0, fontVariant: ['tabular-nums'], color: look.text }]}
         >
           {score}
         </Text>
       </View>
-      {caption ? (
-        <Text style={[theme.type.caption, { color: colors.inkMuted }]}>{scoreCaption(measured)}</Text>
-      ) : null}
+      {caption ? <Text style={[theme.type.caption, { color: colors.inkFaint }]}>{scoreCaption(measured)}</Text> : null}
     </View>
   );
 }

@@ -48,7 +48,7 @@ function SummaryContent({ sitting }: { sitting: FinishedSitting }) {
 
   return (
     <Screen title="Sitting summary">
-      <View style={{ gap: space.space1 }}>
+      <View style={{ gap: space.space3 }}>
         <PatientIdentity patient={patient} size="lg" />
         <Text style={[theme.type.bodyTouch, { color: colors.inkMuted }]}>
           Give your name when you sit down again
@@ -62,7 +62,7 @@ function SummaryContent({ sitting }: { sitting: FinishedSitting }) {
       >
         {status.detail ? (
           <View style={{ gap: space.space3 }}>
-            <Text style={[theme.type.bodyTouch, { color: colors.ink }]}>{status.detail}</Text>
+            <Text style={[theme.type.body, { color: colors.inkMuted }]}>{status.detail}</Text>
             {uploads.finish === 'pending' && uploads.error ? (
               <Button variant="secondary" label="Send again now" onPress={() => sitting.uploads.flush()} />
             ) : null}

@@ -73,7 +73,7 @@ label, so a worklist card is `"~Robert Okafor"`. `${NAME}` is replaced by the ri
 | Command | What it does |
 |---|---|
 | `run other.flow` | Runs another flow file, found beside this one |
-| `open "url"` | Opens a link, and answers "Open in Triage Cam?" if iOS asks |
+| `open "url"` | Opens a link, and answers "Open in Crowdpulse?" if iOS asks |
 | `launch`, `activate`, `terminate`, `home` | Starts the app, brings it to the front, ends it, presses Home |
 | `wait "text" [seconds]` | Fails unless the text appears in time (30 s) |
 | `waitGone "text" [seconds]` | Fails unless the text goes away in time |

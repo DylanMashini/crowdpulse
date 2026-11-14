@@ -13,12 +13,16 @@ import { Text } from './Text';
  * that is a re-check's says which ("10:42 re-check"). A lower-confidence pulse is muted, tagged
  * and compared with nothing.
  */
-export function TrendValue({ trend, unit }: { trend: Trend; unit: string }) {
+export function TrendValue({ trend, unit, bright }: { trend: Trend; unit: string; bright?: boolean }) {
   const theme = useScopedTheme();
   const { colors } = theme;
   const text = trendText(trend);
   if (text.kind === 'none') {
-    return <Text style={[theme.type.caption, { lineHeight: 28, color: colors.inkMuted }]}>No reading</Text>;
+    return (
+      <View style={{ minHeight: theme.type.readoutMd.lineHeight, justifyContent: 'center' }}>
+        <Text style={[theme.type.dense, { color: colors.inkMuted }]}>No reading</Text>
+      </View>
+    );
   }
   if (text.kind === 'lowConfidence') {
     return (
@@ -33,11 +37,11 @@ export function TrendValue({ trend, unit }: { trend: Trend; unit: string }) {
   }
   return (
     <View>
-      <View style={{ flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', columnGap: 6 }}>
-        <Text style={[theme.type.readoutMd, { color: colors.ink }]}>{text.now}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', columnGap: 4 }}>
+        <Text style={[theme.type.readoutMd, { color: bright ? colors.inkBright : colors.ink }]}>{text.now}</Text>
         <Text style={[theme.type.caption, { color: colors.inkMuted }]}>{unit}</Text>
       </View>
-      <Text style={[theme.type.caption, { color: colors.inkMuted, fontVariant: ['tabular-nums'] }]}>
+      <Text style={[theme.type.caption, { color: colors.inkFaint, fontVariant: ['tabular-nums'] }]}>
         {text.base ?? 'No check-in value'}
       </Text>
       {text.baseFrom ? (

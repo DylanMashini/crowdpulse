@@ -3,6 +3,7 @@ import { Modal, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useReducedMotion } from '@/hooks/useReducedMotion';
+import { hairline } from '@/theme';
 
 import { Button } from './Button';
 import { Icon, type IconName } from './Icon';
@@ -40,7 +41,7 @@ export function ConsentSheet(props: Props) {
   );
 }
 
-function Sheet({ patient, busy, onAccept, onDecline }: Props) {
+function Sheet({ busy, onAccept, onDecline }: Props) {
   const theme = useScopedTheme();
   const { colors, space } = theme;
   const insets = useSafeAreaInsets();
@@ -58,19 +59,24 @@ function Sheet({ patient, busy, onAccept, onDecline }: Props) {
           maxWidth: 560,
           padding: space.space5,
           paddingBottom: space.space5 + insets.bottom,
-          gap: space.space4,
+          gap: space.space5,
           borderTopLeftRadius: theme.radius.radiusXl,
           borderTopRightRadius: theme.radius.radiusXl,
-          backgroundColor: colors.surfaceRaised,
+          borderWidth: hairline,
+          borderBottomWidth: 0,
+          borderColor: colors.lineStrong,
+          backgroundColor: colors.surface3,
           boxShadow: theme.shadow.shadowOverlay,
         }}
       >
-        <Text accessibilityRole="header" style={[theme.type.heading, { color: colors.ink }]}>
-          Use face match for re-checks?
-        </Text>
-        <Text style={[theme.type.bodyTouch, { color: colors.ink }]}>
-          Face match lets you sit down again without giving your name. It is optional.
-        </Text>
+        <View style={{ gap: space.space2 }}>
+          <Text accessibilityRole="header" style={[theme.type.heading, { color: colors.ink }]}>
+            Use face match for re-checks?
+          </Text>
+          <Text style={[theme.type.bodyTouch, { color: colors.inkMuted }]}>
+            Face match lets you sit down again without giving your name. It is optional.
+          </Text>
+        </View>
         <View style={{ gap: space.space3 }}>
           {facts.map((fact) => (
             <View key={fact.icon} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.space3 }}>
@@ -83,8 +89,8 @@ function Sheet({ patient, busy, onAccept, onDecline }: Props) {
         </View>
         <PrivacyNote>{PRIVACY_FACE}</PrivacyNote>
         <View style={{ gap: space.space2 }}>
-          <Button variant="secondary" block label="No, use my name" onPress={onDecline} disabled={busy} />
-          <Button variant="secondary" block label="Turn on face match" onPress={onAccept} disabled={busy} />
+          <Button variant="secondary" raised block label="No, use my name" onPress={onDecline} disabled={busy} />
+          <Button variant="secondary" raised block label="Turn on face match" onPress={onAccept} disabled={busy} />
         </View>
       </View>
     </View>

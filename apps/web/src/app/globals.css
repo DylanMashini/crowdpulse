@@ -2,31 +2,56 @@
 @import "../styles/tokens.css";
 
 body {
-  background: var(--surface);
+  background: var(--surface-0);
   color: var(--ink);
   font-family: var(--font-sans);
-  font-size: 15px;
+  font-size: 14px;
   line-height: 22px;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "ss01", "cv11";
 }
 
 @layer base {
-  /* One focus ring everywhere: 2px solid, offset 2px so a surface gap separates it from fills.
-     In the base layer so a component can move the ring, as Field does onto its box. */
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  /* One focus ring everywhere: 2px ice, offset 2px so a surface gap separates it from fills.
+     In the base layer so a component can move the ring, as Field does onto its well. */
   :focus-visible {
     outline: 2px solid var(--focus);
     outline-offset: 2px;
   }
 
-  /* Keep the browser's autofill tint inside the palette. */
+  ::selection {
+    background: var(--signal-line);
+    color: var(--ink-bright);
+  }
+
+  /* Keep the browser's autofill tint inside the palette: the well stays surface-0. */
   input:-webkit-autofill {
     -webkit-text-fill-color: var(--ink);
-    box-shadow: inset 0 0 0 100px var(--surface-raised);
+    box-shadow: inset 0 0 0 100px var(--surface-0);
+    caret-color: var(--ink);
+  }
+
+  /* The date box draws its own picker glyph; keep it as quiet as the other icons. */
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    opacity: 0.55;
+    cursor: pointer;
   }
 }
 
+/* Nothing moves for someone who asked for that: no transitions, no tick on a changing reading.
+   The live trace reads the same preference and draws a still line. */
 @media (prefers-reduced-motion: reduce) {
-  * {
+  *,
+  *::before,
+  *::after {
     transition: none !important;
+    animation: none !important;
   }
 }

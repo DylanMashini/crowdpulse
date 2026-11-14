@@ -8,10 +8,13 @@ import { useLive, useLiveEvents } from '@/components/app/live';
 import { Button, HandoffNote, Icon, PatientIdentity, PatientTimeline, StatusBadge, buttonClass } from '@/components/ds';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { LiveStatus } from '@/components/ui/LiveStatus';
+import { PageHeader, Section, StaleNotice } from '@/components/ui/Panel';
 import { StateMessage } from '@/components/ui/StateMessage';
 import { api, errorMessage } from '@/lib/api';
-import { ageInYears, breathsPerMin, calendarDate, clockTime, heartRate, minutes, rate, ruleText, timeOrDayTime, years } from '@/lib/format';
+import { cx } from '@/lib/cx';
+import { ageInYears, breathsPerMin, calendarDate, clockTime, heartRate, minutes, rate, rulesText, timeOrDayTime, years } from '@/lib/format';
 import { toTimelineItems } from '@/lib/mapping';
+import { severityOf } from '@/lib/severity';
 import { useResource } from '@/lib/use-resource';
 
 import { IntakeForm } from './IntakeForm';
@@ -64,7 +67,7 @@ function PatientView({ detail, updatedAt, refreshError, onChanged }: PatientView
   const patient = saved && saved.at > (updatedAt ?? 0) ? saved.patient : detail.patient;
   const [editing, setEditing] = useState(false);
   const age = ageInYears(patient.dateOfBirth);
-  const facts = [age === null ? null : years(age), patient.sex ? SEX[patient.sex] : null].filter(Boolean).join(' · ');
+  const summary = [age === null ? null : years(age), patient.sex ? SEX[patient.sex].toLowerCase() : null].filter(Boolean).join(', ');
   const { worklist } = useLive();
   const waiting = patient.status === 'waiting';
   // The patient itself does not say how long ago it was observed; its worklist row does.
@@ -73,6 +76,11 @@ function PatientView({ detail, updatedAt, refreshError, onChanged }: PatientView
   const [discharge, setDischarge] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
   const timeline = useMemo(() => toTimelineItems(detail.timeline, detail.flags), [detail.timeline, detail.flags]);
   const openFlags = detail.flags.filter((flag) => flag.closedAt === null);
+  const severity = severityOf(
+    detail.state,
+    row?.score,
+    openFlags.map((flag) => flag.rule),
+  );
 
   const onDischarge = async () => {
     setDischarge({ busy: true, error: null });
@@ -86,89 +94,78 @@ function PatientView({ detail, updatedAt, refreshError, onChanged }: PatientView
     }
   };
 
+  const facts = (
+    <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 type-dense">
+      <dt className="text-ink-muted">Reason for visit</dt>
+      <dd className="text-ink">{patient.reasonForVisit ?? <Missing />}</dd>
+      <dt className="text-ink-muted">Date of birth</dt>
+      <dd className="text-ink tabular-nums">{patient.dateOfBirth ? `${calendarDate(patient.dateOfBirth)}${age === null ? '' : ` (${years(age)})`}` : <Missing />}</dd>
+      <dt className="text-ink-muted">Sex</dt>
+      <dd className="text-ink">{patient.sex ? SEX[patient.sex] : <Missing />}</dd>
+      <dt className="text-ink-muted">Pain</dt>
+      <dd className="text-ink tabular-nums">{patient.painScore === null ? <Missing /> : `${patient.painScore} out of 10`}</dd>
+      <dt className="text-ink-muted">Allergies</dt>
+      <dd className="text-ink">{patient.allergies ?? <Missing />}</dd>
+      <dt className="text-ink-muted">Notes</dt>
+      <dd className="whitespace-pre-wrap text-ink">{patient.notes ?? <Missing />}</dd>
+    </dl>
+  );
+
   return (
     <>
-      <header className="mb-5 flex flex-wrap items-end justify-between gap-x-5 gap-y-3">
-        <div className="flex min-w-0 flex-col gap-2">
-          <Link href="/patients" className="type-caption font-medium text-signal underline underline-offset-[3px]">
+      <PageHeader
+        lead={
+          <Link href="/patients" className={`${buttonClass('quiet')} -ml-2 gap-1 pr-2 pl-1`}>
+            <Icon name="back" />
             All patients
           </Link>
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-            <PatientIdentity patient={patient} size="lg" heading detail={facts || undefined} />
-            {detail.state ? (
-              <StatusBadge state={detail.state} minutes={row?.minutesSinceObserved} lowConfidence={latestPulseIsLowConfidence(detail)}>
-                {detail.state === 'observed' && !row ? 'Observed' : undefined}
-              </StatusBadge>
-            ) : (
-              <span className="text-ink-muted">Discharged at {patient.dischargedAt ? timeOrDayTime(patient.dischargedAt) : 'an unknown time'}</span>
-            )}
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <LiveStatus updatedAt={updatedAt} />
-          {waiting ? (
-            <Button variant="danger" onClick={() => setConfirming(true)}>
-              Discharge
-            </Button>
-          ) : null}
-        </div>
-      </header>
+        }
+      >
+        <LiveStatus updatedAt={updatedAt} />
+        {waiting ? (
+          <Button variant="danger" onClick={() => setConfirming(true)}>
+            Discharge
+          </Button>
+        ) : null}
+      </PageHeader>
 
-      {refreshError ? (
-        <p role="alert" className="mb-4 rounded-md border border-flag bg-flag-soft px-3 py-2 font-medium">
-          This record could not be refreshed: {refreshError} What is shown may be out of date.
-        </p>
-      ) : null}
+      {refreshError ? <StaleNotice>This record could not be refreshed: {refreshError} What is shown may be out of date.</StaleNotice> : null}
 
-      <div className="grid items-start gap-x-6 gap-y-5 lg:grid-cols-[minmax(0,560px)_minmax(0,1fr)]">
-        <div className="flex flex-col gap-5">
-          <section aria-labelledby="intake-heading" className="flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-3">
-              <h2 id="intake-heading" className="type-heading">
-                Intake
-              </h2>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-3 border-b border-line p-5">
+        <PatientIdentity patient={patient} size="lg" heading detail={summary || undefined} />
+        {detail.state ? (
+          <StatusBadge state={detail.state} severity={severity} minutes={row?.minutesSinceObserved} lowConfidence={latestPulseIsLowConfidence(detail)}>
+            {detail.state === 'observed' && !row ? 'Observed' : undefined}
+          </StatusBadge>
+        ) : (
+          <span className="type-dense text-ink-muted tabular-nums">Discharged at {patient.dischargedAt ? timeOrDayTime(patient.dischargedAt) : 'an unknown time'}</span>
+        )}
+      </div>
+
+      <div className="grid flex-1 content-start lg:grid-cols-[minmax(0,560px)_minmax(0,1fr)] lg:content-stretch">
+        <div className="flex min-w-0 flex-col">
+          <Section
+            heading="Intake"
+            labelledBy="intake-heading"
+            aside={
               <Button variant="quiet" onClick={() => setEditing((on) => !on)}>
                 {editing ? 'Done' : 'Edit'}
               </Button>
-            </div>
-            <div className="rounded-lg border border-line bg-surface-raised p-4">
-              {editing ? (
-                <IntakeForm key={patient.number} patient={patient} onSaved={(next) => setSaved({ patient: next, at: Date.now() })} />
-              ) : (
-                <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2">
-                  <dt className="text-ink-muted">Reason for visit</dt>
-                  <dd className="font-medium">{patient.reasonForVisit ?? <Missing />}</dd>
-                  <dt className="text-ink-muted">Date of birth</dt>
-                  <dd>{patient.dateOfBirth ? `${calendarDate(patient.dateOfBirth)}${age === null ? '' : ` (${years(age)})`}` : <Missing />}</dd>
-                  <dt className="text-ink-muted">Sex</dt>
-                  <dd>{patient.sex ? SEX[patient.sex] : <Missing />}</dd>
-                  <dt className="text-ink-muted">Pain</dt>
-                  <dd className="tabular-nums">{patient.painScore === null ? <Missing /> : `${patient.painScore} out of 10`}</dd>
-                  <dt className="text-ink-muted">Allergies</dt>
-                  <dd>{patient.allergies ?? <Missing />}</dd>
-                  <dt className="text-ink-muted">Notes</dt>
-                  <dd className="whitespace-pre-wrap">{patient.notes ?? <Missing />}</dd>
-                </dl>
-              )}
-            </div>
-            {patient.intakeCompletedAt ? null : <p className="type-caption text-ink-muted">Intake has not been marked complete.</p>}
-          </section>
+            }
+          >
+            {editing ? <IntakeForm key={patient.number} patient={patient} onSaved={(next) => setSaved({ patient: next, at: Date.now() })} /> : facts}
+            {patient.intakeCompletedAt ? null : <p className="mt-3 type-caption text-ink-faint">Intake has not been marked complete.</p>}
+          </Section>
 
-          <section aria-labelledby="handoff-heading" className="flex flex-col gap-2">
-            <h2 id="handoff-heading" className="type-heading">
-              Handoff
-            </h2>
-            <HandoffNote>{detail.handoff}</HandoffNote>
-            <p className="type-caption text-ink-muted">Written from the readings on this page</p>
-          </section>
+          <Section heading="Handoff" labelledBy="handoff-heading">
+            <HandoffNote severity={openFlags.length > 0 ? severity : null}>{detail.handoff}</HandoffNote>
+            <p className="mt-2 type-caption text-ink-faint">Written from the readings on this page</p>
+          </Section>
 
           {waiting ? (
-            <section aria-labelledby="flags-heading" className="flex flex-col gap-2">
-              <h2 id="flags-heading" className="type-heading">
-                Open flags
-              </h2>
+            <Section heading="Open flags" labelledBy="flags-heading">
               {openFlags.length === 0 ? (
-                <p className="text-ink-muted">No flag is open for this patient. A flag opens when a trend rule is met or a re-check is overdue.</p>
+                <p className="type-dense text-ink-muted">No flag is open for this patient. A flag opens when a trend rule is met or a re-check is overdue.</p>
               ) : (
                 <ul className="flex flex-col gap-3">
                   {flagAlerts(openFlags).map((alert) => (
@@ -176,23 +173,20 @@ function PatientView({ detail, updatedAt, refreshError, onChanged }: PatientView
                   ))}
                 </ul>
               )}
-            </section>
+            </Section>
           ) : null}
 
-          <section aria-labelledby="record-heading" className="flex flex-col gap-2">
-            <h2 id="record-heading" className="type-heading">
-              Record
-            </h2>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2 rounded-lg border border-line bg-surface-raised p-4">
+          <Section heading="Record" labelledBy="record-heading">
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 type-dense">
               <dt className="text-ink-muted">Checked in</dt>
-              <dd className="font-mono tabular-nums">{timeOrDayTime(patient.createdAt)}</dd>
+              <dd className="text-ink tabular-nums">{timeOrDayTime(patient.createdAt)}</dd>
               <dt className="text-ink-muted">Sittings</dt>
-              <dd className="tabular-nums">
+              <dd className="text-ink tabular-nums">
                 {detail.sittings.length === 0 ? 'None yet' : `${detail.sittings.length}, baseline ${detail.baseline ? `from ${clockTime(detail.baseline.startedAt)}` : 'not set yet'}`}
                 {row?.pulse.baseAt ? `, pulse baseline from the ${clockTime(row.pulse.baseAt)} re-check` : ''}
               </dd>
               <dt className="text-ink-muted">Face match</dt>
-              <dd>
+              <dd className="text-ink">
                 {patient.faceEnrolled
                   ? 'Opted in. Matching numbers are stored until discharge.'
                   : waiting
@@ -202,17 +196,12 @@ function PatientView({ detail, updatedAt, refreshError, onChanged }: PatientView
                     : 'Nothing is stored for face match'}
               </dd>
             </dl>
-          </section>
+          </Section>
         </div>
 
-        <section aria-labelledby="timeline-heading" className="flex flex-col gap-2">
-          <h2 id="timeline-heading" className="type-heading">
-            Timeline
-          </h2>
-          <div className="rounded-lg border border-line bg-surface-raised p-4">
-            <PatientTimeline items={timeline} />
-          </div>
-        </section>
+        <Section heading="Timeline" labelledBy="timeline-heading" className="border-line lg:border-l">
+          <PatientTimeline items={timeline} />
+        </Section>
       </div>
 
       <ConfirmDialog
@@ -230,7 +219,7 @@ function PatientView({ detail, updatedAt, refreshError, onChanged }: PatientView
         }}
       >
         <p>{patientLabel(patient)} leaves the waiting room and any open flags are closed. The record, with its photo and readings, is kept under Patients.</p>
-        <p className="mt-2">
+        <p className="mt-2 text-ink">
           {patient.faceEnrolled ? 'The face-match numbers stored for this patient are deleted. ' : ''}This cannot be undone.
         </p>
       </ConfirmDialog>
@@ -241,7 +230,7 @@ function PatientView({ detail, updatedAt, refreshError, onChanged }: PatientView
 const SEX: Record<NonNullable<Patient['sex']>, string> = { female: 'Female', male: 'Male', other: 'Other' };
 
 function Missing() {
-  return <span className="text-ink-muted">Not recorded</span>;
+  return <span className="text-ink-faint">Not recorded</span>;
 }
 
 /** The newest finished sitting gave a pulse with lower confidence: the "no reading" state is then worded as that. */
@@ -284,18 +273,29 @@ function FlagItem({ alert, onChanged }: { alert: FlagAlert; onChanged: () => voi
     }
   };
 
+  const overdue = flag.rule === 'overdue';
+  const severity = overdue ? null : severityOf('flag', flag.detail.scoreNow, flags.map((each) => each.rule));
+  const urgent = severity === 'urgent';
+
   return (
-    <li className={`flex flex-col gap-3 rounded-lg bg-surface-raised p-[15px] ${flag.rule === 'overdue' ? 'border-2 border-ink' : 'border-2 border-flag'}`}>
+    <li className={cx('flex flex-col gap-3 rounded-lg border p-4', urgent ? 'border-urgent-line bg-urgent-soft' : 'border-line bg-surface-2')}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <StatusBadge state={flag.rule === 'overdue' ? 'overdue' : 'flag'}>{flag.rule === 'overdue' ? 'Overdue' : 'Trend flag'}</StatusBadge>
-        <span className="font-semibold">{flags.map((each) => ruleText(each.rule, hasReCheckBaseline(each.detail))).join(' · ')}</span>
-        <span className="type-caption text-ink-muted">Opened at {clockTime(flag.openedAt)}</span>
+        <StatusBadge state={overdue ? 'overdue' : 'flag'} severity={severity}>
+          {overdue ? 'Overdue' : 'Trend flag'}
+        </StatusBadge>
+        <span className="type-label text-ink">
+          {rulesText(
+            flags.map((each) => each.rule),
+            flags.some((each) => hasReCheckBaseline(each.detail)),
+          )}
+        </span>
+        <span className="type-caption text-ink-faint tabular-nums">Opened at {clockTime(flag.openedAt)}</span>
       </div>
-      <p>{flagNumbers(flag)}</p>
+      <p className={cx('type-dense tabular-nums', urgent ? 'text-ink' : 'text-ink-muted')}>{flagNumbers(flag)}</p>
       <div className="flex flex-wrap items-center gap-3">
         {alert.acknowledgedAt ? (
-          <p className="inline-flex h-control-md items-center gap-2 font-semibold text-ink-muted">
-            <Icon name="check" size={18} />
+          <p className="inline-flex h-control-md items-center gap-2 type-dense text-ink-muted tabular-nums">
+            <Icon name="check" />
             Acknowledged{alert.acknowledgedBy ? ` by ${alert.acknowledgedBy}` : ''} at {clockTime(alert.acknowledgedAt)}
           </p>
         ) : (
@@ -304,7 +304,7 @@ function FlagItem({ alert, onChanged }: { alert: FlagAlert; onChanged: () => voi
           </Button>
         )}
         {state.error ? (
-          <p role="alert" className="font-medium text-critical">
+          <p role="alert" className="type-caption text-urgent">
             {state.error}
           </p>
         ) : null}

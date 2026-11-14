@@ -4,7 +4,7 @@ import { rate } from '@/lib/format';
 import { ProvenanceTag } from './ProvenanceTag';
 import { ScoreChip } from './ScoreChip';
 import { StatusBadge } from './StatusBadge';
-import type { Provenance, ScoreValue, TileState } from './types';
+import type { Provenance, ScoreValue, Severity, TileState } from './types';
 
 export interface TimelineItem {
   /** Clock time in 24-hour form. */
@@ -16,17 +16,21 @@ export interface TimelineItem {
   pulseNote?: string;
   score?: ScoreValue | null;
   state?: TileState;
+  /** For a flag entry: which severity colour it opened in. */
+  severity?: Severity | null;
   source?: Provenance;
   sourceLabel?: string;
   note?: string;
 }
 
-const MARKS: Record<TileState, string> = {
-  observed: 'rounded-full bg-surface-raised shadow-[0_0_0_2px_var(--line-strong)]',
-  flag: 'rounded-[2px] bg-flag shadow-[0_0_0_2px_var(--flag)]',
-  overdue: 'rounded-full bg-ink shadow-[0_0_0_2px_var(--ink)]',
-  'no-reading': 'rounded-full bg-surface-raised outline-2 outline-dashed outline-line-strong',
-};
+// The mark differs in form for each state, as the chips do. The urgent mark is one of the two
+// places a glow is allowed.
+function mark(state: TileState, severity?: Severity | null): string {
+  if (state === 'flag') return severity === 'urgent' ? 'bg-urgent glow-urgent' : 'bg-watch';
+  if (state === 'overdue') return 'bg-ink';
+  if (state === 'no-reading') return 'bg-surface-1 outline-1 outline-dashed outline-line-hover';
+  return 'bg-surface-1 shadow-[inset_0_0_0_1.5px_var(--ink-faint)]';
+}
 
 /** Every observation and flag event for one patient since check-in, oldest first. */
 export function PatientTimeline({ items }: { items: TimelineItem[] }) {
@@ -35,25 +39,25 @@ export function PatientTimeline({ items }: { items: TimelineItem[] }) {
       {items.map((item, index) => {
         const last = index === items.length - 1;
         return (
-          <li key={index} className={cx('relative grid grid-cols-[52px_16px_1fr] gap-3', !last && 'pb-4')}>
-            {last ? null : <span aria-hidden className="absolute top-[12px] bottom-[-6px] left-[71px] w-[2px] bg-line" />}
-            <span className="text-right font-mono text-[13px] leading-[22px] text-ink-muted">{item.time}</span>
-            <span aria-hidden className={cx('relative z-[1] mx-[3px] mt-[6px] size-[10px]', MARKS[item.state ?? 'observed'])} />
-            <div>
-              <div className="flex min-h-[26px] flex-wrap items-center gap-2 font-semibold">
-                <span>{item.title}</span>
-                {item.state && item.state !== 'observed' ? <StatusBadge state={item.state} /> : null}
+          <li key={index} className={cx('relative grid grid-cols-[40px_8px_minmax(0,1fr)] gap-x-3', !last && 'pb-5')}>
+            {last ? null : <span aria-hidden className="absolute top-[18px] bottom-[2px] left-[55.5px] w-px bg-line-strong" />}
+            <span className="pt-px text-right type-readout-sm text-[12px] text-ink-faint">{item.time}</span>
+            <span aria-hidden className={cx('relative z-[1] mt-[7px] size-[8px] rounded-pill', mark(item.state ?? 'observed', item.severity))} />
+            <div className="min-w-0">
+              <div className="flex min-h-[22px] flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="type-label text-ink">{item.title}</span>
+                {item.state && item.state !== 'observed' ? <StatusBadge state={item.state} severity={item.severity} /> : null}
                 {item.source && item.source !== 'live' ? <ProvenanceTag kind={item.source}>{item.sourceLabel}</ProvenanceTag> : null}
               </div>
               {item.vitals ? (
-                <div className="mt-[2px] flex flex-wrap items-center gap-4 text-[13px] text-ink-muted">
+                <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 type-caption text-ink-muted">
                   <TimelineValue value={item.vitals.pulse} unit="bpm" missing="No pulse reading" />
                   {item.pulseNote ? <ProvenanceTag kind="experimental">{item.pulseNote}</ProvenanceTag> : null}
                   <TimelineValue value={item.vitals.breathing} unit="breaths per min" missing="No breathing reading" />
                   {item.score != null ? <ScoreChip score={item.score} caption={false} /> : null}
                 </div>
               ) : null}
-              {item.note ? <p className="mt-1 text-[13px] leading-[18px] text-ink-muted">{item.note}</p> : null}
+              {item.note ? <p className="mt-px type-dense text-ink-muted">{item.note}</p> : null}
             </div>
           </li>
         );
@@ -63,10 +67,10 @@ export function PatientTimeline({ items }: { items: TimelineItem[] }) {
 }
 
 function TimelineValue({ value, unit, missing }: { value: number | null; unit: string; missing: string }) {
-  if (value == null) return <span>{missing}</span>;
+  if (value == null) return <span className="text-ink-faint">{missing}</span>;
   return (
     <span>
-      <b className="font-mono text-[17px] font-semibold text-ink tabular-nums">{rate(value)}</b> {unit}
+      <span className="type-readout-sm text-ink">{rate(value)}</span> {unit}
     </span>
   );
 }

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Triage Cam",
+    "name": "Crowdpulse",
     "slug": "triagecam",
     "scheme": "triagecam",
     "version": "1.0.0",
@@ -12,7 +12,7 @@
       "deploymentTarget": "16.4",
       "supportsTablet": false,
       "infoPlist": {
-        "NSCameraUsageDescription": "Triage Cam measures pulse and breathing with the camera. Video is shown live to the operator and is not stored. Only numbers are saved.",
+        "NSCameraUsageDescription": "Crowdpulse measures pulse and breathing with the camera. Video is shown live to the operator and is not stored. Only numbers are saved.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -24,6 +24,14 @@
       "expo-dev-client",
       "expo-secure-store",
       "expo-notifications",
+      [
+        "./plugins/withSplash",
+        {
+          "image": "./assets/splash-icon.png",
+          "backgroundColor": "#0a0c0f",
+          "imageSize": 200
+        }
+      ],
       [
         "expo-font",
         {

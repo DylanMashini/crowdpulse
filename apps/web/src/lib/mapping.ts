@@ -11,16 +11,26 @@ import {
   type WorklistItem,
 } from '@triagecam/contracts';
 
-import type { Provenance, TimelineItem, WorklistRow } from '@/components/ds';
+import type { Provenance, Severity, TimelineItem, WorklistRow } from '@/components/ds';
 
-import { clockTime, ruleText, sourceText } from './format';
+import { clockTime, rulesText, sourceText } from './format';
+import { severityOf } from './severity';
 
 /**
  * The design system's "Live" tag marks a camera measurement. On a row that describes a finished
- * sitting the word is "Camera"; every other source keeps its dashed tag and its own word.
+ * sitting the word is "Camera"; every other source keeps its outlined tag and its own word.
  */
 export function provenanceOf(source: CaptureSource): { kind: Provenance; label: string } {
   return { kind: source === 'camera' ? 'live' : 'recording', label: sourceText(source) };
+}
+
+/** The severity colour of a worklist row, read off its state, its score and the rules of its open flags. */
+export function rowSeverity(item: Pick<WorklistItem, 'state' | 'score' | 'flags'>): Severity | null {
+  return severityOf(
+    item.state,
+    item.score,
+    item.flags.map((flag) => flag.rule),
+  );
 }
 
 export function toWorklistRow(item: WorklistItem): WorklistRow & { measured: number } {
@@ -30,6 +40,7 @@ export function toWorklistRow(item: WorklistItem): WorklistRow & { measured: num
     reason: item.reasonForVisit,
     ageYears: item.ageYears,
     state: item.state,
+    severity: rowSeverity(item),
     minutes: item.minutesSinceObserved,
     pulse: item.pulse,
     breathing: item.breathing,
@@ -63,7 +74,13 @@ function toTimelineItem(entry: TimelineEntry, rules: Map<string, FlagRule>, aler
     case 'flag_opened': {
       // One row for the alert, naming every rule it tripped, as its card does.
       const tripped = alertRules.get(entry.alertId) ?? [entry.rule];
-      return { time, title: 'Flag opened', state: entry.rule === 'overdue' ? 'overdue' : 'flag', note: tripped.map((rule) => ruleText(rule, reCheckBaseline.has(entry.alertId))).join(' · ') };
+      return {
+        time,
+        title: 'Flag opened',
+        state: entry.rule === 'overdue' ? 'overdue' : 'flag',
+        severity: entry.rule === 'overdue' ? null : severityOf('flag', null, tripped),
+        note: rulesText(tripped, reCheckBaseline.has(entry.alertId)),
+      };
     }
     case 'flag_acknowledged': {
       // Says which alert was acknowledged. One acknowledgement covers every flag of the alert.

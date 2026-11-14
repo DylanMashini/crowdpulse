@@ -1,7 +1,7 @@
 import type { CaptureErrorCode } from 'triage-capture';
 
 const MESSAGES: Partial<Record<CaptureErrorCode, string>> = {
-  ERR_CAMERA_PERMISSION: 'Triage Cam is not allowed to use the camera. Allow it in the Settings app, then come back.',
+  ERR_CAMERA_PERMISSION: 'Crowdpulse is not allowed to use the camera. Allow it in the Settings app, then come back.',
   ERR_CAMERA_UNAVAILABLE: 'The camera is not available. Close other apps that use it, then try again.',
   ERR_CAPTURE_INTERRUPTED: 'The camera was interrupted. Check that nothing else is using it.',
   ERR_NO_FACE: 'No face is in view',

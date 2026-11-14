@@ -27,9 +27,9 @@ export async function sendVerificationEmail(to: string, token: string): Promise<
       body: JSON.stringify({
         from: RESEND_FROM ?? EMAIL_FROM,
         to: [to],
-        subject: "Confirm your email for Triage Cam",
-        text: `Open this link to confirm your email address and finish setting up your Triage Cam staff account:\n\n${link}\n\nThe link works once and expires in 24 hours. If you did not ask for an account, ignore this email.`,
-        html: `<p>Confirm your email address to finish setting up your Triage Cam staff account.</p><p><a href="${link}">Confirm email address</a></p><p>The link works once and expires in 24 hours. If you did not ask for an account, ignore this email.</p>`,
+        subject: "Confirm your email for Crowdpulse",
+        text: `Open this link to confirm your email address and finish setting up your Crowdpulse staff account:\n\n${link}\n\nThe link works once and expires in 24 hours. If you did not ask for an account, ignore this email.`,
+        html: `<p>Confirm your email address to finish setting up your Crowdpulse staff account.</p><p><a href="${link}">Confirm email address</a></p><p>The link works once and expires in 24 hours. If you did not ask for an account, ignore this email.</p>`,
       }),
       signal: AbortSignal.timeout(10_000),
     });

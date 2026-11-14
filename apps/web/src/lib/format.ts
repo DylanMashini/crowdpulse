@@ -159,24 +159,35 @@ export function ruleText(rule: FlagRule, reCheckBaseline = false): string {
   return (reCheckBaseline ? RULES_FROM_A_RE_CHECK[rule] : undefined) ?? RULES[rule];
 }
 
-const counted = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
-
 /**
- * What the waiting room holds, in one sentence, so the counts do not have to be read off the
- * rows. A patient whose latest sitting gave a lower-confidence pulse has a reading, tagged, so
- * is counted as that and not as "without a reading".
+ * What the waiting room holds, for the sentence over the worklist. A patient whose latest
+ * sitting gave a lower-confidence pulse has a reading, tagged, so is counted as that and not
+ * as "without a reading".
  */
-export function waitingSummary(items: Array<{ state: TileState; pulse: Pick<Trend, 'lowConfidence'> }>, recheckIntervalMin: number): string {
+export function waitingCounts(items: Array<{ state: TileState; pulse: Pick<Trend, 'lowConfidence'> }>): {
+  flags: number;
+  overdue: number;
+  noReading: number;
+  lowConfidence: number;
+} {
   const count = (state: TileState) => items.filter((item) => item.state === state).length;
   const lowConfidence = items.filter((item) => item.state === 'no-reading' && item.pulse.lowConfidence != null).length;
-  const noReading = count('no-reading') - lowConfidence;
-  const parts = [
-    count('flag') ? counted(count('flag'), 'trend flag', 'trend flags') : null,
-    count('overdue') ? `${count('overdue')} overdue` : null,
-    noReading ? `${noReading} without a reading` : null,
-    lowConfidence ? `${lowConfidence} lower confidence` : null,
-  ].filter(Boolean);
-  return `${counted(items.length, 'patient', 'patients')} waiting${parts.length ? `: ${parts.join(', ')}` : ''}. Overdue after ${recheckIntervalMin} min without an observation.`;
+  return { flags: count('flag'), overdue: count('overdue'), noReading: count('no-reading') - lowConfidence, lowConfidence };
+}
+
+/**
+ * The rules one alert tripped, as one phrase: "Score rose and vitals moved from check-in".
+ * `reCheckBaseline`: a baseline the alert moved from is a re-check's, so the words do not say check-in.
+ */
+export function rulesText(rules: readonly FlagRule[], reCheckBaseline = false): string {
+  // The two trend rules name the same baseline, so together they share it.
+  if (rules.length === 2 && rules.includes('score_rise') && rules.includes('baseline_shift')) {
+    return reCheckBaseline ? 'Score rose and vitals moved from baseline' : 'Score rose and vitals moved from check-in';
+  }
+  return rules
+    .map((rule) => ruleText(rule, reCheckBaseline))
+    .map((text, index) => (index === 0 ? text : text.charAt(0).toLowerCase() + text.slice(1)))
+    .join(' and ');
 }
 
 /** Whole years since a YYYY-MM-DD date of birth, in the browser's zone. Null when it is not known. */

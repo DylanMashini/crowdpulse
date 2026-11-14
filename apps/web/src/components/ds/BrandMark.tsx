@@ -1,48 +1,81 @@
 import { cx } from '@/lib/cx';
 
+/**
+ * The Crowdpulse mark and lockup, drawn from the geometry in design-system/brand/build_brand.py.
+ * Seven round-ended bars, the fourth one tall and brighter. Do not restyle it here: change the
+ * script, rebuild the assets, and copy the numbers.
+ */
+
+/** Height of the drawing, from the spacing scale. */
+const HEIGHT = { sm: 'var(--space-4)', md: 'var(--space-5)', lg: 'var(--space-6)' } as const;
+
+export type BrandSize = keyof typeof HEIGHT;
+
+const TALL = 3;
+
+/** mark.svg in its own units: each bar is 78 wide on a 109 pitch. [x, y, height] */
+const MARK_BARS: ReadonlyArray<readonly [number, number, number]> = [
+  [0, 299, 127],
+  [109, 299, 127],
+  [218, 203, 231],
+  [327, 0, 535],
+  [436, 326, 100],
+  [545, 299, 127],
+  [654, 299, 127],
+];
+
+/** lockup.svg: the same bars at the lockup's scale, 35.19 wide. [x, y, height] */
+const LOCKUP_BARS: ReadonlyArray<readonly [number, number, number]> = [
+  [24.00, 158.91, 57.30],
+  [73.18, 158.91, 57.30],
+  [122.36, 115.60, 104.23],
+  [171.55, 24.00, 241.40],
+  [220.73, 171.10, 45.12],
+  [269.91, 158.91, 57.30],
+  [319.09, 158.91, 57.30],
+];
+
+/** "Crowdpulse" in Geist SemiBold, outlined, as in lockup.svg. */
+const WORDMARK =
+  'M488.61 218.90Q469.29 218.90 454.45 210.04Q439.61 201.18 431.25 184.62Q422.89 168.06 422.89 144.90Q422.89 122.14 431.05 105.44Q439.21 88.74 454.09 79.62Q468.97 70.50 488.93 70.50Q516.09 70.50 531.13 83.98Q546.17 97.46 550.65 121.78L523.49 123.06Q520.89 109.06 512.29 101.10Q503.69 93.14 488.93 93.14Q476.85 93.14 468.07 99.48Q459.29 105.82 454.53 117.44Q449.77 129.06 449.77 144.90Q449.77 160.90 454.61 172.42Q459.45 183.94 468.23 190.10Q477.01 196.26 488.77 196.26Q504.57 196.26 513.25 187.60Q521.93 178.94 524.21 163.78L551.45 165.06Q548.69 181.74 540.69 193.78Q532.69 205.82 519.63 212.36Q506.57 218.90 488.61 218.90ZM569.17 215.70V108.90H593.09L594.05 138.58L591.97 138.06Q594.37 122.70 601.03 115.80Q607.69 108.90 619.21 108.90H629.13V130.82H619.17Q610.93 130.82 605.55 133.24Q600.17 135.66 597.47 140.76Q594.77 145.86 594.77 154.18V215.70ZM693.25 218.10Q677.45 218.10 665.61 211.22Q653.77 204.34 647.25 191.76Q640.73 179.18 640.73 162.30Q640.73 145.30 647.25 132.82Q653.77 120.34 665.61 113.42Q677.45 106.50 693.25 106.50Q709.05 106.50 720.83 113.42Q732.61 120.34 739.13 132.82Q745.65 145.30 745.65 162.30Q745.65 179.18 739.13 191.76Q732.61 204.34 720.83 211.22Q709.05 218.10 693.25 218.10ZM693.25 197.38Q705.61 197.38 712.39 188.12Q719.17 178.86 719.17 162.30Q719.17 145.82 712.39 136.52Q705.61 127.22 693.25 127.22Q680.89 127.22 674.05 136.52Q667.21 145.82 667.21 162.30Q667.21 178.86 674.05 188.12Q680.89 197.38 693.25 197.38ZM785.89 215.70 753.73 108.90H779.97L800.61 186.74L822.13 108.90H844.45L866.05 186.74L886.81 108.90H913.05L880.89 215.70H854.41L833.29 144.14L812.25 215.70ZM965.37 218.10Q951.73 218.10 941.79 211.26Q931.85 204.42 926.49 191.90Q921.13 179.38 921.13 162.30Q921.13 145.22 926.53 132.70Q931.93 120.18 941.91 113.34Q951.89 106.50 965.37 106.50Q976.53 106.50 985.01 111.12Q993.49 115.74 997.81 124.02V73.70H1023.41V215.70H999.17L998.57 199.86Q994.17 208.46 985.37 213.28Q976.57 218.10 965.37 218.10ZM973.09 197.38Q981.05 197.38 986.55 193.30Q992.05 189.22 994.93 181.36Q997.81 173.50 997.81 162.30Q997.81 150.86 994.93 143.06Q992.05 135.26 986.55 131.24Q981.05 127.22 973.09 127.22Q961.41 127.22 954.51 136.60Q947.61 145.98 947.61 162.30Q947.61 178.34 954.55 187.86Q961.49 197.38 973.09 197.38ZM1047.57 245.70V108.90H1072.05L1072.61 131.62L1070.13 130.50Q1074.13 118.78 1083.23 112.64Q1092.33 106.50 1104.45 106.50Q1119.69 106.50 1129.75 114.06Q1139.81 121.62 1144.83 134.26Q1149.85 146.90 1149.85 162.30Q1149.85 177.62 1144.79 190.30Q1139.73 202.98 1129.63 210.54Q1119.53 218.10 1104.29 218.10Q1096.33 218.10 1089.43 215.26Q1082.53 212.42 1077.63 207.26Q1072.73 202.10 1070.69 195.06L1073.17 193.06V245.70ZM1098.29 197.38Q1109.93 197.38 1116.65 188.06Q1123.37 178.74 1123.37 162.30Q1123.37 145.86 1116.65 136.54Q1109.93 127.22 1098.29 127.22Q1090.53 127.22 1084.91 131.14Q1079.29 135.06 1076.23 142.90Q1073.17 150.74 1073.17 162.30Q1073.17 173.86 1076.17 181.70Q1079.17 189.54 1084.85 193.46Q1090.53 197.38 1098.29 197.38ZM1202.89 218.10Q1186.61 218.10 1177.19 207.40Q1167.77 196.70 1167.77 177.66V108.90H1193.37V171.38Q1193.37 184.78 1197.79 191.04Q1202.21 197.30 1211.45 197.30Q1221.81 197.30 1227.57 190.40Q1233.33 183.50 1233.33 170.34V108.90H1258.93V215.70H1235.41L1234.85 186.38L1238.17 187.38Q1235.61 202.46 1226.61 210.28Q1217.61 218.10 1202.89 218.10ZM1308.77 215.70Q1297.01 215.70 1290.09 209.70Q1283.17 203.70 1283.17 190.42V73.70H1308.77V187.82Q1308.77 191.98 1310.83 193.92Q1312.89 195.86 1316.73 195.86H1324.57V215.70ZM1381.97 218.10Q1365.61 218.10 1354.91 213.46Q1344.21 208.82 1338.67 200.68Q1333.13 192.54 1332.33 182.06L1358.49 180.94Q1359.93 189.26 1365.27 193.92Q1370.61 198.58 1382.05 198.58Q1391.01 198.58 1395.79 195.64Q1400.57 192.70 1400.57 186.50Q1400.57 182.86 1398.87 180.46Q1397.17 178.06 1392.25 176.24Q1387.33 174.42 1377.81 172.74Q1361.65 169.86 1352.49 165.74Q1343.33 161.62 1339.61 155.42Q1335.89 149.22 1335.89 140.18Q1335.89 125.18 1347.39 115.84Q1358.89 106.50 1381.13 106.50Q1396.57 106.50 1406.43 111.36Q1416.29 116.22 1421.37 124.38Q1426.45 132.54 1427.29 142.42L1401.37 143.62Q1401.13 138.62 1398.89 134.62Q1396.65 130.62 1392.25 128.32Q1387.85 126.02 1380.73 126.02Q1371.65 126.02 1367.01 129.66Q1362.37 133.30 1362.37 139.22Q1362.37 143.54 1364.23 146.32Q1366.09 149.10 1370.71 150.84Q1375.33 152.58 1383.25 153.86Q1399.73 156.30 1409.33 160.46Q1418.93 164.62 1422.99 170.92Q1427.05 177.22 1427.05 186.18Q1427.05 201.50 1414.79 209.80Q1402.53 218.10 1381.97 218.10ZM1491.21 218.10Q1475.25 218.10 1463.51 211.22Q1451.77 204.34 1445.35 191.76Q1438.93 179.18 1438.93 162.30Q1438.93 145.42 1445.35 132.94Q1451.77 120.46 1463.39 113.48Q1475.01 106.50 1490.73 106.50Q1505.97 106.50 1517.41 113.32Q1528.85 120.14 1535.11 132.94Q1541.37 145.74 1541.37 163.70V169.42H1465.49Q1466.25 183.54 1473.15 190.58Q1480.05 197.62 1491.53 197.62Q1500.09 197.62 1505.75 193.80Q1511.41 189.98 1513.69 182.94L1539.85 184.58Q1535.57 200.06 1522.63 209.08Q1509.69 218.10 1491.21 218.10ZM1465.49 152.22H1514.81Q1514.01 139.22 1507.47 132.94Q1500.93 126.66 1490.73 126.66Q1480.45 126.66 1473.75 133.24Q1467.05 139.82 1465.49 152.22Z';
+
+function Bars({ bars, width }: { bars: typeof MARK_BARS; width: number }) {
+  return bars.map(([x, y, height], index) => (
+    <rect key={x} x={x} y={y} width={width} height={height} rx={width / 2} className={index === TALL ? 'fill-signal-strong' : 'fill-signal'} />
+  ));
+}
+
 export interface BrandMarkProps {
-  size?: 24 | 28 | 32;
+  size?: BrandSize;
   className?: string;
 }
 
-/** The pulse trace on a signal tile: the same mark as the favicon, flat, in one colour. */
-export function BrandMark({ size = 28, className }: BrandMarkProps) {
+/** The mark alone, for the collapsed navigation and other tight places. Decorative: name the link around it. */
+export function BrandMark({ size = 'sm', className }: BrandMarkProps) {
   return (
-    <svg
-      className={cx('block flex-none', className)}
-      width={size}
-      height={size}
-      viewBox="0 0 32 32"
-      fill="none"
-      aria-hidden
-    >
-      <rect width="32" height="32" rx="7" fill="var(--signal)" />
-      <path
-        d="M5.5 16.5h5l3-8 5.5 15 3-7h4.5"
-        stroke="var(--on-signal)"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+    <svg className={cx('block w-auto flex-none', className)} style={{ height: HEIGHT[size] }} viewBox="0 0 732 535" aria-hidden>
+      <Bars bars={MARK_BARS} width={78} />
     </svg>
   );
 }
 
 export interface BrandLockupProps {
-  /** One or two words under the name: what this surface is. */
-  descriptor?: string;
+  size?: BrandSize;
   className?: string;
 }
 
-/** The mark beside the product name. The name is always the words "Triage Cam". */
-export function BrandLockup({ descriptor, className }: BrandLockupProps) {
+/** The mark beside the wordmark. One drawing, so the spacing between the two never changes. */
+export function BrandLockup({ size = 'sm', className }: BrandLockupProps) {
   return (
-    <span className={cx('flex min-w-0 items-center gap-[10px]', className)}>
-      <BrandMark />
-      <span className="flex min-w-0 flex-col">
-        <span className="truncate text-[15px] leading-[18px] font-semibold text-ink">Triage Cam</span>
-        {descriptor ? <span className="truncate text-[12px] leading-[14px] text-ink-muted">{descriptor}</span> : null}
-      </span>
-    </span>
+    <svg
+      className={cx('block w-auto flex-none', className)}
+      style={{ height: HEIGHT[size] }}
+      viewBox="24 24 1525 241"
+      role="img"
+      aria-label="Crowdpulse"
+    >
+      <Bars bars={LOCKUP_BARS} width={35.19} />
+      <path d={WORDMARK} className="fill-ink" />
+    </svg>
   );
 }

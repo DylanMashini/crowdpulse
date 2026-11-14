@@ -1,0 +1,20 @@
+# Copy to terraform.tfvars (git-ignored). The repository is public: account ids, zone ids and
+# your own IP address belong here and not in a committed file.
+
+cloudflare_zone_id = "<id of the crowdpulse.care zone, from the Cloudflare dashboard>"
+
+# gh api repos/<owner>/<repository>/actions/oidc/customization/sub -q .sub_claim_prefix
+github_oidc_subject_prefix = "repo:<owner>/<repository>"
+
+# Your own public address, to reach the load balancer directly: `curl -s https://checkip.amazonaws.com`.
+# Stage 1 (domain not live yet): the only way in. Stage 2: remove it again.
+operator_cidrs = ["203.0.113.7/32"]
+
+# Leave unset to follow the Cloudflare zone's status. See docs/DEPLOY.md.
+# domain_live = false
+
+# Sizes, if the defaults in variables.tf are more than you want to pay for:
+# task_cpu          = 1024
+# task_memory       = 2048
+# db_instance_class = "db.t4g.small"
+# db_multi_az       = false

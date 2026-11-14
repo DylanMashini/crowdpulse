@@ -10,15 +10,16 @@ export type ReadoutState = 'valid' | 'settling' | 'none' | 'stale';
 type ReadoutSize = 'xl' | 'lg' | 'md';
 
 const VALUE: Record<ReadoutSize, string> = {
-  xl: 'text-[72px] leading-[72px] font-semibold',
-  lg: 'text-[40px] leading-[44px] font-semibold',
-  md: 'text-[22px] leading-[28px] font-medium',
+  xl: 'type-readout-xl',
+  lg: 'type-readout-lg',
+  md: 'type-readout-md',
 };
 
+// Words in place of a number sit on the number's own line height, so the readout does not jump.
 const WORDS: Record<ReadoutSize, string> = {
-  xl: 'px-4 text-[28px] leading-[70px]',
-  lg: 'px-3 text-[20px] leading-[44px]',
-  md: 'px-2 text-[15px] leading-[26px]',
+  xl: 'text-[28px] leading-[72px] tracking-[-0.02em]',
+  lg: 'text-[20px] leading-[48px] tracking-[-0.01em]',
+  md: 'text-[14px] leading-[32px]',
 };
 
 export interface ReadoutProps {
@@ -37,13 +38,17 @@ export interface ReadoutProps {
   tagLabel?: ReactNode;
   /** A second tag that qualifies the value itself, beside where it came from: "Lower confidence". */
   qualifier?: ReactNode;
+  /** A camera is reading this value now: the numerals take the accent and tick when they change. */
+  live?: boolean;
+  /** Drawn under the value: the live trace. */
+  children?: ReactNode;
 }
 
 /**
  * One measured value with its unit, source and age. Without a value it prints "No reading" or
  * "Settling" in words with the reason: never a dash, a zero or the last good number.
  */
-export function Readout({ label, value, unit, size = 'lg', state = 'valid', icon, age, reason, tag, tagLabel, qualifier }: ReadoutProps) {
+export function Readout({ label, value, unit, size = 'lg', state = 'valid', icon, age, reason, tag, tagLabel, qualifier, live, children }: ReadoutProps) {
   const foot =
     state === 'stale'
       ? `Stale, ${age ?? 'no recent reading'}`
@@ -53,36 +58,48 @@ export function Readout({ label, value, unit, size = 'lg', state = 'valid', icon
           ? (reason ?? 'Signal quality too low')
           : age;
   const words = state === 'none' ? 'No reading' : state === 'settling' ? 'Settling' : null;
+  const reading = live && state === 'valid';
 
   return (
-    <div className="flex min-w-[150px] flex-col gap-1">
-      <div className="flex min-h-[22px] flex-wrap items-center gap-2 type-label text-ink-muted">
-        {icon ? <Icon name={icon} size={18} /> : null}
+    <div className="flex min-w-0 flex-col">
+      <div className="flex min-h-[22px] items-center gap-[6px] type-caption text-ink-muted">
+        {icon ? <Icon name={icon} /> : null}
         <span>{label}</span>
-        {tag ? <ProvenanceTag kind={tag}>{tagLabel}</ProvenanceTag> : null}
-        {qualifier ? <ProvenanceTag kind="experimental">{qualifier}</ProvenanceTag> : null}
+        {tag ? (
+          <ProvenanceTag kind={tag} reading={reading} className="ml-auto">
+            {tagLabel}
+          </ProvenanceTag>
+        ) : null}
       </div>
-      <div className="flex items-baseline gap-2 font-mono text-ink tabular-nums">
+      <div className={cx('flex items-baseline gap-[6px]', size === 'md' ? 'mt-1' : 'mt-2')}>
         {words ? (
-          <span className={cx('rounded-md border border-dashed border-line-strong font-sans font-semibold', WORDS[size])}>{words}</span>
+          <span className={cx('font-sans text-ink-muted', WORDS[size])}>{words}</span>
         ) : (
           <>
+            {/* Keyed by the value, so a new number is a new element and rises into place. */}
             <span
+              key={String(value)}
               className={cx(
-                'tracking-[-0.02em]',
+                'inline-block',
                 VALUE[size],
-                state === 'stale' && 'text-ink-muted line-through decoration-2',
+                reading ? 'animate-tick text-signal-strong' : 'text-ink',
+                state === 'stale' && 'text-ink-faint line-through decoration-1',
               )}
             >
               {value}
             </span>
-            <span className="font-sans text-[15px] text-ink-muted">{unit}</span>
+            {unit ? <span className={cx('text-ink-muted', size === 'md' ? 'type-caption' : 'type-dense')}>{unit}</span> : null}
+            {/* Beside the number it qualifies, so the header keeps its one line. */}
+            {qualifier ? (
+              <ProvenanceTag kind="experimental" className="ml-2 self-center">
+                {qualifier}
+              </ProvenanceTag>
+            ) : null}
           </>
         )}
       </div>
-      {foot ? (
-        <div className={cx('text-[13px] leading-[18px]', state === 'stale' ? 'font-medium text-flag' : 'text-ink-muted')}>{foot}</div>
-      ) : null}
+      {children}
+      {foot ? <div className={cx('mt-2 type-caption tabular-nums', state === 'stale' ? 'text-watch' : 'text-ink-faint')}>{foot}</div> : null}
     </div>
   );
 }

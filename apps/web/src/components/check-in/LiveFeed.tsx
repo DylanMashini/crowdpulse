@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { liveStreamUrl } from '@/lib/api';
 import { cx } from '@/lib/cx';
@@ -19,6 +19,8 @@ export interface LiveFeedProps {
   /** Server clock minus this browser's clock, in ms. Null until it has been measured. */
   serverOffsetMs: number | null;
   onStats?: (stats: FeedStats | null) => void;
+  /** Drawn over the picture: the live tag, the frame rate. */
+  children?: ReactNode;
   className?: string;
 }
 
@@ -30,7 +32,7 @@ const STALLED_AFTER_MS = 1500;
  * and each JPEG is decoded off the main thread; when decoding falls behind, the pictures in
  * between are skipped, so what is on screen is always the newest one. Nothing is kept.
  */
-export function LiveFeed({ deviceId, deviceLabel, serverOffsetMs, onStats, className }: LiveFeedProps) {
+export function LiveFeed({ deviceId, deviceLabel, serverOffsetMs, onStats, children, className }: LiveFeedProps) {
   const canvas = useRef<HTMLCanvasElement | null>(null);
   const [status, setStatus] = useState<'connecting' | 'live' | 'stalled'>('connecting');
   const offset = useRef(serverOffsetMs);
@@ -104,22 +106,23 @@ export function LiveFeed({ deviceId, deviceLabel, serverOffsetMs, onStats, class
   }, [url]);
 
   return (
-    <div className={cx('relative aspect-[4/3] w-full overflow-hidden rounded-md bg-[#0a0f0e]', className)}>
+    <div className={cx('relative aspect-[4/3] w-full overflow-hidden rounded-lg border border-line bg-surface-0', className)}>
       {url ? (
         <canvas
           ref={canvas}
           role="img"
           aria-label={`Live camera picture from ${deviceLabel}`}
-          className={cx('absolute inset-0 size-full object-contain transition-opacity duration-[200ms]', status === 'live' ? 'opacity-100' : 'opacity-40')}
+          className={cx('absolute inset-0 size-full object-contain transition-opacity duration-state', status === 'live' ? 'opacity-100' : 'opacity-40')}
         />
       ) : (
-        <div aria-hidden className="absolute inset-0 bg-[linear-gradient(#2a3531_1px,transparent_1px),linear-gradient(90deg,#2a3531_1px,transparent_1px)] bg-[size:25%_33.34%]" />
+        <div aria-hidden className="absolute inset-0 bg-[linear-gradient(var(--line)_1px,transparent_1px),linear-gradient(90deg,var(--line)_1px,transparent_1px)] bg-[size:25%_33.34%]" />
       )}
       {status !== 'live' ? (
-        <p role="status" className="absolute inset-x-0 bottom-0 bg-[#0a0f0e]/80 px-3 py-2 type-caption font-medium text-[#e7eeeb]">
+        <p role="status" className="absolute inset-x-0 bottom-0 bg-surface-0/80 px-3 py-2 type-caption text-ink-muted">
           {!url ? 'Mock data: there is no camera to show' : status === 'connecting' ? `Connecting to ${deviceLabel}` : `The picture from ${deviceLabel} has paused`}
         </p>
       ) : null}
+      {children}
     </div>
   );
 }

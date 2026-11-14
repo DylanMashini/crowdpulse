@@ -15,10 +15,11 @@ import {
   rate,
   rateChange,
   ruleText,
+  rulesText,
   seconds,
   secondsAgo,
   timeOrDayTime,
-  waitingSummary,
+  waitingCounts,
   years,
 } from './format.ts';
 
@@ -96,19 +97,18 @@ test('the waiting room counts a lower-confidence patient as that, not as without
     pulse: lowConfidence === undefined ? {} : { lowConfidence },
   });
   const room = [item('observed'), item('no-reading'), item('no-reading', 102), item('no-reading', 61.5), item('flag'), item('overdue')];
-  assert.equal(
-    waitingSummary(room, 30),
-    '6 patients waiting: 1 trend flag, 1 overdue, 1 without a reading, 2 lower confidence. Overdue after 30 min without an observation.',
-  );
-  assert.equal(waitingSummary([item('observed')], 20), '1 patient waiting. Overdue after 20 min without an observation.');
-  assert.equal(
-    waitingSummary([item('no-reading', 99), item('flag'), item('flag')], 30),
-    '3 patients waiting: 2 trend flags, 1 lower confidence. Overdue after 30 min without an observation.',
-  );
-  assert.equal(
-    waitingSummary([item('no-reading'), item('no-reading')], 30),
-    '2 patients waiting: 2 without a reading. Overdue after 30 min without an observation.',
-  );
+  assert.deepEqual(waitingCounts(room), { flags: 1, overdue: 1, noReading: 1, lowConfidence: 2 });
+  assert.deepEqual(waitingCounts([item('observed')]), { flags: 0, overdue: 0, noReading: 0, lowConfidence: 0 });
+  assert.deepEqual(waitingCounts([item('no-reading', 99), item('flag'), item('flag')]), { flags: 2, overdue: 0, noReading: 0, lowConfidence: 1 });
+  assert.deepEqual(waitingCounts([item('no-reading'), item('no-reading')]), { flags: 0, overdue: 0, noReading: 2, lowConfidence: 0 });
+});
+
+test('the rules of one alert are one phrase, and name the check-in only when the baseline is its own', () => {
+  assert.equal(rulesText(['score_rise', 'baseline_shift']), 'Score rose and vitals moved from check-in');
+  assert.equal(rulesText(['score_rise', 'baseline_shift'], true), 'Score rose and vitals moved from baseline');
+  assert.equal(rulesText(['baseline_shift']), 'Moved from the check-in baseline');
+  assert.equal(rulesText(['baseline_shift'], true), 'Moved from baseline');
+  assert.equal(rulesText(['overdue'], true), 'Overdue for a re-check');
 });
 
 test('exposure that has not settled for eight readings in a row is stuck (QA round 3, R5)', () => {

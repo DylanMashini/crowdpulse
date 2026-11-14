@@ -43,7 +43,14 @@ BUNDLE_ID="com.triagecam.app"
 CAMERA_NAME="TriageCam Camera"
 NURSE_NAME="TriageCam Nurse"
 PROFILE="$MOBILE/simslim.json"
-APP="$MOBILE/ios/build/DerivedData/Build/Products/Debug-iphonesimulator/TriageCam.app"
+# The generated iOS project takes its names from the Expo config at the time of the prebuild:
+# "TriageCam" in a project made before the product was renamed, "Crowdpulse" after. Read them
+# from the project instead of assuming either.
+PRODUCT="$(sed -n 's/^[[:space:]]*PRODUCT_NAME = "\{0,1\}\([^";$]*\)"\{0,1\};.*/\1/p' "$MOBILE"/ios/*.xcodeproj/project.pbxproj 2>/dev/null | head -1)"
+PRODUCT="${PRODUCT:-TriageCam}"
+WORKSPACE="$(ls -d "$MOBILE"/ios/*.xcworkspace 2>/dev/null | head -1)"
+SCHEME="$(basename "${WORKSPACE:-TriageCam.xcworkspace}" .xcworkspace)"
+APP="$MOBILE/ios/build/DerivedData/Build/Products/Debug-iphonesimulator/$PRODUCT.app"
 SEED_EMAIL="${SEED_EMAIL:-demo@triagecam.test}"
 SEED_PASSWORD="${SEED_PASSWORD:-triagecam-demo}"
 UNVERIFIED_EMAIL="simqa-unverified@triagecam.test"
@@ -205,7 +212,7 @@ build_app() {
   say "pod install"
   (cd "$MOBILE/ios" && pod install >"$WORK/logs/pod.log" 2>&1) || die "pod install failed, see $WORK/logs/pod.log"
   say "building the development build for the simulator (minutes when native code changed)"
-  (cd "$MOBILE/ios" && xcodebuild -workspace TriageCam.xcworkspace -scheme TriageCam -configuration Debug \
+  (cd "$MOBILE/ios" && xcodebuild -workspace "$SCHEME.xcworkspace" -scheme "$SCHEME" -configuration Debug \
     -sdk iphonesimulator -destination "generic/platform=iOS Simulator" -derivedDataPath build/DerivedData \
     ARCHS=arm64 ONLY_ACTIVE_ARCH=YES build >"$WORK/logs/xcodebuild.log" 2>&1) \
     || die "the app did not build, see $WORK/logs/xcodebuild.log"
@@ -275,7 +282,7 @@ start_app_logs() {
   # The app's own lines (JavaScript console, the capture module) and anything iOS logs about
   # it as an error. Everything the process logs would be a quarter of a million lines a run.
   xcrun simctl spawn "$udid" log stream --style compact --predicate \
-    'process == "TriageCam" AND (messageType == error OR messageType == fault OR subsystem == "com.facebook.react.log" OR eventMessage CONTAINS "TriageCapture")' \
+    'process == "'"$PRODUCT"'" AND (messageType == error OR messageType == fault OR subsystem == "com.facebook.react.log" OR eventMessage CONTAINS "TriageCapture")' \
     >"$out/$name-app.log" 2>&1 &
   echo $! >"$PIDS/log-$name"
 }

@@ -44,7 +44,7 @@ export async function registerForPush(): Promise<PushRegistration> {
     if (!permission.granted) {
       return {
         available: false,
-        reason: 'Notifications are turned off for Triage Cam in the Settings app',
+        reason: 'Notifications are turned off for Crowdpulse in the Settings app',
         fixInSettings: true,
       };
     }

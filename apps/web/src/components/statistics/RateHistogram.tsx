@@ -68,14 +68,14 @@ export function RateHistogram({ title, distribution, unit, usual }: RateHistogra
   const hovered = hover == null ? null : bins[hover];
 
   return (
-    <figure className="w-full rounded-lg border border-line bg-surface-raised p-4">
-      <figcaption className="mb-3">
-        <div className="type-heading">{title}</div>
-        <div className="type-caption text-ink-muted tabular-nums">{summary ?? 'No sitting in this period gave one'}</div>
+    <figure className="w-full">
+      <figcaption className="mb-4">
+        <div className="type-subheading text-ink">{title}</div>
+        <div className="type-caption text-ink-faint tabular-nums">{summary ?? 'No sitting in this period gave one'}</div>
       </figcaption>
 
       {bins.length === 0 ? (
-        <p className="rounded-md border border-dashed border-line-strong px-4 py-6 type-caption text-ink-muted">
+        <p className="type-dense text-ink-muted">
           The chart fills in as sittings finish with a reading.
         </p>
       ) : (
@@ -84,7 +84,7 @@ export function RateHistogram({ title, distribution, unit, usual }: RateHistogra
             {usualStart != null && usualEnd != null ? (
               <>
                 <rect
-                  className="fill-surface-sunken"
+                  className="fill-surface-2"
                   x={left(usualStart)}
                   y={MARGIN.top - 22}
                   width={(usualEnd - usualStart + 1) * slot}
@@ -92,7 +92,7 @@ export function RateHistogram({ title, distribution, unit, usual }: RateHistogra
                   rx={4}
                 />
                 {(usualEnd - usualStart + 1) * slot >= BAND_LABEL_WIDTH ? (
-                  <text className="fill-ink-muted font-sans text-[12px]" x={left(usualStart) + 8} y={MARGIN.top - 7}>
+                  <text className="fill-ink-faint font-sans text-[11px]" x={left(usualStart) + 8} y={MARGIN.top - 8}>
                     {usual.from} to {usual.to} scores 0
                   </text>
                 ) : null}
@@ -109,17 +109,16 @@ export function RateHistogram({ title, distribution, unit, usual }: RateHistogra
                   <rect fill="transparent" x={left(index)} y={0} width={slot} height={HEIGHT} />
                   {bin.sittings > 0 ? (
                     <>
-                      <path
-                        className={cx('fill-series-estimate', hover != null && hover !== index && 'opacity-50')}
-                        d={`M${x} ${plotBottom}V${y + 4}a4 4 0 0 1 4 -4h${bar - 8}a4 4 0 0 1 4 4V${plotBottom}Z`}
-                      />
-                      <text className="fill-ink font-mono text-[13px] font-semibold tabular-nums" x={x + bar / 2} y={y - 6} textAnchor="middle">
+                      {/* A neutral column with its cap in the accent: the count is read off the cap. */}
+                      <rect className={cx('transition-colors', hover === index ? 'fill-ink-faint' : 'fill-surface-4')} x={x} y={y} width={bar} height={height} />
+                      <rect className="fill-series-estimate" x={x} y={y} width={bar} height={2} />
+                      <text className="fill-ink font-mono text-[12px] tabular-nums" x={x + bar / 2} y={y - 6} textAnchor="middle">
                         {bin.sittings}
                       </text>
                     </>
                   ) : null}
                   {index % labelEvery === 0 ? (
-                    <text className="fill-ink-muted font-sans text-[12px] tabular-nums" x={left(index) + slot / 2} y={plotBottom + 18} textAnchor="middle">
+                    <text className="fill-ink-faint font-sans text-[11px] tabular-nums" x={left(index) + slot / 2} y={plotBottom + 18} textAnchor="middle">
                       {bin.from}–{bin.to}
                     </text>
                   ) : null}
@@ -130,15 +129,15 @@ export function RateHistogram({ title, distribution, unit, usual }: RateHistogra
           {hover != null && hovered ? (
             <div
               className={cx(
-                'pointer-events-none absolute top-0 rounded-md border border-line bg-surface-raised px-3 py-2 text-[13px] leading-[20px] whitespace-nowrap shadow-overlay',
+                'pointer-events-none absolute top-0 rounded-md border border-line-strong bg-surface-3 px-3 py-2 type-dense whitespace-nowrap shadow-overlay',
                 hover >= bins.length / 2 ? '-translate-x-full' : '',
               )}
               style={{ left: `${((left(hover) + (hover >= bins.length / 2 ? 0 : slot)) / width) * 100}%` }}
             >
-              <div className="text-ink-muted">
+              <div className="type-caption text-ink-muted tabular-nums">
                 {hovered.from} to {hovered.to} {unit}
               </div>
-              <div className="font-semibold tabular-nums">{sittings(hovered.sittings)}</div>
+              <div className="text-ink tabular-nums">{sittings(hovered.sittings)}</div>
             </div>
           ) : null}
           <table className="sr-only">

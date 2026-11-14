@@ -33,6 +33,7 @@ import {
   EnrolFaceResponse,
   ErrorResponse,
   FlagListResponse,
+  HealthResponse,
   FlagResponse,
   MatchFaceResponse,
   MeResponse,
@@ -95,6 +96,9 @@ async function refused(status: number, code: string, method: string, path: strin
   const body = ErrorResponse.parse(JSON.parse(text));
   assert.equal(body.error.code, code, `${method} ${path}`);
   assert.ok(!/\bat .+:\d+:\d+/.test(text), "an error body must not carry a stack trace");
+  if (status === 429) {
+    assert.match(response.headers.get("retry-after") ?? "", /^[1-9]\d*$/, `${method} ${path}: a 429 carries Retry-After in whole seconds`);
+  }
 }
 
 let step = 0;
@@ -115,6 +119,19 @@ async function until<T>(what: string, read: () => T | undefined | Promise<T | un
 
 const email = `smoke-${Date.now()}@example.test`;
 const password = "correct horse battery";
+
+assert.equal((await ok(HealthResponse, 200, "GET", routes.health)).status, "ok");
+done("the health route answers ok with no session");
+
+for (const path of ["/", routes.health]) {
+  const { headers } = await call("GET", path);
+  assert.match(headers.get("strict-transport-security") ?? "", /max-age=\d+/, path);
+  assert.equal(headers.get("x-frame-options"), "DENY", path);
+  assert.equal(headers.get("x-content-type-options"), "nosniff", path);
+  assert.ok(headers.get("referrer-policy"), path);
+  assert.equal(headers.get("x-powered-by"), null, path);
+}
+done("pages and API answers carry the security headers and do not name the framework");
 
 await refused(401, "unauthenticated", "GET", routes.worklist);
 await refused(401, "unauthenticated", "GET", routes.stream);

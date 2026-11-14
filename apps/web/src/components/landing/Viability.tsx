@@ -13,7 +13,7 @@ function Cite({ n }: { n: number }) {
 /** Why camera-based vitals are a real technology: the science, the FDA record, the companies. */
 export function Viability() {
   return (
-    <section id="technology" className="lp-section lp-viability">
+    <section id="technology" className="lp-section">
       <div className="lp-wrap">
         <header className="lp-section-head">
           <h2 className="lp-h2">The camera pulse is established science with an FDA device class of its own</h2>
@@ -69,7 +69,7 @@ export function Viability() {
               ))}
             </ul>
             <p className="lp-backers-us">
-              Triage Cam is not one of the cleared products. It applies the same measurement principle to one job: re-checking the
+              Crowdpulse is not one of the cleared products. It applies the same measurement principle to one job: re-checking the
               waiting room between check-in and triage.
             </p>
           </div>

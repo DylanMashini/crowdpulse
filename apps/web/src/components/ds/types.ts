@@ -3,6 +3,8 @@ import type { PatientRef } from '@triagecam/contracts';
 export type TileState = 'observed' | 'flag' | 'overdue' | 'no-reading';
 export type Provenance = 'live' | 'recording' | 'experimental' | 'ai-draft';
 export type ScoreValue = 0 | 1 | 2 | 3;
+/** How a flagged patient is drawn. Presentation only: it is read off the state, the score and the open flags' rules. */
+export type Severity = 'watch' | 'urgent';
 
 /** A value against the patient's own baseline, normally the check-in. `now: null` means no reading that counts. */
 export interface Trend {
@@ -20,6 +22,8 @@ export interface WorklistRow {
   reason?: string | null;
   ageYears?: number | null;
   state: TileState;
+  /** Set when the row carries colour: amber for watch, red for urgent. */
+  severity?: Severity | null;
   /** Whole minutes since the last observation. Null or missing: not yet observed. */
   minutes?: number | null;
   pulse?: Trend;

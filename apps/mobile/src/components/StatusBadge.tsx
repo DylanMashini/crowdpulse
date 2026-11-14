@@ -1,39 +1,39 @@
-import type { TileState } from '@triagecam/contracts';
 import { View } from 'react-native';
 
-import { statusText } from '@/lib/nurse/worklistFormat';
+import type { Severity } from '@/lib/nurse/severity';
+import { hairline, weight } from '@/theme';
 
-import { Icon, type IconName } from './Icon';
+import { Icon } from './Icon';
 import { useScopedTheme } from './ThemeScope';
 import { Text } from './Text';
 
-const ICONS: Record<TileState, IconName> = {
-  observed: 'clock',
-  flag: 'flag',
-  overdue: 'clock',
-  'no-reading': 'no-reading',
-};
-
 type Props = {
-  state: TileState;
-  /** Whole minutes since the last valid observation. */
-  minutes?: number | null;
-  /** Replaces the default words, for a timeline entry that names its own event. */
-  label?: string;
-  /** The latest sitting gave a pulse with lower confidence: "no reading" then says so. */
-  lowConfidence?: boolean;
+  /** `live` is not a severity: it marks a sitting that is running now. */
+  severity: Severity | 'live';
+  /**
+   * The state in words. A chip never rests on its colour. `statusText` gives them, and says
+   * "Lower confidence, repeat" for a no-reading patient whose latest pulse was lower confidence.
+   */
+  label: string;
 };
 
-/** The state of one patient. Four states, each told apart by shape and lightness as well as hue. */
-export function StatusBadge({ state, minutes = null, label, lowConfidence = false }: Props) {
+/**
+ * The state of one patient or one flag: a square-cornered chip with a dot and a word. Stable is
+ * a cool grey, watch amber, urgent the one solid red in the product, overdue the inverse of the
+ * page, and no reading a dashed outline, so each differs by fill and lightness as well as hue.
+ */
+export function StatusBadge({ severity, label }: Props) {
   const theme = useScopedTheme();
   const { colors } = theme;
   const look = {
-    observed: { text: colors.inkMuted, background: 'transparent', border: 'transparent', dashed: false },
-    flag: { text: colors.flag, background: colors.flagSoft, border: colors.flag, dashed: false },
-    overdue: { text: colors.onOverdue, background: colors.overdue, border: colors.overdue, dashed: false },
-    'no-reading': { text: colors.ink, background: 'transparent', border: colors.lineStrong, dashed: true },
-  }[state];
+    stable: { text: colors.stable, fill: colors.stableSoft },
+    watch: { text: colors.watch, fill: colors.watchSoft },
+    urgent: { text: colors.onUrgent, fill: colors.urgent },
+    overdue: { text: colors.onOverdue, fill: colors.overdue },
+    none: { text: colors.inkMuted, fill: 'transparent' },
+    live: { text: colors.signal, fill: colors.signalSoft },
+  }[severity];
+  const outlined = severity === 'none';
 
   return (
     <View
@@ -42,26 +42,25 @@ export function StatusBadge({ state, minutes = null, label, lowConfidence = fals
         alignItems: 'center',
         alignSelf: 'flex-start',
         flexShrink: 1,
-        gap: theme.space.space1,
-        minHeight: 26,
-        paddingLeft: state === 'observed' ? 0 : theme.space.space2,
-        paddingRight: 10,
-        borderRadius: theme.radius.radiusPill,
-        borderWidth: 1,
-        borderStyle: look.dashed ? 'dashed' : 'solid',
-        borderColor: look.border,
-        backgroundColor: look.background,
+        gap: 6,
+        minHeight: 22,
+        paddingVertical: 2,
+        paddingHorizontal: theme.space.space2,
+        borderRadius: theme.radius.radiusSm,
+        borderWidth: outlined ? 1 : hairline,
+        borderStyle: outlined ? 'dashed' : 'solid',
+        borderColor: outlined ? colors.lineStrong : 'transparent',
+        backgroundColor: look.fill,
       }}
     >
-      <Icon name={ICONS[state]} size={16} color={look.text} />
-      <Text
-        style={[
-          state === 'observed' ? theme.type.caption : theme.type.label,
-          { color: look.text, flexShrink: 1 },
-        ]}
-      >
-        {label ?? statusText(state, minutes, lowConfidence)}
-      </Text>
+      {severity === 'overdue' ? (
+        <Icon name="clock" size={12} color={look.text} />
+      ) : outlined ? null : (
+        <View
+          style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: look.text }}
+        />
+      )}
+      <Text style={[theme.type.caption, { flexShrink: 1, fontWeight: weight.medium, color: look.text }]}>{label}</Text>
     </View>
   );
 }
