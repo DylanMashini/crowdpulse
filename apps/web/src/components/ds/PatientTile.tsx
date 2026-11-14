@@ -43,14 +43,16 @@ export function PatientTile({ patient, reason, ageYears, state, severity, minute
           </dd>
         </div>
       </dl>
-      <footer className="mt-auto flex w-full flex-wrap items-center gap-x-3 gap-y-2">
-        <StatusBadge state={state} severity={severity} minutes={minutes} />
+      <footer className="mt-auto flex w-full flex-col gap-2">
+        <div className="flex items-center justify-between gap-3">
+          <StatusBadge state={state} severity={severity} minutes={minutes} />
+          {source ? (
+            <ProvenanceTag kind={source} plain>
+              {sourceLabel}
+            </ProvenanceTag>
+          ) : null}
+        </div>
         {score != null ? <ScoreChip score={score} measured={measured} /> : null}
-        {source ? (
-          <ProvenanceTag kind={source} plain className="ml-auto">
-            {sourceLabel}
-          </ProvenanceTag>
-        ) : null}
       </footer>
     </article>
   );

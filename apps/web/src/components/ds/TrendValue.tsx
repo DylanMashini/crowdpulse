@@ -42,7 +42,7 @@ export function TrendValue({ trend, unit, notMeasuredYet, layout = 'tile', sever
   }
 
   return (
-    <span className="inline-flex flex-wrap items-baseline gap-x-2 whitespace-nowrap">
+    <span className="inline-flex flex-col whitespace-nowrap">
       <span className="inline-flex items-baseline gap-1">
         <span className="type-readout-md text-ink">{rate(trend.now)}</span>
         <span className="type-caption text-ink-muted">{unit}</span>
