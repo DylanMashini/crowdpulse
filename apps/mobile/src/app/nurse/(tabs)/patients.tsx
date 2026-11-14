@@ -32,7 +32,6 @@ export default function Patients() {
   const [failure, setFailure] = useState<string | null>(null);
   const [filter, setFilter] = useState<PatientFilter>('waiting');
   const [query, setQuery] = useState('');
-  const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   // Pages beyond the first are kept when the first is refreshed, so the list does not shrink.
   const pages = useRef(1);
@@ -60,9 +59,7 @@ export default function Patients() {
   useLoadOn(load, revision);
 
   const pull = async () => {
-    setRefreshing(true);
     await Promise.all([load(), refresh()]);
-    setRefreshing(false);
   };
 
   const more = async () => {
@@ -90,7 +87,6 @@ export default function Patients() {
       title="Patients"
       subtitle={loaded ? `${count('waiting')} waiting, ${count('discharged')} discharged` : 'Waiting and discharged'}
       onRefresh={pull}
-      refreshing={refreshing}
     >
       <SearchField label="Name, reason or visit number" value={query} onChange={setQuery} />
       <Segmented

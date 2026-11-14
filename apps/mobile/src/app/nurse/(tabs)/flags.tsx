@@ -23,7 +23,6 @@ export default function Flags() {
   const router = useRouter();
   const { flags, failure, push, revision, refresh } = useNurse();
   const [closed, setClosed] = useState<Flag[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
 
   const loadClosed = useCallback(async () => {
     try {
@@ -37,9 +36,7 @@ export default function Flags() {
   useLoadOn(loadClosed, revision);
 
   const pull = async () => {
-    setRefreshing(true);
     await Promise.all([refresh(), loadClosed()]);
-    setRefreshing(false);
   };
 
   const open = (flag: Flag) =>
@@ -64,7 +61,7 @@ export default function Flags() {
   );
 
   return (
-    <TabScreen title="Flags" subtitle={subtitle} onRefresh={pull} refreshing={refreshing}>
+    <TabScreen title="Flags" subtitle={subtitle} onRefresh={pull}>
       {push && !push.available ? (
         <PrivacyNote icon="bell">
           {sentences(push.reason, 'New flags still appear here and as a banner while the app is open')}

@@ -31,7 +31,6 @@ export default function You() {
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [loadFailure, setLoadFailure] = useState<string | null>(null);
   const [saveFailure, setSaveFailure] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -44,12 +43,6 @@ export default function You() {
 
   // The rules are shared: the dashboard or another phone may have changed them.
   useLoadOn(load, revision);
-
-  const pull = async () => {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  };
 
   /** Shows the change at once, then keeps the server's answer, or puts the old value back. */
   const change = async (changes: UpdateSettingsRequest) => {
@@ -69,7 +62,7 @@ export default function You() {
   const rules: Settings | null = settings?.settings ?? null;
 
   return (
-    <TabScreen title="You" subtitle={state.user.email} onRefresh={pull} refreshing={refreshing}>
+    <TabScreen title="You" subtitle={state.user.email} onRefresh={load}>
       <Section heading="Notifications">
         <Panel>
           <Detail

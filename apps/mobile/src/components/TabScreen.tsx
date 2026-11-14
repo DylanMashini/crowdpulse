@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
 
 import { clockTime, sentences } from '@/lib/format';
@@ -15,9 +15,11 @@ type Props = {
   title: string;
   /** A count or a sentence under the title. */
   subtitle?: string;
-  /** Pull to refresh. Left out, pulling refreshes the shared worklist and flags. */
+  /**
+   * What pulling down and "Try again" load: the tab's own data together with the shared
+   * worklist and flags. Left out, they load the shared data only. It must not reject.
+   */
   onRefresh?: () => Promise<void>;
-  refreshing?: boolean;
   children: ReactNode;
 };
 
@@ -25,10 +27,21 @@ type Props = {
  * The frame of one nurse tab. The scroll view is the screen's first view, which is what lets
  * the native tab bar float over the content and inset it by itself; the title scrolls with it.
  */
-export function TabScreen({ title, subtitle, onRefresh, refreshing = false, children }: Props) {
+export function TabScreen({ title, subtitle, onRefresh, children }: Props) {
   const theme = useScopedTheme();
   const { colors, space } = theme;
   const { connection, failure, worklist, refresh } = useNurse();
+  // The spinner stays for as long as the request is in the air, on every tab.
+  const [pulling, setPulling] = useState(false);
+  const reload = onRefresh ?? refresh;
+  const pull = async () => {
+    setPulling(true);
+    try {
+      await reload();
+    } finally {
+      setPulling(false);
+    }
+  };
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: colors.surface }}
@@ -37,8 +50,8 @@ export function TabScreen({ title, subtitle, onRefresh, refreshing = false, chil
       keyboardDismissMode="on-drag"
       refreshControl={
         <RefreshControl
-          refreshing={refreshing}
-          onRefresh={() => void (onRefresh ?? refresh)()}
+          refreshing={pulling}
+          onRefresh={() => void pull()}
           tintColor={colors.inkMuted}
         />
       }
@@ -65,7 +78,7 @@ export function TabScreen({ title, subtitle, onRefresh, refreshing = false, chil
           title={worklist ? `Not updated since ${clockTime(worklist.generatedAt)}` : 'The server cannot be reached'}
           body={worklist ? sentences(failure, 'What is shown may be out of date') : failure}
         >
-          <Button variant="secondary" block label="Try again" onPress={() => void refresh()} />
+          <Button variant="secondary" block label="Try again" onPress={() => void reload()} />
         </Notice>
       ) : null}
       {children}
