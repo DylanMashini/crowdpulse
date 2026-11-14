@@ -1,14 +1,16 @@
-// Creates a verified demo staff account, two devices and a waiting room with one ticket in
+// Creates a verified demo staff account, two devices and a waiting room with one patient in
 // each state, so the dashboard and the nurse role have something to show. Rows are written
 // straight to the database because their times are in the past; the flags are then opened
 // by the same trend rules the server runs. Run with `pnpm db:seed`.
 //
-// The demo tickets are added only to an empty waiting room. Pass --more to add another set.
+// The demo patients are added only to an empty waiting room. Pass --more to add another set.
+import { PATIENT_PHOTO_SIZE } from "@triagecam/contracts";
 import { eq } from "drizzle-orm";
+import sharp from "sharp";
 
 import { db, schema } from "../src/db/client.ts";
 import { hashPassword } from "../src/server/auth/passwords.ts";
-import { syncTickets } from "../src/server/trend/engine.ts";
+import { syncPatients } from "../src/server/trend/engine.ts";
 
 const email = (process.env.SEED_EMAIL || "demo@triagecam.test").toLowerCase();
 const password = process.env.SEED_PASSWORD || "triagecam-demo";
@@ -38,8 +40,17 @@ type SittingPlan = {
   withReference?: boolean;
 };
 
-type TicketPlan = {
+type Intake = Pick<
+  typeof schema.patients.$inferInsert,
+  "name" | "dateOfBirth" | "sex" | "reasonForVisit" | "painScore" | "allergies" | "notes"
+>;
+
+type PatientPlan = {
   note: string;
+  /** What staff typed at check-in. Left out for a patient whose intake has not been filled in. */
+  intake?: Intake;
+  /** Colours of the drawn stand-in portrait. Left out: no photo, so the initials show. */
+  portrait?: { background: string; skin: string; hair: string; top: string };
   createdMinutesAgo: number;
   dischargedMinutesAgo?: number;
   sittings: SittingPlan[];
@@ -47,9 +58,19 @@ type TicketPlan = {
   flagsOpenedMinutesAgo?: number;
 };
 
-const PLANS: TicketPlan[] = [
+const PLANS: PatientPlan[] = [
   {
     note: "steady, observed",
+    intake: {
+      name: "Maya Chen",
+      dateOfBirth: "1991-04-18",
+      sex: "female",
+      reasonForVisit: "Twisted ankle on the stairs, swelling",
+      painScore: 4,
+      allergies: "Penicillin",
+      notes: "Can bear some weight. Ice applied at home.",
+    },
+    portrait: { background: "#dfe9e4", skin: "#e8b995", hair: "#2b2320", top: "#3f6f66" },
     createdMinutesAgo: 52,
     sittings: [
       { endedMinutesAgo: 50, heartRate: 74, breathingRate: 15, withReference: true },
@@ -58,6 +79,16 @@ const PLANS: TicketPlan[] = [
   },
   {
     note: "trend flag: pulse and breathing up on two consecutive observations",
+    intake: {
+      name: "Robert Okafor",
+      dateOfBirth: "1958-09-02",
+      sex: "male",
+      reasonForVisit: "Short of breath since this morning",
+      painScore: 2,
+      allergies: null,
+      notes: "History of COPD. Uses a salbutamol inhaler, last dose two hours ago.",
+    },
+    portrait: { background: "#e6e2d8", skin: "#8a5a3c", hair: "#b9b6b0", top: "#4b5563" },
     createdMinutesAgo: 31,
     sittings: [
       { endedMinutesAgo: 29, heartRate: 82, breathingRate: 16, withReference: true },
@@ -68,12 +99,31 @@ const PLANS: TicketPlan[] = [
   },
   {
     note: "overdue: nothing since check-in",
+    intake: {
+      name: "Priya Raman",
+      dateOfBirth: "2003-12-11",
+      sex: "female",
+      reasonForVisit: "Migraine, nausea",
+      painScore: 7,
+      allergies: null,
+      notes: "Light sensitive. Took ibuprofen 400 mg at home.",
+    },
+    portrait: { background: "#e3e1ec", skin: "#c68e68", hair: "#1c1a22", top: "#7a5c8e" },
     createdMinutesAgo: 49,
     sittings: [{ endedMinutesAgo: 47, heartRate: 68, breathingRate: 14 }],
     flagsOpenedMinutesAgo: 16,
   },
   {
     note: "no reading: the re-check gave no signal",
+    intake: {
+      name: "Daniel Whitfield",
+      dateOfBirth: "1979-06-27",
+      sex: "male",
+      reasonForVisit: "Cut to the left hand, bleeding controlled",
+      painScore: 3,
+      allergies: "Latex",
+      notes: null,
+    },
     createdMinutesAgo: 27,
     sittings: [
       { endedMinutesAgo: 25, heartRate: 88, breathingRate: 18, withReference: true },
@@ -83,6 +133,16 @@ const PLANS: TicketPlan[] = [
   { note: "just arrived, not yet observed", createdMinutesAgo: 2, sittings: [] },
   {
     note: "discharged",
+    intake: {
+      name: "Elena Sokolova",
+      dateOfBirth: "1986-01-30",
+      sex: "female",
+      reasonForVisit: "Sore throat for three days",
+      painScore: 2,
+      allergies: null,
+      notes: null,
+    },
+    portrait: { background: "#e9e3da", skin: "#f0c8a8", hair: "#a8672f", top: "#a65d4a" },
     createdMinutesAgo: 95,
     dischargedMinutesAgo: 40,
     sittings: [{ endedMinutesAgo: 92, heartRate: 71, breathingRate: 13 }],
@@ -113,7 +173,7 @@ async function ensureDevice(userId: string, role: "camera" | "nurse", label: str
   return created.id;
 }
 
-async function addSitting(ticketId: string, deviceId: string, plan: SittingPlan, isFirst: boolean, seed: number) {
+async function addSitting(patientId: string, deviceId: string, plan: SittingPlan, isFirst: boolean, seed: number) {
   const next = random(seed);
   const jitter = (spread: number) => (next() - 0.5) * 2 * spread;
   const endedAt = minutesAgo(plan.endedMinutesAgo);
@@ -124,7 +184,7 @@ async function addSitting(ticketId: string, deviceId: string, plan: SittingPlan,
   const [sitting] = await db
     .insert(schema.sittings)
     .values({
-      ticketId,
+      patientId,
       deviceId,
       kind: isFirst ? "check_in" : "recheck",
       source: "simulated",
@@ -154,7 +214,7 @@ async function addSitting(ticketId: string, deviceId: string, plan: SittingPlan,
     const settling = second < FIRST_HEART_RATE_SECOND;
     return {
       sittingId: sitting.id,
-      ticketId,
+      patientId,
       t: new Date(startedAt.getTime() + second * 1000),
       heartRate: heartValid ? (plan.heartRate as number) + jitter(1.5) : null,
       state: heartValid ? ("valid" as const) : settling ? ("settling" as const) : ("none" as const),
@@ -201,25 +261,55 @@ async function addSitting(ticketId: string, deviceId: string, plan: SittingPlan,
   }
 }
 
-async function addTicket(plan: TicketPlan, cameraId: string, index: number): Promise<number> {
+/**
+ * A drawn stand-in for the intake photo, so the seeded dashboard shows faces without a real
+ * person's picture being in the repository. A real photo comes from the camera at check-in.
+ */
+function drawnPortrait({ background, skin, hair, top }: NonNullable<PatientPlan["portrait"]>): Promise<Buffer> {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="384" height="384" viewBox="0 0 384 384">
+    <rect width="384" height="384" fill="${background}"/>
+    <path d="M52 384c0-84 62-128 140-128s140 44 140 128z" fill="${top}"/>
+    <rect x="166" y="212" width="52" height="64" rx="22" fill="${skin}"/>
+    <ellipse cx="192" cy="150" rx="84" ry="92" fill="${hair}"/>
+    <ellipse cx="192" cy="164" rx="66" ry="78" fill="${skin}"/>
+    <path d="M124 150c4-52 36-76 68-76s64 24 68 76c-20-22-42-34-68-34s-48 12-68 34z" fill="${hair}"/>
+  </svg>`;
+  return sharp(Buffer.from(svg)).resize(PATIENT_PHOTO_SIZE, PATIENT_PHOTO_SIZE).jpeg({ quality: 86 }).toBuffer();
+}
+
+async function addPatient(plan: PatientPlan, cameraId: string, index: number): Promise<string> {
   const discharged = plan.dischargedMinutesAgo !== undefined;
-  const [ticket] = await db
-    .insert(schema.tickets)
+  const createdAt = minutesAgo(plan.createdMinutesAgo);
+  const [patient] = await db
+    .insert(schema.patients)
     .values({
-      createdAt: minutesAgo(plan.createdMinutesAgo),
+      ...plan.intake,
+      // The form is filled in while the first sitting runs, about a minute after arrival.
+      intakeCompletedAt: plan.intake ? new Date(createdAt.getTime() + MINUTE_MS) : null,
+      photoUpdatedAt: plan.portrait ? createdAt : null,
+      createdAt,
       status: discharged ? "discharged" : "waiting",
       dischargedAt: discharged ? minutesAgo(plan.dischargedMinutesAgo as number) : null,
     })
     .returning();
-  if (!ticket) throw new Error("The demo ticket was not created");
+  if (!patient) throw new Error("The demo patient was not created");
+  if (plan.portrait) {
+    await db.insert(schema.patientPhotos).values({
+      patientId: patient.id,
+      jpeg: await drawnPortrait(plan.portrait),
+      width: PATIENT_PHOTO_SIZE,
+      height: PATIENT_PHOTO_SIZE,
+      createdAt,
+    });
+  }
 
   for (const [position, sitting] of plan.sittings.entries()) {
-    await addSitting(ticket.id, cameraId, sitting, position === 0, index * 100 + position + 1);
+    await addSitting(patient.id, cameraId, sitting, position === 0, index * 100 + position + 1);
   }
   if (plan.flagsOpenedMinutesAgo !== undefined) {
-    await syncTickets([ticket], { now: minutesAgo(plan.flagsOpenedMinutesAgo), notify: false });
+    await syncPatients([patient], { now: minutesAgo(plan.flagsOpenedMinutesAgo), notify: false });
   }
-  return ticket.number;
+  return `${patient.name ?? "Not yet named"} (${patient.number})`;
 }
 
 try {
@@ -228,12 +318,12 @@ try {
   await ensureDevice(userId, "nurse", "Nurse phone");
   console.log(`Demo account: ${email} / ${password} (verified)`);
 
-  const waiting = await db.$count(schema.tickets, eq(schema.tickets.status, "waiting"));
+  const waiting = await db.$count(schema.patients, eq(schema.patients.status, "waiting"));
   if (waiting > 0 && !process.argv.includes("--more")) {
-    console.log(`${waiting} tickets are already waiting, so no demo tickets were added. Pass --more to add a set.`);
+    console.log(`${waiting} patients are already waiting, so no demo patients were added. Pass --more to add a set.`);
   } else {
     for (const [index, plan] of PLANS.entries()) {
-      console.log(`Ticket ${await addTicket(plan, cameraId, index)}: ${plan.note}`);
+      console.log(`${await addPatient(plan, cameraId, index)}: ${plan.note}`);
     }
   }
 } finally {
