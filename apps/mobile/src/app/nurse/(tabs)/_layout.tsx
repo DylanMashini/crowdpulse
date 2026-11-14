@@ -1,20 +1,20 @@
 import { NativeTabs } from 'expo-router/native-tabs';
 
 import { useNurse } from '@/lib/nurse/NurseProvider';
-import { flagGroups } from '@/lib/nurse/nurseFormat';
+import { alertsToAcknowledge } from '@/lib/nurse/nurseFormat';
 import { fonts, useTheme } from '@/theme';
 
 /**
  * The nurse role's four tabs on the system tab bar (UITabBarController through
  * react-native-screens), which iOS 26 and later draw as Liquid Glass floating over the
  * content. Icons are SF Symbols so they take the bar's own weight and selection treatment.
- * The Flags tab carries the number of flags nobody has acknowledged.
+ * The Flags tab carries the number of alerts nobody has acknowledged.
  */
 export default function NurseTabs() {
   const theme = useTheme();
   const { colors } = theme;
   const { flags } = useNurse();
-  const waiting = flags ? flagGroups(flags).unacknowledged.length : 0;
+  const waiting = flags ? alertsToAcknowledge(flags) : 0;
 
   return (
     <NativeTabs

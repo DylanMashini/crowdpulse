@@ -1,4 +1,4 @@
-import type { Flag, WorklistResponse } from '@triagecam/contracts';
+import { type Flag, type FlagAlert, type WorklistResponse, flagAlerts } from '@triagecam/contracts';
 import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import { type ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
@@ -12,7 +12,7 @@ import { clockTime } from '@/lib/format';
 import { useSession } from '@/lib/session/SessionProvider';
 
 import { openEventStream } from './eventStream';
-import type { Connection } from './nurseFormat';
+import { type Connection, announcements, followAlerts, withAcknowledgement } from './nurseFormat';
 import { type PushRegistration, patientOfNotification, registerForPush, showFlagsInApp } from './push';
 import { flagTitle } from './worklistFormat';
 
@@ -42,7 +42,10 @@ type NurseData = {
   /** Null until registration has been tried. */
   push: PushRegistration | null;
   refresh: () => Promise<void>;
-  /** Acknowledges a flag and updates every list at once. Rejects with the reason when it fails. */
+  /**
+   * Acknowledges a flag, and with it the rest of its alert, and updates every list at once.
+   * Rejects with the reason when it fails.
+   */
   acknowledge: (flagId: string) => Promise<void>;
 };
 
@@ -57,7 +60,8 @@ export function useNurse(): NurseData {
 /**
  * Everything the nurse tabs share: the worklist and the open flags, kept current by the
  * server's event stream with a poll underneath it, push registration, and the banner that
- * announces a new flag over whichever screen is showing.
+ * announces a new alert over whichever screen is showing. One deterioration is one alert and
+ * one banner, however many rules it tripped (`Flag.alertId`).
  */
 export function NurseProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -72,26 +76,25 @@ export function NurseProvider({ children }: { children: ReactNode }) {
   const [revision, setRevision] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const [push, setPush] = useState<PushRegistration | null>(null);
-  const [banners, setBanners] = useState<Flag[]>([]);
+  const [banners, setBanners] = useState<FlagAlert[]>([]);
   const [acknowledging, setAcknowledging] = useState(false);
   const [acknowledgeError, setAcknowledgeError] = useState<string | null>(null);
   const [active, setActive] = useState(AppState.currentState === 'active');
 
-  const seen = useRef(new Set<string>());
+  /** Ids of the flags and alerts this phone has already shown or been opened on. */
+  const seen = useRef<Set<string>>(new Set());
   const seeded = useRef(false);
   const loading = useRef<Promise<void> | null>(null);
 
-  /** Announces flags this phone has not shown yet. The ones open at launch are not news. */
+  /** Announces alerts this phone has not shown yet. The ones open at launch are not news. */
   const announce = useCallback((open: Flag[]) => {
+    const news = announcements(open, seen.current);
+    seen.current = news.seen;
     if (!seeded.current) {
       seeded.current = true;
-      for (const flag of open) seen.current.add(flag.id);
       return;
     }
-    const fresh = open.filter((flag) => !seen.current.has(flag.id));
-    for (const flag of fresh) seen.current.add(flag.id);
-    const unacknowledged = fresh.filter((flag) => !flag.acknowledgedAt);
-    if (unacknowledged.length > 0) setBanners((current) => [...current, ...unacknowledged]);
+    if (news.alerts.length > 0) setBanners((current) => [...current, ...news.alerts]);
   }, []);
 
   const refresh = useCallback((): Promise<void> => {
@@ -103,10 +106,8 @@ export function NurseProvider({ children }: { children: ReactNode }) {
         setFlags(nextFlags.items);
         setFailure(null);
         announce(nextFlags.items);
-        // A banner follows its flag: acknowledged elsewhere it says so, closed it goes away.
-        setBanners((current) =>
-          current.flatMap((banner) => nextFlags.items.filter((flag) => flag.id === banner.id)),
-        );
+        // A banner follows its alert: acknowledged elsewhere it says so, closed it goes away.
+        setBanners((current) => followAlerts(current, nextFlags.items));
       } catch (error) {
         setFailure(errorMessage(error));
       } finally {
@@ -229,7 +230,7 @@ export function NurseProvider({ children }: { children: ReactNode }) {
     if (launch) open(launch);
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
       const flagId = open(response);
-      if (flagId) setBanners((current) => current.filter((flag) => flag.id !== flagId));
+      if (flagId) setBanners((current) => current.filter((alert) => !alert.flags.some((flag) => flag.id === flagId)));
     });
     return () => subscription.remove();
   }, [router]);
@@ -237,11 +238,13 @@ export function NurseProvider({ children }: { children: ReactNode }) {
   const acknowledge = useCallback(
     async (flagId: string) => {
       const { flag } = await api.acknowledgeFlag(flagId);
-      const swap = (item: Flag) => (item.id === flag.id ? flag : item);
-      setFlags((current) => current?.map(swap) ?? current);
-      setBanners((current) => current.map(swap));
+      // The server acknowledged the whole alert; every list shows that before the refresh lands.
+      setFlags((current) => (current ? withAcknowledgement(current, flag) : current));
+      setBanners((current) => current.flatMap((alert) => flagAlerts(withAcknowledgement(alert.flags, flag))));
       setWorklist((current) =>
-        current ? { ...current, items: current.items.map((item) => ({ ...item, flags: item.flags.map(swap) })) } : current,
+        current
+          ? { ...current, items: current.items.map((item) => ({ ...item, flags: withAcknowledgement(item.flags, flag) })) }
+          : current,
       );
       setRevision((value) => value + 1);
       void refresh();
@@ -255,11 +258,13 @@ export function NurseProvider({ children }: { children: ReactNode }) {
     setBanners((current) => current.slice(1));
   }, []);
 
-  const acknowledgeBanner = async (flag: Flag) => {
+  const acknowledgeBanner = async (alert: FlagAlert) => {
+    const next = alert.waiting[0];
+    if (!next) return;
     setAcknowledging(true);
     setAcknowledgeError(null);
     try {
-      await acknowledge(flag.id);
+      await acknowledge(next.id);
     } catch (error) {
       setAcknowledgeError(errorMessage(error));
     } finally {
@@ -289,17 +294,17 @@ export function NurseProvider({ children }: { children: ReactNode }) {
         >
           <View style={{ width: '100%', maxWidth: 528 }}>
             <PushBanner
-              patient={banner.patient}
-              title={flagTitle(banner.rule, banner.patient)}
-              time={clockTime(banner.openedAt)}
-              body={banner.handoff}
+              patient={banner.lead.patient}
+              title={flagTitle(banner.lead.rule, banner.lead.patient)}
+              time={clockTime(banner.lead.openedAt)}
+              body={banner.lead.handoff}
               acknowledged={banner.acknowledgedAt != null}
               acknowledging={acknowledging}
               error={acknowledgeError}
               onAcknowledge={() => void acknowledgeBanner(banner)}
               onOpen={() => {
                 dismiss();
-                router.push({ pathname: '/nurse/patient/[number]', params: { number: String(banner.patientNumber) } });
+                router.push({ pathname: '/nurse/patient/[number]', params: { number: String(banner.lead.patientNumber) } });
               }}
               onDismiss={dismiss}
             />

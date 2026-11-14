@@ -1,4 +1,4 @@
-import { type Flag, type PatientDetailResponse, patientLabel } from '@triagecam/contracts';
+import { type PatientDetailResponse, flagAlerts, patientLabel } from '@triagecam/contracts';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { type ReactNode, useCallback, useState } from 'react';
 import { Alert, RefreshControl, ScrollView, View, useWindowDimensions } from 'react-native';
@@ -96,8 +96,9 @@ export default function PatientScreen() {
 
   const patient = detail?.patient ?? null;
   const item = worklist?.items.find((entry) => entry.patientNumber === number) ?? null;
-  const openFlags = detail?.flags.filter((flag) => flag.closedAt == null) ?? [];
-  const closedFlags = detail?.flags.filter((flag) => flag.closedAt != null) ?? [];
+  // Alerts, not single flags: the two trend flags of one deterioration are one card, acknowledged once.
+  const openFlags = flagAlerts(detail?.flags.filter((flag) => flag.closedAt == null) ?? []);
+  const closedFlags = flagAlerts(detail?.flags.filter((flag) => flag.closedAt != null) ?? []);
   const intake = patient ? intakeRows(patient, now) : [];
   const sittings = detail ? sittingRows(detail.sittings, now) : [];
   const second = patient
@@ -192,8 +193,8 @@ export default function PatientScreen() {
             {openFlags.length > 0 ? (
               <Section heading="Open flags" count={openFlags.length}>
                 <View style={{ gap: space.space3 }}>
-                  {openFlags.map((flag: Flag) => (
-                    <FlagCard key={flag.id} flag={flag} hidePatient sentence="hide" />
+                  {openFlags.map((alert) => (
+                    <FlagCard key={alert.id} alert={alert} hidePatient sentence="hide" />
                   ))}
                 </View>
               </Section>
@@ -291,8 +292,8 @@ export default function PatientScreen() {
             {closedFlags.length > 0 ? (
               <Section heading="Earlier flags" count={closedFlags.length}>
                 <View style={{ gap: space.space3 }}>
-                  {closedFlags.map((flag) => (
-                    <FlagCard key={flag.id} flag={flag} hidePatient sentence="whenFlagged" />
+                  {closedFlags.map((alert) => (
+                    <FlagCard key={alert.id} alert={alert} hidePatient sentence="whenFlagged" />
                   ))}
                 </View>
               </Section>

@@ -1,4 +1,4 @@
-import type { Flag } from '@triagecam/contracts';
+import type { FlagAlert } from '@triagecam/contracts';
 import { useState } from 'react';
 import { View } from 'react-native';
 
@@ -17,13 +17,14 @@ import { Touchable } from './Touchable';
 import { Text } from './Text';
 
 type Props = {
-  flag: Flag;
+  /** The flags of one alert (`flagAlerts`). The card never shows a single rule's flag alone. */
+  alert: FlagAlert;
   /** Leaves the patient's face and name out, on the patient's own screen. */
   hidePatient?: boolean;
   /** Opens the patient. Left out on the patient's own screen. */
   onOpen?: () => void;
   /**
-   * The flag's handoff sentence is written when the flag opens and does not change after.
+   * The alert's handoff sentence is written when it opens and does not change after.
    * `show` prints it. `whenFlagged` prints it under those words, for a flag that has closed.
    * `hide` leaves it out where the patient's current handoff is printed beside the card.
    */
@@ -31,25 +32,30 @@ type Props = {
 };
 
 /**
- * One flag episode: who, why (the handoff sentence, with the numbers it was raised on), and
- * the acknowledgement, made in place. Acknowledging says "I have seen this"; it does not close
- * the flag, which closes when an observation is back inside the thresholds.
+ * One alert: who, why (a badge for each rule it tripped and the handoff sentence, with the
+ * numbers it was raised on), and the acknowledgement, made in place once for the whole alert.
+ * Acknowledging says "I have seen this"; it does not close the flag, which closes when an
+ * observation is back inside the thresholds.
  */
-export function FlagCard({ flag, hidePatient, onOpen, sentence = 'show' }: Props) {
+export function FlagCard({ alert, hidePatient, onOpen, sentence = 'show' }: Props) {
   const theme = useScopedTheme();
   const { colors, space } = theme;
   const { acknowledge, now } = useNurse();
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
-  const closed = flag.closedAt != null;
-  const waiting = !closed && flag.acknowledgedAt == null;
+  const flag = alert.lead;
+  const closed = alert.closedAt != null;
+  const waiting = alert.waiting.length > 0;
   const overdue = flag.rule === 'overdue';
 
   const press = async () => {
+    // Any one of its flags: the server acknowledges the rest of the alert with it.
+    const next = alert.waiting[0];
+    if (!next) return;
     setBusy(true);
     setFailure(null);
     try {
-      await acknowledge(flag.id);
+      await acknowledge(next.id);
     } catch (error) {
       setFailure(errorMessage(error));
     } finally {
@@ -91,9 +97,11 @@ export function FlagCard({ flag, hidePatient, onOpen, sentence = 'show' }: Props
         </Touchable>
       )}
       <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: space.space3, rowGap: space.space1 }}>
-        <StatusBadge state={overdue ? 'overdue' : 'flag'} label={flagRuleLabel(flag.rule)} />
+        {alert.flags.map((each) => (
+          <StatusBadge key={each.id} state={overdue ? 'overdue' : 'flag'} label={flagRuleLabel(each.rule)} />
+        ))}
         <Text style={[theme.type.caption, { color: colors.inkMuted, fontVariant: ['tabular-nums'] }]}>
-          {closed && flag.closedAt ? `${flagOpenedText(flag, now)}, closed` : flagOpenedText(flag, now)}
+          {closed ? `${flagOpenedText(flag, now)}, closed` : flagOpenedText(flag, now)}
         </Text>
       </View>
       {sentence === 'hide' ? null : (
@@ -104,16 +112,16 @@ export function FlagCard({ flag, hidePatient, onOpen, sentence = 'show' }: Props
           <Text style={[theme.type.bodyTouch, { color: colors.ink }]}>{flag.handoff}</Text>
         </View>
       )}
-      {flag.acknowledgedAt ? (
+      {alert.acknowledgedAt ? (
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.space2 }}>
           <View style={{ paddingTop: 2 }}>
             <Icon name="check" size={18} color={colors.inkMuted} />
           </View>
           <Text style={[theme.type.body, { flex: 1, fontFamily: fonts.sans[500], color: colors.inkMuted }]}>
-            {flagAcknowledgedText(flag, now)}
+            {flagAcknowledgedText(alert, now)}
           </Text>
         </View>
-      ) : closed ? (
+      ) : !waiting ? (
         <Text style={[theme.type.body, { color: colors.inkMuted }]}>Closed without an acknowledgement</Text>
       ) : (
         <Button

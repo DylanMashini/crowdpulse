@@ -1,4 +1,4 @@
-import type { Flag, FlagRule, Patient, Sitting } from '@triagecam/contracts';
+import { type Flag, type FlagAlert, type FlagRule, type Patient, type Sitting, flagAlerts } from '@triagecam/contracts';
 
 import { clockTime, percent, wholeNumber } from '../format.ts';
 import { sourceLabel } from './worklistFormat.ts';
@@ -73,23 +73,80 @@ export function intakeRows(patient: Patient, now: number): IntakeRow[] {
   return rows.filter((row): row is IntakeRow => row !== null);
 }
 
+const isOpen = (flag: Flag) => flag.closedAt == null;
+
 /**
- * Open flags as the Flags tab lists them: the ones nobody has acknowledged first, then the
- * rest. Inside each group trend flags come before overdue ones, and the longest open leads.
+ * Open flags as the Flags tab lists them, gathered into alerts (`Flag.alertId`): the alerts
+ * nobody has acknowledged first, then the rest. Inside each group trend alerts come before
+ * overdue ones, and the longest open leads. One deterioration is one alert, whichever rules
+ * it tripped, so this is also what every count of "to acknowledge" is taken from.
  */
-export function flagGroups(flags: Flag[]): { unacknowledged: Flag[]; acknowledged: Flag[] } {
-  const open = flags.filter((flag) => flag.closedAt == null);
-  const order = (a: Flag, b: Flag) =>
-    Number(a.rule === 'overdue') - Number(b.rule === 'overdue') || a.openedAt.localeCompare(b.openedAt);
+export function flagGroups(flags: Flag[]): { unacknowledged: FlagAlert[]; acknowledged: FlagAlert[] } {
+  const alerts = flagAlerts(flags.filter(isOpen));
+  const order = (a: FlagAlert, b: FlagAlert) =>
+    Number(a.lead.rule === 'overdue') - Number(b.lead.rule === 'overdue') || a.lead.openedAt.localeCompare(b.lead.openedAt);
   return {
-    unacknowledged: open.filter((flag) => flag.acknowledgedAt == null).sort(order),
-    acknowledged: open.filter((flag) => flag.acknowledgedAt != null).sort(order),
+    unacknowledged: alerts.filter((alert) => alert.acknowledgedAt == null).sort(order),
+    acknowledged: alerts.filter((alert) => alert.acknowledgedAt != null).sort(order),
   };
 }
 
+/** How many alerts still need someone: the Flags badge and a worklist card's "to acknowledge". */
+export function alertsToAcknowledge(flags: Flag[]): number {
+  return flagGroups(flags).unacknowledged.length;
+}
+
+/** "1 flag to acknowledge". To the nurse an alert is a flag; null when nothing is waiting. */
+export function toAcknowledgeText(flags: Flag[]): string | null {
+  const waiting = alertsToAcknowledge(flags);
+  return waiting === 0 ? null : waiting === 1 ? '1 flag to acknowledge' : `${waiting} flags to acknowledge`;
+}
+
 /**
- * What a flag is about, for its badge. One patient can have a flag of each rule open at once,
- * with the same handoff sentence, so the badge is what tells them apart.
+ * Which of the open flags are news to this phone. An alert is announced once: when neither
+ * it nor any of its flags has been shown before, and somebody still has to acknowledge it.
+ * `seen` comes back with everything now open added, so the second flag of an alert that
+ * arrives a moment after the first, or an alert opened from a tapped push, is never announced
+ * again.
+ */
+export function announcements(open: Flag[], seen: ReadonlySet<string>): { alerts: FlagAlert[]; seen: Set<string> } {
+  const known = (alert: FlagAlert) => seen.has(alert.id) || alert.flags.some((flag) => seen.has(flag.id));
+  const alerts = flagAlerts(open.filter(isOpen)).filter((alert) => !known(alert) && alert.waiting.length > 0);
+  const next = new Set(seen);
+  for (const flag of open) {
+    next.add(flag.id);
+    next.add(flag.alertId);
+  }
+  return { alerts, seen: next };
+}
+
+/**
+ * Banners brought up to date with the open flags: a banner follows its alert, so acknowledged
+ * elsewhere it says so, and closed it goes away.
+ */
+export function followAlerts(banners: FlagAlert[], open: Flag[]): FlagAlert[] {
+  const alerts = flagAlerts(open.filter(isOpen));
+  return banners.flatMap((banner) => alerts.filter((alert) => alert.id === banner.id));
+}
+
+/**
+ * The flags as they stand after the server answered an acknowledgement with `acknowledged`.
+ * The server acknowledges the whole alert in that one request: the open flags of the same
+ * alert that nobody had acknowledged take the same time and name. Other alerts are untouched.
+ */
+export function withAcknowledgement(flags: Flag[], acknowledged: Flag): Flag[] {
+  return flags.map((flag) => {
+    if (flag.id === acknowledged.id) return acknowledged;
+    const covered = flag.alertId === acknowledged.alertId && flag.closedAt == null && flag.acknowledgedAt == null;
+    return covered
+      ? { ...flag, acknowledgedAt: acknowledged.acknowledgedAt, acknowledgedBy: acknowledged.acknowledgedBy }
+      : flag;
+  });
+}
+
+/**
+ * What a flag is about, for its badge. An alert that tripped both trend rules carries both
+ * badges on its one card.
  */
 export function flagRuleLabel(rule: FlagRule): string {
   switch (rule) {

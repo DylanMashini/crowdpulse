@@ -1,6 +1,7 @@
 import { patientLabel, type WorklistItem } from '@triagecam/contracts';
 import { View } from 'react-native';
 
+import { toAcknowledgeText } from '@/lib/nurse/nurseFormat';
 import { lastObservedText, sourceLabel, statusText } from '@/lib/nurse/worklistFormat';
 import { fonts } from '@/theme';
 
@@ -27,7 +28,8 @@ export function WorklistCard({ item, onPress }: { item: WorklistItem; onPress: (
   const source = sourceLabel(item.source);
   // The badge already carries the age for observed and overdue patients.
   const showsLastObserved = item.state === 'flag' || item.state === 'no-reading' || item.sittingInProgress;
-  const waitingFlags = item.flags.filter((flag) => flag.acknowledgedAt == null).length;
+  // Counted in alerts: one deterioration is one thing to acknowledge, whichever rules it tripped.
+  const toAcknowledge = toAcknowledgeText(item.flags);
 
   return (
     <Touchable
@@ -100,11 +102,7 @@ export function WorklistCard({ item, onPress }: { item: WorklistItem; onPress: (
           <Text style={[theme.type.caption, { color: colors.inkMuted }]}>Not scored</Text>
         )}
         {source ? <ProvenanceTag kind="recording" label={source} /> : null}
-        {waitingFlags > 0 ? (
-          <Text style={[theme.type.label, { color: colors.flag }]}>
-            {waitingFlags === 1 ? '1 flag to acknowledge' : `${waitingFlags} flags to acknowledge`}
-          </Text>
-        ) : null}
+        {toAcknowledge ? <Text style={[theme.type.label, { color: colors.flag }]}>{toAcknowledge}</Text> : null}
       </View>
     </Touchable>
   );

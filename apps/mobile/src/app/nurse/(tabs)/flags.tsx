@@ -1,4 +1,4 @@
-import type { Flag } from '@triagecam/contracts';
+import { type Flag, type FlagAlert, flagAlerts } from '@triagecam/contracts';
 import { useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { View } from 'react-native';
@@ -17,7 +17,7 @@ import { flagGroups } from '@/lib/nurse/nurseFormat';
 /** How many closed flags the tab keeps in view under the open ones. */
 const RECENTLY_CLOSED = 10;
 
-/** Every open flag, the ones nobody has acknowledged first, then the last few that closed. */
+/** Every open alert, the ones nobody has acknowledged first, then the last few flags that closed. */
 export default function Flags() {
   const { space } = useScopedTheme();
   const router = useRouter();
@@ -39,8 +39,8 @@ export default function Flags() {
     await Promise.all([refresh(), loadClosed()]);
   };
 
-  const open = (flag: Flag) =>
-    router.push({ pathname: '/nurse/patient/[number]', params: { number: String(flag.patientNumber) } });
+  const open = (alert: FlagAlert) =>
+    router.push({ pathname: '/nurse/patient/[number]', params: { number: String(alert.lead.patientNumber) } });
 
   const groups = flags ? flagGroups(flags) : null;
   const waiting = groups?.unacknowledged.length ?? 0;
@@ -52,10 +52,10 @@ export default function Flags() {
         ? 'All acknowledged'
         : 'None open';
 
-  const list = (items: Flag[]) => (
+  const list = (items: FlagAlert[]) => (
     <View style={{ gap: space.space3 }}>
-      {items.map((flag) => (
-        <FlagCard key={flag.id} flag={flag} onOpen={() => open(flag)} />
+      {items.map((alert) => (
+        <FlagCard key={alert.id} alert={alert} onOpen={() => open(alert)} />
       ))}
     </View>
   );
@@ -91,7 +91,7 @@ export default function Flags() {
         </>
       )}
 
-      {closed.length > 0 ? <Section heading="Recently closed">{list(closed)}</Section> : null}
+      {closed.length > 0 ? <Section heading="Recently closed">{list(flagAlerts(closed))}</Section> : null}
     </TabScreen>
   );
 }
