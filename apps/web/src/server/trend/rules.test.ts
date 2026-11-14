@@ -270,6 +270,51 @@ describe("snapshotPatient", () => {
     assert.equal(interrupted.rules.baseline_shift.met, true);
   });
 
+  it("scores a rise against each vital's own baseline, not the check-in sitting (QA round 3, N1)", () => {
+    const weak = (minutes: number, bpm: number, breathing: number | null, kind: "check_in" | "recheck" = "check_in"): SittingFacts => ({
+      ...sitting(minutes, null, breathing),
+      kind,
+      lowConfidenceHeartRate: bpm,
+    });
+    const recheck = (minutes: number, bpm: number | null, breathing: number | null): SittingFacts => ({ ...sitting(minutes, bpm, breathing), kind: "recheck" });
+
+    // A lower-confidence check-in with breathing, then a steady 100 and 101: nothing rose.
+    const steady = [weak(2, 101.5, 16), recheck(10, 100, 16), recheck(20, 101, 16)];
+    const result = snapshot(steady, 21);
+    assert.deepEqual(result.rules.score_rise, { met: false, cleared: true });
+    assert.equal(result.rules.baseline_shift.met, false);
+    assert.equal(result.scoreAtCheckIn, 1);
+    assert.equal(result.flagDetail.scoreAtCheckIn, 1);
+    assert.equal(result.flagDetail.scoreNow, 1);
+    assert.equal(scoreRise(steady).met, false);
+    // The same readings after a check-in that read 101 outright give the same answer.
+    assert.deepEqual(snapshot([sitting(2, 101, 16), recheck(10, 100, 16), recheck(20, 101, 16)], 21).rules.score_rise, result.rules.score_rise);
+
+    // A check-in with breathing and no pulse at all is the same case.
+    assert.equal(scoreRise([sitting(2, null, 16), recheck(10, 100, 16), recheck(20, 101, 16)]).met, false);
+
+    // A real rise after the re-check baseline still flags: 80, then 115 and 116.
+    const rose = [weak(2, 101.5, 16), recheck(10, 80, 16), recheck(20, 115, 16), recheck(30, 116, 16)];
+    assert.deepEqual(snapshot(rose.slice(0, 3), 21).rules.score_rise, { met: false, cleared: false });
+    const flagged = snapshot(rose, 31);
+    assert.deepEqual(flagged.rules.score_rise, { met: true, cleared: false });
+    assert.equal(flagged.flagDetail.scoreAtCheckIn, 0);
+    assert.equal(flagged.flagDetail.scoreNow, 2);
+    // And so does breathing rising against the check-in's own breathing while pulse holds at its re-check baseline.
+    assert.equal(scoreRise([weak(2, 101.5, 16), recheck(10, 80, 16), recheck(20, 81, 22), recheck(30, 80, 23)]).met, true);
+
+    // A lower-confidence re-check moves nothing: no baseline, no score, no flag, before or after.
+    const interrupted = snapshot([weak(2, 101.5, 16), weak(6, 118, 16, "recheck"), recheck(10, 100, 16), weak(15, 125, 16, "recheck"), recheck(20, 101, 16)], 21);
+    assert.equal(interrupted.pulse.base, 100);
+    assert.equal(interrupted.scoreAtCheckIn, 1);
+    assert.deepEqual(interrupted.rules.score_rise, { met: false, cleared: true });
+    assert.equal(interrupted.rules.baseline_shift.met, false);
+    const weakLast = snapshot([weak(2, 101.5, 16), recheck(10, 80, 16), weak(20, 118, 16, "recheck"), weak(30, 119, 16, "recheck")], 31);
+    assert.equal(weakLast.rules.score_rise.met, false);
+    assert.equal(weakLast.pulse.base, 80);
+    assert.equal(weakLast.score, 0);
+  });
+
   it("gives breathing its own baseline too, and labels a check-in baseline as nothing but the check-in", () => {
     const recheck = (minutes: number, bpm: number | null, breathing: number | null): SittingFacts => ({ ...sitting(minutes, bpm, breathing), kind: "recheck" });
     const checkIn: SittingFacts = { ...sitting(2, 72, null), kind: "check_in" };

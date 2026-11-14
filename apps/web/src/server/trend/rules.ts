@@ -69,7 +69,7 @@ const wholeMinutes = (fromMs: number, toMs: number) => Math.max(0, Math.floor((t
 
 /** Everything derived from a patient's sittings that the worklist, the flags and the handoff sentence use. */
 export type PatientSnapshot = {
-  /** The first observation: where the visit's trends start, and what the score is compared with. */
+  /** The first observation: where the visit's trends start. */
   baseline: FinishedSitting | null;
   /**
    * The first sitting with a heart rate that counts: what pulse is measured against. It is a
@@ -98,6 +98,10 @@ export type PatientSnapshot = {
   pulse: Trend;
   breathing: Trend;
   score: Score | null;
+  /**
+   * The partial score of the two baselines above, which is what a rise is measured from. It is
+   * the check-in's own score unless a parameter's baseline had to come from a re-check.
+   */
   scoreAtCheckIn: Score | null;
   parametersMeasured: 0 | 1 | 2;
   source: CaptureSource | null;
@@ -125,7 +129,7 @@ export function snapshotPatient(sittings: SittingFacts[], createdAt: Date, setti
       ? wholeMinutes(baseline.endedAt.getTime(), latestObservation.endedAt.getTime())
       : null;
   const minutesWaiting = wholeMinutes(createdAt.getTime(), now.getTime());
-  const scoreAtCheckIn = baseline ? scoreOf(baseline) : null;
+  const scoreAtCheckIn = partialScore(pulseBaseline?.heartRate ?? null, breathingBaseline?.breathingRate ?? null);
 
   // Said only when the baseline is not from a check-in sitting, so the screens can say where it is from.
   const baseAt = (from: FinishedSitting | null) => (from && from.kind === "recheck" ? { baseAt: from.endedAt.toISOString() } : {});
@@ -207,10 +211,23 @@ function persisting(observations: SittingFacts[], raised: (observation: SittingF
   return { met: previous !== undefined && raised(previous), cleared: false };
 }
 
-/** The partial score has risen since check-in and the rise persists across two consecutive observations. */
+/** Each parameter's baseline: the first observation that gave it. Both trend rules measure from these. */
+function baselines(observations: SittingFacts[]): { pulse: number | null; breathing: number | null } {
+  return {
+    pulse: observations.find((observation) => observation.heartRate !== null)?.heartRate ?? null,
+    breathing: observations.find((observation) => observation.breathingRate !== null)?.breathingRate ?? null,
+  };
+}
+
+/**
+ * The partial score is above the score of the baselines and the rise persists across two
+ * consecutive observations. The baselines are per parameter, as in `baselineShift`: scored
+ * against the first observation alone, a check-in that read breathing but no pulse that counts
+ * would turn every later pulse in a raised band into a rise, with nothing to have risen from.
+ */
 export function scoreRise(observations: SittingFacts[]): RuleStatus {
-  const baseline = observations[0];
-  const baselineScore = baseline ? (scoreOf(baseline) ?? 0) : 0;
+  const base = baselines(observations);
+  const baselineScore = partialScore(base.pulse, base.breathing) ?? 0;
   return persisting(observations, (observation) => (scoreOf(observation) ?? 0) > baselineScore);
 }
 
@@ -224,15 +241,13 @@ export function baselineShift(
   observations: SittingFacts[],
   thresholds: Pick<Settings, "pulseDeltaBpm" | "breathingDeltaPerMin">,
 ): RuleStatus {
-  const pulseBase = observations.find((observation) => observation.heartRate !== null)?.heartRate;
-  const breathingBase = observations.find((observation) => observation.breathingRate !== null)?.breathingRate;
-  const moved = (now: number | null, base: number | null | undefined, limit: number) =>
-    now !== null && base != null && Math.abs(now - base) > limit;
+  const base = baselines(observations);
+  const moved = (now: number | null, from: number | null, limit: number) => now !== null && from !== null && Math.abs(now - from) > limit;
   return persisting(
     observations,
     (observation) =>
-      moved(observation.heartRate, pulseBase, thresholds.pulseDeltaBpm) ||
-      moved(observation.breathingRate, breathingBase, thresholds.breathingDeltaPerMin),
+      moved(observation.heartRate, base.pulse, thresholds.pulseDeltaBpm) ||
+      moved(observation.breathingRate, base.breathing, thresholds.breathingDeltaPerMin),
   );
 }
 
