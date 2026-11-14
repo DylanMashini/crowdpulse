@@ -84,7 +84,7 @@ function summaryContent(value: SummaryValue, endedAt: string, lowConfidence = fa
   return { state: 'valid', value: rate(value.value), age, coverage: value.coverage };
 }
 
-function Vital({ label, icon, unit, content, tag }: { label: string; icon: IconName; unit: string; content: ReadoutContent; tag: ReturnType<typeof provenanceOf> }) {
+function Vital({ label, icon, unit, content, tag, qualifier }: { label: string; icon: IconName; unit: string; content: ReadoutContent; tag: ReturnType<typeof provenanceOf>; qualifier?: string }) {
   return (
     <div className="flex flex-col gap-3">
       <Readout
@@ -98,6 +98,7 @@ function Vital({ label, icon, unit, content, tag }: { label: string; icon: IconN
         reason={content.reason}
         tag={tag.kind}
         tagLabel={tag.label}
+        qualifier={qualifier}
       />
       <QualityMeter value={content.coverage} label="Coverage, share of seconds with a reading" />
     </div>
@@ -162,7 +163,7 @@ export function SittingView({ sitting, patient, readings, serverNow }: SittingVi
         </div>
 
         <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2">
-          <Vital label="Heart rate" icon="pulse" unit="bpm" content={heart} tag={lowConfidence ? { kind: 'experimental', label: LOWER_CONFIDENCE } : tag} />
+          <Vital label="Heart rate" icon="pulse" unit="bpm" content={heart} tag={tag} qualifier={lowConfidence ? LOWER_CONFIDENCE : undefined} />
           <Vital label="Breathing rate" icon="breath" unit="breaths per min" content={breathing} tag={tag} />
         </div>
 
