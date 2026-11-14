@@ -281,7 +281,7 @@ Text is trimmed on the way in and an empty string is stored as null. `intakeComp
 
 **`PatientRef`** `{ number, name, photoUpdatedAt }` is enough to draw an avatar and a name. Every payload about one patient carries it as `patient`, beside the older `patientNumber`: `WorklistItem`, `Flag`, the `sitting_started` and `patient_changed` stream events, and a matched `MatchFaceResponse`. Clients show the photo at `routes.patientPhoto(number) + '?v=' + photoUpdatedAt` (the phone adds its bearer header) and initials when `photoUpdatedAt` is null.
 
-**The profile photo** is taken once per patient, three ways, and is the only picture the system stores: (1) automatically, by the server, from the live-view frames during a sitting for a patient with no photo: about twice a second it looks for a face, and the first frame with a clear one is cropped and stored; (2) by the phone, which sends its own `captureFaceCrop()` once the viewfinder is measuring during a check-in sitting; it is a tight face box, so it is kept only when (1) has not stored a portrait; (3) by staff, with "Retake photo" on the check-in page (the capture route), which always replaces. "Remove" (`DELETE`) is final until staff take a photo again: the server remembers the removal in memory and neither (1) nor (2) stores a new one.
+**The profile photo** is taken once per patient, three ways, and is the only picture the system stores: (1) automatically, by the server, from the live-view frames during a sitting for a patient with no photo: about twice a second it looks for a face, and the first frame with a clear one is cropped and stored; (2) by the phone, which sends its own `captureFaceCrop()` once the viewfinder is measuring during a check-in sitting; it is a tight face box, so it is kept only when (1) has not stored a portrait; (3) by staff, with "Retake photo" on the check-in page (the capture route), which always replaces. "Remove" (`DELETE`) is final until staff take a photo again: the removal is recorded on the patient (`patients.photo_removed_at`), so it holds across a server restart, and neither (1) nor (2) stores a new one. A photo staff take clears it.
 
 ### Sittings
 
@@ -292,16 +292,13 @@ The order of calls for one sitting is in section 6.
 | `POST /api/sittings` | staff | `StartSittingRequest` `{ patientNumber, deviceId, kind: 'check_in' \| 'recheck', source, clientTime }` | 201 `StartSittingResponse` `{ sitting, serverTime }`. The server stores `clockOffsetMs = server now - clientTime`. 404 unknown patient or device, 409 `patient_discharged`. An unfinished sitting of the same patient is ended without a summary first. |
 | `POST /api/sittings/:id/readings` | staff | `PostReadingsRequest` `{ readings: Reading[] }`, 1 to 30 | 200 `PostReadingsResponse` `{ accepted }`. Once per second. A reading whose `t` is already stored is skipped, so a retry is safe. 409 `sitting_finished`. |
 | `POST /api/sittings/:id/finish` | staff | `FinishSittingRequest` `{ endedAt, summary: SittingSummary }` | 200 `SittingResponse` `{ sitting }`. Stores the summary and beat intervals, then runs the trend rules. Calling it again returns the stored sitting. |
-| `GET /api/sittings/:id` | staff | none | 200 `SittingDetailResponse` `{ sitting, readings, referenceReadings, beatIntervals, meanAbsoluteErrorBpm, pairedReadings, within5BpmShare }` |
+| `GET /api/sittings/:id` | staff | none | 200 `SittingDetailResponse` `{ sitting, readings, beatIntervals }` |
 | `PUT /api/sittings/:id/file` | staff | Body is the sitting file itself, `Content-Type: application/x-ndjson`, at most 5 MB | 204. Saved as `<SITTING_FILES_DIR>/<id>.jsonl`. Development and pilot only: 403 `forbidden` when `NODE_ENV` is production. 413 `payload_too_large`. |
-| `POST /api/sittings/:id/reference` | staff | `PostReferenceRequest` `{ readings: ReferenceReading[] }`, 1 to 120 | 200 `PostReadingsResponse` `{ accepted }`. Allowed after the sitting is finished (a manual breath count arrives late). |
 
 - `Reading` (phone to server): `{ t, elapsedMs, heartRate: Estimate, breathingRate: Estimate }`. `t` is the phone's wall clock; the server stores `t + clockOffsetMs`. `Estimate` is exactly the engine's (section 2), with `value` in bpm or breaths per minute.
 - `StoredReading` (server to dashboard): `{ t, heartRate, breathingRate }` with `t` on the server clock.
 - `Sitting`: `{ id, patientNumber, deviceId, kind, source, startedAt, endedAt, clockOffsetMs, summary }`. `startedAt` and `endedAt` are on the server clock. `summary` is null until finished, then `{ durationSeconds, heartRate, breathingRate, rmssd, sdnn, timeToFirstReadingSeconds, longestDropoutSeconds, frameCount, droppedFrames }` where the four vitals are `{ value, coverage }`.
 - `source` is `camera`, `simulated`, `stub` or `recording` (a replayed sitting file). Anything but `camera` is labelled on every screen that shows the sitting.
-- `ReferenceReading`: `{ t, heartRate, rrIntervalsMs, breathingRate?, source: 'chest_strap' \| 'oximeter' \| 'manual' }`. `t` is the laptop's clock, which is the server clock. `rrIntervalsMs` is empty when the device reports none.
-- In `SittingDetailResponse`, a **paired reading** is a valid heart-rate reading with a reference sample within 1.5 s of it; the three agreement fields are null or 0 when nothing pairs.
 
 ### Worklist
 
@@ -358,15 +355,19 @@ Every waiting patient appears once, in rank order (`rank` 1 first). Clients do n
 |---|---|---|---|
 | `GET /api/statistics` | staff | Query `StatisticsQuery`: `from`, `to` (ISO 8601 UTC). Defaults: start of the server's local day, and now. | 200 `Statistics` |
 
+What the waiting room did in the range, from data the system already holds. Nothing here compares the camera with another device: accuracy against contact sensors is measured on public recordings and shown on the landing page.
+
 | Field | Meaning |
 |---|---|
-| `totals` | `patientsWaiting`, `patientsDischarged`, `sittings`, `sittingsWithReference`, `openFlags`, `personHours` (sum over patients of time spent waiting inside the range) |
-| `heartRate` | `Agreement` over every paired reading in the range: `pairedReadings`, `meanAbsoluteErrorBpm`, `biasBpm` (mean of estimate minus reference), `within5BpmShare` |
-| `sittings` | `attempted` (finished sittings), `withReading`, `accurateAcceptedShare` (of attempted sittings that have a reference, the share whose summary heart rate is within 5 bpm of the reference mean; no reading counts as a miss), `meanCoverage`, `medianTimeToFirstReadingSeconds`, `longestDropoutSeconds` |
-| `flags` | `episodes` opened in the range, `episodesPerPersonHour`, `acknowledged`, `medianMinutesToAcknowledge` |
-| `perPatient` | One `PatientStatistics` per patient with a sitting in the range: the `Agreement` fields plus `patientNumber`, `sittings`, `coverage` |
+| `recheckIntervalMin` | The setting, to read the cadence against |
+| `patients` | `seen` (in the waiting room at any moment of the range), `arrived`, `discharged`, `medianMinutesToFirstObservation` (arrival to the end of the first observation, patients who arrived in the range), `medianMinutesToDischarge` |
+| `waitingNow` | The room at `generatedAt`, not limited to the range: `patients`, `byState` (a count per tile state), `medianMinutesWaiting`, `longestMinutesWaiting`, `medianMinutesSinceObserved`, `longestMinutesSinceObserved` (since arrival for a patient not yet observed) |
+| `sittings` | Finished sittings started in the range: `finished`, `withReading` (the observations), `checkIns`, `rechecks`, `meanPerPatient`, `medianMinutesBetweenObservations`, `meanHeartRateCoverage`, `meanBreathingRateCoverage`, `medianTimeToFirstReadingSeconds` |
+| `heartRate`, `breathingRate` | `RateDistribution` of the sitting summaries: `sittings`, `median`, `lowest`, `highest`, and `bins` `{ from, to, sittings }`. Bins are whole numbers, both ends inclusive, contiguous, and a rate is binned after rounding. Pulse bins are tens from 41 (51 to 90 is always present); breathing bins are threes from 9 (12 to 20 is always present). Empty when no sitting gave the rate. |
+| `flags` | `raised` in the range, `byRule` (a count per `FlagRule`), `acknowledged`, `medianMinutesToAcknowledge`, and at `generatedAt`: `openNow`, `unacknowledgedNow` |
+| `perPatient` | One `PatientStatistics` per patient seen, waiting patients first, then longest in the room: `patientNumber`, `patient` (`PatientRef`), `status`, `state` (null once discharged), `arrivedAt`, `dischargedAt`, `minutesInRoom`, `minutesSinceObserved`, `sittings` and `observations` (in the range), `pulse` and `breathing` (`Trend`, as on the worklist), `heartRates` (every observation's, oldest first), `score`, `flags` (raised in the range) |
 
-A share or mean with nothing under it is null, never 0. Sittings whose source is `stub` are left out of every number here.
+A median or mean with nothing under it is null, never 0. Sittings whose source is `stub` are left out of every number here. Values are sent unrounded; screens round them (`apps/web/src/lib/format.ts`).
 
 ### Face match
 
@@ -463,6 +464,7 @@ List routes take `limit` (1 to 200, default 50) and `cursor`, and return `{ item
 |---|---|
 | Heart rate, pulse | Beats per minute (bpm), reported 42 to 180 |
 | Breathing rate | Breaths per minute |
+| Rates on screen | Rates travel as the engine computed them (71.763824). Every screen rounds to a whole number and prints the unit: "72 bpm", "16 /min" (web: `apps/web/src/lib/format.ts`). A change is the difference of the two rounded numbers. |
 | RMSSD, SDNN, beat intervals | Milliseconds |
 | Quality, coverage, confidence, shares | 0 to 1. Screens show a share as a percentage. |
 | Region colour | Mean 8-bit channel value, 0 to 255 |
@@ -484,7 +486,7 @@ List routes take `limit` (1 to 200, default 50) and `cursor`, and return `{ item
 7. Once the viewfinder is measuring: `captureFaceCrop()`, then `PUT /api/patients/:number/photo` (check-in sittings), and `POST /api/patients/:number/face` if the patient opted in to face match and is not enrolled.
 8. In development: `PUT /api/sittings/:id/file` with the file at `fileUri`, then `deleteSittingFile(fileUri)`.
 
-The dashboard's check-in page follows the same sitting through `GET /api/stream` (`sitting_started`, `reading`, `sitting_finished`) and posts reference samples to `/api/sittings/:id/reference`.
+The dashboard's check-in page follows the same sitting through `GET /api/stream` (`sitting_started`, `reading`, `sitting_finished`).
 
 ### Observations, baseline and score
 
@@ -539,16 +541,17 @@ Postgres 17 on this Mac, database `triagecam`, `DATABASE_URL=postgres://localhos
 | `email_verification_tokens` | `user_id`, `token_hash` (unique), `expires_at` |
 | `sessions` | `token_hash` (unique), `user_id`, `kind` web or mobile, `expires_at` |
 | `devices` | `user_id`, `role` camera or nurse, `label`, `expo_push_token`, `last_seen_at` |
-| `patients` | `number` (identity, unique), `status`, `created_at`, `discharged_at`, `face_opt_in`, and intake: `name`, `date_of_birth` (date), `sex` (enum `patient_sex`), `reason_for_visit`, `pain_score` (smallint), `allergies`, `notes`, `intake_completed_at`, `photo_updated_at`. Every intake column is nullable. Renamed from `tickets` by migration `0001_patients`; `sittings`, `readings`, `flags` and `face_embeddings` point at it through `patient_id`. |
+| `patients` | `number` (identity, unique), `status`, `created_at`, `discharged_at`, `face_opt_in`, and intake: `name`, `date_of_birth` (date), `sex` (enum `patient_sex`), `reason_for_visit`, `pain_score` (smallint), `allergies`, `notes`, `intake_completed_at`, `photo_updated_at`, `photo_removed_at` (set when staff remove the photo, cleared when staff take one; migration `0003_photo_removed_at`). Every intake column is nullable. Renamed from `tickets` by migration `0001_patients`; `sittings`, `readings`, `flags` and `face_embeddings` point at it through `patient_id`. |
 | `patient_photos` | One row per patient with a photo: `patient_id` (primary key), `jpeg bytea` (a 384 px square), `width`, `height`, `created_at`. Kept out of `patients` so listing patients never reads image bytes. |
 | `sittings` | `patient_id`, `device_id`, `kind`, `source`, `started_at`, `ended_at`, `clock_offset_ms`, and the summary: `duration_seconds`, `heart_rate`, `heart_rate_coverage`, `breathing_rate`, `breathing_rate_coverage`, `rmssd`, `rmssd_coverage`, `sdnn`, `sdnn_coverage`, `time_to_first_reading_seconds`, `longest_dropout_seconds`, `frame_count`, `dropped_frames` |
 | `readings` | `sitting_id`, `patient_id`, `t`, then the heart-rate estimate as `heart_rate`, `state`, `reason`, `quality`, `coverage`, `age_ms` and the breathing estimate as `breathing_rate`, `breathing_state`, `breathing_reason`, `breathing_quality`, `breathing_coverage`, `breathing_age_ms`. Unique on (`sitting_id`, `t`). |
 | `beat_intervals` | One row per sitting: `intervals_ms real[]` and `beat_times_ms real[]`, parallel arrays |
-| `reference_readings` | `sitting_id`, `t`, `heart_rate`, `rr_intervals_ms real[]`, `breathing_rate`, `source` |
 | `flags` | `patient_id`, `rule`, `opened_at`, `closed_at`, `detail jsonb` (`FlagDetail`), `last_notified_at`. One open flag per patient and rule. |
 | `acknowledgements` | `flag_id`, `user_id`, `at`. One per flag and user. |
 | `face_embeddings` | `patient_id`, `vector real[]` (L2-normalised), `model`, `created_at` |
 | `settings` | Single row, `id` 1: the `Settings` fields and `updated_at` |
+
+`reference_readings` and its `reference_source` enum were dropped by migration `0002_drop_reference_readings`: the product has no reference device.
 
 All times are `timestamptz` on the server clock. No table stores video. The only stored picture is the profile photo in `patient_photos`.
 
