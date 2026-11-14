@@ -254,18 +254,28 @@ function Results({ data }: { data: Statistics }) {
         </Panel>
 
         <Panel heading="Flags">
+          {/* Counted as the worklist and the nurse app count them: one deterioration is one flag. */}
           <dl>
-            {RULES.map(({ rule, label }) => (
-              <Line key={rule} label={label}>
-                {flags.byRule[rule]}
-              </Line>
-            ))}
+            <Line label="Flags raised">{flags.raised}</Line>
             <Line label="Acknowledged">{flags.raised === 0 ? none('No flag raised') : `${flags.acknowledged} of ${flags.raised}`}</Line>
             <Line label="Median time to acknowledge">{orNone(flags.medianMinutesToAcknowledge, minutes, 'None acknowledged')}</Line>
             <Line label="Open now, not acknowledged">
               {flags.unacknowledgedNow} of {flags.openNow}
             </Line>
           </dl>
+          <h3 id="rules-tripped-heading" className="type-label mt-5 mb-2 text-ink-muted">
+            Rules that tripped
+          </h3>
+          <dl aria-labelledby="rules-tripped-heading">
+            {RULES.map(({ rule, label }) => (
+              <Line key={rule} label={label}>
+                {flags.byRule[rule]}
+              </Line>
+            ))}
+          </dl>
+          <p className="type-caption mt-3 text-ink-muted">
+            One flag can trip both trend rules, so these can add up to more than the flags raised.
+          </p>
         </Panel>
       </div>
 
