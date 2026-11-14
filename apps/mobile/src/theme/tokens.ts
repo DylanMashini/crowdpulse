@@ -173,7 +173,7 @@ export const radius = {
 export const size = {
   "controlMd": 36,
   "controlTouch": 48,
-  "navWidth": 216,
+  "navWidth": 240,
   "phoneWidth": 390
 } as const;
 

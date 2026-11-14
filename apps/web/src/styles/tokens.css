@@ -55,7 +55,7 @@
   --space-8: 64px;
   --control-md: 36px;
   --control-touch: 48px;
-  --nav-width: 216px;
+  --nav-width: 240px;
   --phone-width: 390px;
   color-scheme: light;
 }
@@ -182,7 +182,7 @@
   --spacing-8: 64px;
   --spacing-control-md: 36px;
   --spacing-control-touch: 48px;
-  --spacing-nav: 216px;
+  --spacing-nav: 240px;
   --spacing-phone: 390px;
 
   --radius-sm: 4px;
