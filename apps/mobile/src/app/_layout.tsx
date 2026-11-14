@@ -1,19 +1,24 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View } from 'react-native';
+import { Appearance, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/Button';
 import { Notice } from '@/components/Notice';
-import { SessionProvider, useSession } from '@/lib/session/SessionProvider';
-import { fonts, useTheme } from '@/theme';
 import { Text } from '@/components/Text';
+import { Wordmark } from '@/components/Wordmark';
+import { SessionProvider, useSession } from '@/lib/session/SessionProvider';
+import { useTheme } from '@/theme';
+
+// Night Shift is dark only. This makes what iOS draws (the tab bar's material, alerts, the
+// keyboard, the refresh spinner) dark in both device appearances, to match what the app draws.
+Appearance.setColorScheme('dark');
 
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <SessionProvider>
-        <StatusBar style="auto" />
+        <StatusBar style="light" />
         <RootNavigator />
       </SessionProvider>
     </SafeAreaProvider>
@@ -31,24 +36,23 @@ function RootNavigator() {
           flex: 1,
           justifyContent: 'center',
           padding: theme.space.space4,
-          gap: theme.space.space5,
-          backgroundColor: theme.colors.surface,
+          gap: theme.space.space6,
+          backgroundColor: theme.colors.surface0,
         }}
       >
-        <View style={{ gap: theme.space.space1 }}>
-          <Text style={[theme.type.title, { fontFamily: fonts.sans[600], color: theme.colors.ink }]}>Triage Cam</Text>
-          <Text style={[theme.type.bodyTouch, { color: theme.colors.inkMuted }]}>Vitals station</Text>
+        <View style={{ width: '100%', maxWidth: 560, alignSelf: 'center', gap: theme.space.space6 }}>
+          <Wordmark />
+          {state.status === 'loading' ? (
+            <Text accessibilityLiveRegion="polite" style={[theme.type.body, { color: theme.colors.inkMuted }]}>
+              Checking your sign-in
+            </Text>
+          ) : (
+            <Notice title="Your sign-in could not be checked" body={state.message}>
+              <Button variant="primary" block label="Try again" onPress={retry} />
+              <Button variant="quiet" block label="Sign out" onPress={() => void signOut()} />
+            </Notice>
+          )}
         </View>
-        {state.status === 'loading' ? (
-          <Text accessibilityLiveRegion="polite" style={[theme.type.bodyTouch, { color: theme.colors.inkMuted }]}>
-            Checking your sign-in
-          </Text>
-        ) : (
-          <Notice title="Your sign-in could not be checked" body={state.message}>
-            <Button variant="primary" block label="Try again" onPress={retry} />
-            <Button variant="quiet" block label="Sign out" onPress={() => void signOut()} />
-          </Notice>
-        )}
       </View>
     );
   }
@@ -56,7 +60,7 @@ function RootNavigator() {
   const signedIn = state.status === 'signedIn';
   const role = signedIn ? (state.device?.role ?? null) : null;
   return (
-    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.surface } }}>
+    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.surface0 } }}>
       <Stack.Screen name="index" />
       <Stack.Protected guard={!signedIn}>
         <Stack.Screen name="sign-in" />
