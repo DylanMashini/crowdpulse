@@ -115,10 +115,34 @@ export const SittingSummary = z.object({
   beatIntervals: z.array(BeatInterval).max(600),
   timeToFirstReadingSeconds: z.number().nonnegative().nullable(),
   longestDropoutSeconds: z.number().nonnegative(),
-  /** Null when there is no heart rate. Left out by builds from before it existed: read as `normal`. */
+  /**
+   * Null when there is no heart rate. Left out by builds from before it existed: the server
+   * then works it out from `heartRate.coverage` and the duration (`summaryHeartRateConfidence`).
+   */
   heartRateConfidence: HeartRateConfidence.nullable().optional(),
 });
 export type SittingSummary = z.infer<typeof SittingSummary>;
 
 /** Whether a heart rate with this confidence is one to show as lower confidence and leave out of trends. */
 export const isLowConfidence = (confidence: HeartRateConfidence | null | undefined): boolean => confidence === 'low';
+
+/** A sitting's heart rate is `normal` only with this many valid one-second readings (the engine's `minimumUncorroboratedReadings`). */
+export const MIN_READINGS_FOR_NORMAL_CONFIDENCE = 10;
+
+/**
+ * The confidence of a summary's heart rate, whether or not the phone sent one. A stated
+ * `heartRateConfidence` always wins. A build of the capture module from before the field
+ * leaves it out, and then the engine's own rule is applied to what the summary does carry:
+ * the engine makes one reading a second, so `coverage` times the whole seconds of the sitting
+ * is how many readings were valid, and fewer than ten is `low`. Null when there is no heart rate.
+ */
+export function summaryHeartRateConfidence(
+  summary: Pick<SittingSummary, 'durationSeconds' | 'heartRate' | 'heartRateConfidence'>,
+): HeartRateConfidence | null {
+  if (summary.heartRate.value === null) return null;
+  if (summary.heartRateConfidence != null) return summary.heartRateConfidence;
+  // 59.98 s of frames is 59 one-second readings; the small allowance is for a duration that lost digits on the way.
+  const readings = Math.floor(summary.durationSeconds + 1e-6);
+  const valid = Math.round(summary.heartRate.coverage * readings);
+  return valid < MIN_READINGS_FOR_NORMAL_CONFIDENCE ? 'low' : 'normal';
+}

@@ -18,6 +18,8 @@ import {
   defaultSettings,
   byFlagRule,
   isLowConfidence,
+  summaryHeartRateConfidence,
+  Trend,
   errorStatus,
   flagAlerts,
   timelineByAlert,
@@ -82,6 +84,57 @@ test('a reading and a summary as the engine encodes them parse', () => {
   assert.equal(SittingSummary.safeParse({ ...summary, heartRateConfidence: 'high' }).success, false);
   assert.equal(isLowConfidence('low'), true);
   for (const other of ['normal', null, undefined] as const) assert.equal(isLowConfidence(other), false);
+});
+
+test('a summary without a confidence gets the engine\'s rule: fewer than ten valid seconds is low', () => {
+  const empty = { value: null, coverage: 0 };
+  const summary = (heartRate: { value: number | null; coverage: number }, durationSeconds = 60, heartRateConfidence?: 'normal' | 'low' | null) =>
+    SittingSummary.parse({
+      durationSeconds,
+      frameCount: 1800,
+      droppedFrames: 0,
+      heartRate,
+      breathingRate: empty,
+      rmssd: empty,
+      sdnn: empty,
+      beatIntervals: [],
+      timeToFirstReadingSeconds: null,
+      longestDropoutSeconds: 0,
+      ...(heartRateConfidence === undefined ? {} : { heartRateConfidence }),
+    });
+
+  // A phone build from before the field: a rate with no live readings behind it (QA round 2, B1).
+  assert.equal(summaryHeartRateConfidence(summary({ value: 61.5, coverage: 0 })), 'low');
+  // The owner's sitting: 3 valid seconds of 59.
+  assert.equal(summaryHeartRateConfidence(summary({ value: 101.5, coverage: 3 / 59 }, 59.98)), 'low');
+  // Nine is low and ten is normal, on the engine's count of one reading per whole second.
+  assert.equal(summaryHeartRateConfidence(summary({ value: 72, coverage: 9 / 59 }, 59.98)), 'low');
+  assert.equal(summaryHeartRateConfidence(summary({ value: 72, coverage: 10 / 59 }, 59.98)), 'normal');
+  assert.equal(summaryHeartRateConfidence(summary({ value: 72, coverage: 9 / 60 }, 60)), 'low');
+  assert.equal(summaryHeartRateConfidence(summary({ value: 72, coverage: 10 / 60 }, 60)), 'normal');
+  assert.equal(summaryHeartRateConfidence(summary({ value: 72, coverage: 0.87 })), 'normal');
+  // A sitting stopped early cannot reach ten readings.
+  assert.equal(summaryHeartRateConfidence(summary({ value: 72, coverage: 1 }, 8.4)), 'low');
+  assert.equal(summaryHeartRateConfidence(summary({ value: 72, coverage: 1 }, 10)), 'normal');
+
+  // What the phone says always wins, either way.
+  assert.equal(summaryHeartRateConfidence(summary({ value: 72, coverage: 0 }, 60, 'normal')), 'normal');
+  assert.equal(summaryHeartRateConfidence(summary({ value: 72, coverage: 0.9 }, 60, 'low')), 'low');
+  // A null beside a heart rate says nothing, so the rule applies.
+  assert.equal(summaryHeartRateConfidence(summary({ value: 72, coverage: 0 }, 60, null)), 'low');
+  assert.equal(summaryHeartRateConfidence(summary({ value: 72, coverage: 0.9 }, 60, null)), 'normal');
+  // No heart rate, no confidence, whatever was sent.
+  assert.equal(summaryHeartRateConfidence(summary(empty)), null);
+  assert.equal(summaryHeartRateConfidence(summary(empty, 60, 'low')), null);
+});
+
+test('a trend may say where its baseline came from and carry a lower-confidence pulse', () => {
+  assert.deepEqual(Trend.parse({ base: 82, now: 108 }), { base: 82, now: 108 });
+  const later = { base: 55, now: 86, baseAt: '2026-11-14T15:42:00.000Z' };
+  assert.deepEqual(Trend.parse(later), later);
+  const weak = { base: null, now: null, lowConfidence: 101.5 };
+  assert.deepEqual(Trend.parse(weak), weak);
+  assert.ok(Trend.safeParse({ base: null, now: null, baseAt: null, lowConfidence: null }).success);
 });
 
 test('timestamps must be UTC', () => {
