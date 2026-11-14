@@ -150,7 +150,18 @@ public final class SignalEngine {
     var heartRate = summary(\.heart)
     var source: HeartRateSource? = heartRate.value == nil ? nil : .readings
     let whole = WholeSittingAnalyzer(configuration: configuration).estimate(pulse.evidence, origin: first)
-    if heartRate.value == nil, whole.accepted, let bpm = whole.heartRate {
+    let corroborated = whole.accepted ? whole.heartRate : nil
+    if let median = heartRate.value {
+      // A handful of readings is what noise produces now and then. They stand for the
+      // sitting only if the sitting as a whole says the same.
+      let readings = ticks.reduce(0) { $0 + ($1.heart.state == .valid ? 1 : 0) }
+      let agrees = corroborated.map { abs($0 - median) <= configuration.agreementToleranceBpm } ?? false
+      if readings < configuration.minimumUncorroboratedReadings, !agrees {
+        heartRate = SummaryValue(
+          value: nil, coverage: heartRate.coverage, reason: SummaryReason.tooFewReadings.rawValue)
+        source = nil
+      }
+    } else if let bpm = corroborated {
       heartRate = SummaryValue(value: bpm, coverage: heartRate.coverage)
       source = .wholeSitting
     }

@@ -132,6 +132,41 @@ private func faint(_ bpm: Double, _ change: (inout SyntheticSitting) -> Void = {
   }
 }
 
+@Suite struct AHandfulOfReadingsNeedsTheSittingToAgree {
+  /// A person for fourteen seconds, then the same skin with no pulse: a few readings at
+  /// the start and forty-six seconds of nothing.
+  private var briefPulse: [FrameRecord] {
+    let person = sitting().frames()
+    let empty = sitting { $0.subject = .noise }.frames()
+    return zip(person, empty).map { $0.t - 1000 < 14 ? $0 : $1 }
+  }
+
+  @Test func theyDoNotStandForTheSittingOnTheirOwn() {
+    let result = replay(briefPulse)
+    #expect((3..<10).contains(result.heartRates.count))
+    #expect(result.summary.heartRate.value == nil)
+    #expect(result.summary.heartRate.reason == SummaryReason.tooFewReadings.rawValue)
+    #expect(result.summary.heartRateSource == nil)
+    // The readings themselves were shown as they came.
+    #expect(result.heartRates.allSatisfy { abs($0.bpm - 72) <= 2 })
+  }
+
+  @Test func theLimitIsAParameter() {
+    let result = replay(briefPulse) { $0.minimumUncorroboratedReadings = 0 }
+    #expect(abs((result.summary.heartRate.value ?? 0) - 72) <= 2)
+    #expect(result.summary.heartRateSource == .readings)
+  }
+
+  @Test func theyDoWhenTheSittingAgrees() {
+    // Faint all the way through: few readings, and the whole sitting holds the same rate.
+    let result = replay(faint(96))
+    let readings = result.heartRates.count
+    #expect((3..<10).contains(readings))
+    #expect(result.summary.heartRateSource == .readings)
+    #expect(abs((result.summary.heartRate.value ?? 0) - 96) <= 2)
+  }
+}
+
 @Suite struct WholeSittingOnTheWire {
   @Test func theSummaryCarriesTheEstimateAndOldSummariesStillDecode() throws {
     let summary = replay(faint(131)).summary

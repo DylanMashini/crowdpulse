@@ -181,6 +181,11 @@ public struct EngineConfiguration: Codable, Sendable, Equatable {
 
   /// The sitting's heart or breathing rate needs at least this many valid one-second readings.
   public var minimumSummaryReadings: Int = 3
+  /// With fewer valid one-second heart-rate readings than this, their median stands for the
+  /// sitting only when the whole-sitting estimate was accepted and is within
+  /// `agreementToleranceBpm` of it. Noise now and then gives three agreeing windows; it
+  /// does not also give the sitting a clear peak at the same rate.
+  public var minimumUncorroboratedReadings: Int = 10
 
   public init() {}
 
