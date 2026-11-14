@@ -342,21 +342,6 @@ await refused(400, "invalid_request", "POST", routes.sittingReadings(checkIn.id)
   body: { readings: [{ ...checkIn.readings[0], heartRate: { ...valid(72), value: null } }] },
 });
 
-// The reference strap is read by the dashboard, on the server clock.
-const referenceStart = Date.parse(checkIn.started.sitting.startedAt);
-const reference = await ok(PostReadingsResponse, 200, "POST", routes.sittingReference(checkIn.id), {
-  auth: web,
-  body: {
-    readings: Array.from({ length: 60 }, (_, index) => ({
-      t: new Date(referenceStart + (index + 1) * 1000 + 300).toISOString(),
-      heartRate: 70,
-      rrIntervalsMs: [857],
-      source: "chest_strap",
-    })),
-  },
-});
-assert.equal(reference.accepted, 60);
-
 const finished = (await checkIn.finish()).sitting;
 assert.equal(finished.summary?.heartRate.value, 72);
 assert.ok(finished.endedAt);
@@ -365,7 +350,7 @@ await refused(409, "sitting_finished", "POST", routes.sittingReadings(checkIn.id
   auth: mobile,
   body: { readings: [checkIn.readings[0]] },
 });
-done("ran a simulated check-in sitting: 60 readings, reference samples, finish with summary");
+done("ran a simulated check-in sitting: 60 readings, finish with summary");
 
 const header = { format: "triagecam.sitting", version: 1, sittingId: checkIn.id, source: "simulated", nominalFrameRate: 60, startedAt: checkIn.startedOnPhone.toISOString(), captureStart: 1000 };
 const frame = { t: 1000, facePresent: false, exposure: "adjusting", droppedFrames: 0 };
@@ -386,14 +371,11 @@ done("uploaded the sitting file; a non-file and an oversized body are refused");
 
 const detail = await ok(SittingDetailResponse, 200, "GET", routes.sitting(checkIn.id), { auth: web });
 assert.equal(detail.readings.length, 60);
-assert.equal(detail.referenceReadings.length, 60);
 assert.equal(detail.beatIntervals.length, 40);
-assert.equal(detail.pairedReadings, 52, "the 52 valid heart-rate readings each pair with a reference sample");
-assert.ok(detail.meanAbsoluteErrorBpm !== null && detail.meanAbsoluteErrorBpm > 1 && detail.meanAbsoluteErrorBpm < 3);
-assert.equal(detail.within5BpmShare, 1);
+assert.equal(detail.readings.filter((reading) => reading.heartRate.value !== null).length, 52);
 const storedSkew = Date.parse(detail.readings[0]?.t as string) - Date.parse(checkIn.readings[0]?.t as string);
 assert.ok(Math.abs(storedSkew + PHONE_SKEW_MS) < 1500, "readings are stored on the server clock");
-done(`sitting detail: ${detail.pairedReadings} paired readings, mean absolute error ${detail.meanAbsoluteErrorBpm.toFixed(2)} bpm`);
+done(`sitting detail: ${detail.readings.length} readings on the server clock, ${detail.beatIntervals.length} beat intervals`);
 
 let { item } = await worklistItem(number);
 assert.equal(item.state, "observed");
@@ -513,25 +495,41 @@ const unchanged = await ok(SettingsResponse, 200, "PATCH", routes.settings, {
 assert.deepEqual(unchanged.settings, settings.settings);
 
 const stats = await ok(Statistics, 200, "GET", `${routes.statistics}?from=${new Date(Date.now() - 3_600_000).toISOString()}`, { auth: web });
-assert.ok(stats.totals.sittings >= 7);
-assert.ok(stats.totals.sittingsWithReference >= 1);
-assert.ok(stats.heartRate.pairedReadings >= 52);
-assert.ok(stats.heartRate.meanAbsoluteErrorBpm !== null && stats.heartRate.biasBpm !== null);
-assert.ok(stats.sittings.attempted >= 7 && stats.sittings.withReading < stats.sittings.attempted);
-assert.ok(stats.sittings.accurateAcceptedShare !== null);
-assert.ok(stats.flags.episodes >= 2 && stats.flags.acknowledged >= 1);
-assert.ok(stats.flags.episodesPerPersonHour !== null && stats.totals.personHours > 0);
+assert.ok(stats.patients.seen >= 1 && stats.patients.arrived >= 1);
+assert.ok(stats.sittings.finished >= 7 && stats.sittings.withReading < stats.sittings.finished);
+assert.equal(stats.sittings.finished, stats.sittings.checkIns + stats.sittings.rechecks);
+assert.ok(stats.sittings.meanPerPatient !== null && stats.sittings.meanHeartRateCoverage !== null);
+assert.ok(stats.sittings.medianMinutesBetweenObservations !== null, "the patient was observed more than once");
+assert.ok(stats.patients.medianMinutesToFirstObservation !== null);
+assert.ok(stats.heartRate.sittings >= 5 && stats.heartRate.median !== null);
+assert.equal(
+  stats.heartRate.bins.reduce((sum, bin) => sum + bin.sittings, 0),
+  stats.heartRate.sittings,
+  "every heart rate falls in exactly one bin",
+);
+assert.ok(stats.heartRate.bins.some((bin) => bin.from === 51) && stats.heartRate.bins.some((bin) => bin.to === 90));
+assert.ok(stats.flags.raised >= 2 && stats.flags.acknowledged >= 1 && stats.flags.medianMinutesToAcknowledge !== null);
+assert.equal(stats.flags.raised, stats.flags.byRule.score_rise + stats.flags.byRule.baseline_shift + stats.flags.byRule.overdue);
+assert.ok(stats.flags.unacknowledgedNow <= stats.flags.openNow);
 const mine = stats.perPatient.find((row) => row.patientNumber === number);
 assert.equal(mine?.sittings, 6);
-assert.equal(mine?.pairedReadings, 52);
-assert.ok(stats.tileStates && stats.tileStates["no-reading"] >= 1);
+assert.ok(mine && mine.observations < mine.sittings && mine.heartRates.length === mine.observations);
+assert.equal(mine?.patient.number, number);
+assert.equal(
+  stats.waitingNow.patients,
+  stats.waitingNow.byState.observed + stats.waitingNow.byState.flag + stats.waitingNow.byState.overdue + stats.waitingNow.byState["no-reading"],
+);
+assert.ok(stats.waitingNow.byState["no-reading"] >= 1 && stats.waitingNow.longestMinutesWaiting !== null);
 const empty = await ok(Statistics, 200, "GET", `${routes.statistics}?from=2001-01-01T00:00:00.000Z&to=2001-01-02T00:00:00.000Z`, { auth: web });
-assert.equal(empty.heartRate.meanAbsoluteErrorBpm, null);
-assert.equal(empty.sittings.meanCoverage, null);
-assert.equal(empty.flags.episodesPerPersonHour, null);
+assert.equal(empty.patients.seen, 0);
+assert.equal(empty.sittings.meanHeartRateCoverage, null);
+assert.equal(empty.heartRate.median, null);
+assert.deepEqual(empty.heartRate.bins, []);
+assert.equal(empty.flags.medianMinutesToAcknowledge, null);
+assert.deepEqual(empty.perPatient, []);
 done(
-  `statistics: ${stats.heartRate.pairedReadings} paired readings, MAE ${stats.heartRate.meanAbsoluteErrorBpm.toFixed(2)} bpm, bias ${stats.heartRate.biasBpm.toFixed(2)} bpm, ` +
-    `${stats.flags.episodes} flag episodes over ${stats.totals.personHours.toFixed(2)} person-hours`,
+  `statistics: ${stats.patients.seen} patients seen, ${stats.sittings.withReading} of ${stats.sittings.finished} sittings gave a reading, ` +
+    `${stats.flags.raised} flags raised, ${stats.flags.acknowledged} acknowledged`,
 );
 
 // --- live view ------------------------------------------------------------------------------

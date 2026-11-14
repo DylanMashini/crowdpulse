@@ -1,13 +1,23 @@
-import type { Statistics, PatientStatistics, TileState } from "@triagecam/contracts";
-import { and, asc, eq, gte, inArray, isNull, lt, ne } from "drizzle-orm";
+import type { FlagRule, PatientStatistics, Statistics, TileState } from "@triagecam/contracts";
+import { and, asc, gte, inArray, isNull, lt, ne, or } from "drizzle-orm";
 
 import { db, schema } from "../db/client.ts";
-import { hasSummary, iso } from "./serialize.ts";
-import { AGREEMENT_BPM, agreement, mean, median, type Pair, pairReadings } from "./stats/agreement.ts";
-import { syncWaitingPatients } from "./trend/engine.ts";
+import { hasSummary, iso, isoOrNull, type SittingRow, toPatientRef } from "./serialize.ts";
+import { getSettings } from "./settings.ts";
+import {
+  BREATHING_RATE_BINS,
+  HEART_RATE_BINS,
+  distribution,
+  highest,
+  mean,
+  median,
+  minutesBetweenObservations,
+} from "./stats/summary.ts";
+import { sittingFacts, syncWaitingPatients } from "./trend/engine.ts";
+import { snapshotPatient } from "./trend/rules.ts";
 import { historyState } from "./worklist.ts";
 
-const HOUR_MS = 3_600_000;
+const MINUTE_MS = 60_000;
 
 function startOfLocalDay(now: Date): Date {
   const start = new Date(now);
@@ -15,47 +25,47 @@ function startOfLocalDay(now: Date): Date {
   return start;
 }
 
+const minutesBetween = (from: Date, to: Date) => Math.max(0, to.getTime() - from.getTime()) / MINUTE_MS;
+
+type FinishedSitting = SittingRow & { endedAt: Date };
+const isFinished = (sitting: SittingRow): sitting is FinishedSitting => hasSummary(sitting) && sitting.endedAt !== null;
+const isObservation = (sitting: SittingRow) => sitting.heartRate !== null || sitting.breathingRate !== null;
+
 /**
- * Pilot statistics for sittings started in [from, to). Sittings from the JavaScript stub
+ * What the waiting room did in [from, to): who came and went, how often they were observed,
+ * what the camera measured and how flags were handled. Sittings from the JavaScript stub
  * measure nothing and are left out of every number.
  */
 export async function statistics(range: { from?: string; to?: string }): Promise<Statistics> {
   const now = new Date();
   const to = range.to ? new Date(range.to) : now;
   const from = range.from ? new Date(range.from) : startOfLocalDay(to);
+  const inRange = (at: Date) => at >= from && at < to;
 
-  const [patients, sittings, flags, openFlags, histories] = await Promise.all([
-    db.select().from(schema.patients).where(lt(schema.patients.createdAt, to)),
+  // First, so the overdue flags are up to date before any flag is counted.
+  const histories = await syncWaitingPatients({ now });
+  const [patients, flags, openFlags, settings] = await Promise.all([
+    // Everyone who was in the waiting room at some moment of the range.
     db
-      .select({ sitting: schema.sittings, patientNumber: schema.patients.number })
-      .from(schema.sittings)
-      .innerJoin(schema.patients, eq(schema.patients.id, schema.sittings.patientId))
-      .where(and(gte(schema.sittings.startedAt, from), lt(schema.sittings.startedAt, to), ne(schema.sittings.source, "stub")))
-      .orderBy(asc(schema.sittings.startedAt)),
+      .select()
+      .from(schema.patients)
+      .where(and(lt(schema.patients.createdAt, to), or(isNull(schema.patients.dischargedAt), gte(schema.patients.dischargedAt, from))))
+      .orderBy(asc(schema.patients.createdAt)),
     db.select().from(schema.flags).where(and(gte(schema.flags.openedAt, from), lt(schema.flags.openedAt, to))),
-    db.$count(schema.flags, isNull(schema.flags.closedAt)),
-    syncWaitingPatients({ now }),
+    db.select({ id: schema.flags.id }).from(schema.flags).where(isNull(schema.flags.closedAt)),
+    getSettings(),
   ]);
 
-  const sittingIds = sittings.map((row) => row.sitting.id);
-  const flagIds = flags.map((flag) => flag.id);
-  const [readings, references, acknowledgements] = await Promise.all([
-    sittingIds.length === 0
+  const patientIds = patients.map((patient) => patient.id);
+  const flagIds = [...new Set([...flags, ...openFlags].map((flag) => flag.id))];
+  const [sittings, acknowledgements] = await Promise.all([
+    patientIds.length === 0
       ? []
       : db
-          .select({ sittingId: schema.readings.sittingId, t: schema.readings.t, heartRate: schema.readings.heartRate })
-          .from(schema.readings)
-          .where(and(inArray(schema.readings.sittingId, sittingIds), eq(schema.readings.state, "valid"))),
-    sittingIds.length === 0
-      ? []
-      : db
-          .select({
-            sittingId: schema.referenceReadings.sittingId,
-            t: schema.referenceReadings.t,
-            heartRate: schema.referenceReadings.heartRate,
-          })
-          .from(schema.referenceReadings)
-          .where(inArray(schema.referenceReadings.sittingId, sittingIds)),
+          .select()
+          .from(schema.sittings)
+          .where(and(inArray(schema.sittings.patientId, patientIds), lt(schema.sittings.startedAt, to), ne(schema.sittings.source, "stub")))
+          .orderBy(asc(schema.sittings.startedAt)),
     flagIds.length === 0
       ? []
       : db
@@ -65,99 +75,114 @@ export async function statistics(range: { from?: string; to?: string }): Promise
           .orderBy(asc(schema.acknowledgements.at)),
   ]);
 
-  const samples = (rows: { sittingId: string; t: Date; heartRate: number | null }[], sittingId: string) =>
-    rows.flatMap((row) =>
-      row.sittingId === sittingId && row.heartRate !== null ? [{ t: row.t.getTime(), heartRate: row.heartRate }] : [],
-    );
-
-  const allPairs: Pair[] = [];
-  const perPatient = new Map<number, { pairs: Pair[]; sittings: number; coverage: number[] }>();
-  const finished = sittings.filter((row) => hasSummary(row.sitting));
-  let sittingsWithReference = 0;
-  let finishedWithReference = 0;
-  let accurate = 0;
-
-  for (const { sitting, patientNumber } of sittings) {
-    const reference = samples(references, sitting.id);
-    const pairs = pairReadings(samples(readings, sitting.id), reference);
-    allPairs.push(...pairs);
-
-    const patient = perPatient.get(patientNumber) ?? { pairs: [], sittings: 0, coverage: [] };
-    patient.pairs.push(...pairs);
-    patient.sittings += 1;
-    if (hasSummary(sitting)) patient.coverage.push(sitting.heartRateCoverage ?? 0);
-    perPatient.set(patientNumber, patient);
-
-    const referenceMean = mean(reference.map((sample) => sample.heartRate));
-    if (referenceMean === null) continue;
-    sittingsWithReference += 1;
-    if (!hasSummary(sitting)) continue;
-    finishedWithReference += 1;
-    if (sitting.heartRate !== null && Math.abs(sitting.heartRate - referenceMean) <= AGREEMENT_BPM) accurate += 1;
-  }
-
-  const personHours =
-    patients.reduce((sum, patient) => {
-      const start = Math.max(patient.createdAt.getTime(), from.getTime());
-      const end = Math.min((patient.dischargedAt ?? now).getTime(), to.getTime());
-      return sum + Math.max(0, end - start);
-    }, 0) / HOUR_MS;
-
   const firstAcknowledgement = new Map<string, Date>();
   for (const row of acknowledgements) {
     if (!firstAcknowledgement.has(row.flagId)) firstAcknowledgement.set(row.flagId, row.at);
   }
   const minutesToAcknowledge = flags.flatMap((flag) => {
     const at = firstAcknowledgement.get(flag.id);
-    return at ? [Math.max(0, at.getTime() - flag.openedAt.getTime()) / 60_000] : [];
+    return at ? [minutesBetween(flag.openedAt, at)] : [];
+  });
+  const byRule: Record<FlagRule, number> = { score_rise: 0, baseline_shift: 0, overdue: 0 };
+  for (const flag of flags) byRule[flag.rule] += 1;
+
+  const stateNow = new Map<string, TileState>(histories.map((history) => [history.patient.id, historyState(history)]));
+  const byState: Record<TileState, number> = { observed: 0, flag: 0, overdue: 0, "no-reading": 0 };
+  for (const state of stateNow.values()) byState[state] += 1;
+  const minutesWaiting = histories.map((history) => minutesBetween(history.patient.createdAt, now));
+  const minutesSinceObserved = histories.map((history) =>
+    minutesBetween(history.snapshot.lastObservedAt ?? history.patient.createdAt, now),
+  );
+
+  const finishedInRange: FinishedSitting[] = [];
+  const minutesToFirstObservation: number[] = [];
+  const observationGaps: number[] = [];
+  const sittingsPerPatient: number[] = [];
+
+  const rows = patients.map((patient): PatientStatistics => {
+    const finished = sittings.filter((sitting) => sitting.patientId === patient.id).filter(isFinished);
+    const observations = finished.filter(isObservation).sort((a, b) => a.endedAt.getTime() - b.endedAt.getTime());
+    const counted = finished.filter((sitting) => inRange(sitting.startedAt));
+    finishedInRange.push(...counted);
+    if (counted.length > 0) sittingsPerPatient.push(counted.length);
+
+    const first = observations[0];
+    if (first && inRange(patient.createdAt)) minutesToFirstObservation.push(minutesBetween(patient.createdAt, first.endedAt));
+    observationGaps.push(...minutesBetweenObservations(observations, (later) => inRange(later.startedAt)));
+
+    // The numbers as they stand now, or as they stood at discharge.
+    const waiting = patient.status === "waiting";
+    const asOf = patient.dischargedAt ?? now;
+    const snapshot = snapshotPatient(finished.map(sittingFacts), patient.createdAt, settings, asOf);
+    return {
+      patientNumber: patient.number,
+      patient: toPatientRef(patient),
+      status: patient.status,
+      state: waiting ? (stateNow.get(patient.id) ?? null) : null,
+      arrivedAt: iso(patient.createdAt),
+      dischargedAt: isoOrNull(patient.dischargedAt),
+      minutesInRoom: snapshot.minutesWaiting,
+      minutesSinceObserved: waiting ? snapshot.minutesSinceObserved : null,
+      sittings: counted.length,
+      observations: counted.filter(isObservation).length,
+      pulse: snapshot.pulse,
+      breathing: snapshot.breathing,
+      heartRates: observations.flatMap((sitting) => sitting.heartRate ?? []),
+      score: snapshot.score,
+      flags: flags.filter((flag) => flag.patientId === patient.id).length,
+    };
   });
 
-  const tileStates: Record<TileState, number> = { observed: 0, flag: 0, overdue: 0, "no-reading": 0 };
-  for (const history of histories) tileStates[historyState(history)] += 1;
-
-  const dropouts = finished.map((row) => row.sitting.longestDropoutSeconds ?? 0);
+  const discharged = patients.filter((patient) => patient.dischargedAt && inRange(patient.dischargedAt));
+  const waitingFirst = (row: PatientStatistics) => (row.status === "waiting" ? 0 : 1);
 
   return {
     generatedAt: iso(now),
     from: iso(from),
     to: iso(to),
-    totals: {
-      patientsWaiting: patients.filter((patient) => !patient.dischargedAt || patient.dischargedAt >= to).length,
-      patientsDischarged: patients.filter(
-        (patient) => patient.dischargedAt && patient.dischargedAt >= from && patient.dischargedAt < to,
-      ).length,
-      sittings: sittings.length,
-      sittingsWithReference,
-      openFlags,
-      personHours,
+    recheckIntervalMin: settings.recheckIntervalMin,
+    patients: {
+      seen: patients.length,
+      arrived: patients.filter((patient) => inRange(patient.createdAt)).length,
+      discharged: discharged.length,
+      medianMinutesToFirstObservation: median(minutesToFirstObservation),
+      medianMinutesToDischarge: median(discharged.map((patient) => minutesBetween(patient.createdAt, patient.dischargedAt as Date))),
     },
-    tileStates,
-    heartRate: agreement(allPairs),
+    waitingNow: {
+      patients: histories.length,
+      byState,
+      medianMinutesWaiting: median(minutesWaiting),
+      longestMinutesWaiting: highest(minutesWaiting),
+      medianMinutesSinceObserved: median(minutesSinceObserved),
+      longestMinutesSinceObserved: highest(minutesSinceObserved),
+    },
     sittings: {
-      attempted: finished.length,
-      withReading: finished.filter((row) => row.sitting.heartRate !== null).length,
-      accurateAcceptedShare: finishedWithReference === 0 ? null : accurate / finishedWithReference,
-      meanCoverage: mean(finished.map((row) => row.sitting.heartRateCoverage ?? 0)),
-      medianTimeToFirstReadingSeconds: median(
-        finished.flatMap((row) => row.sitting.timeToFirstReadingSeconds ?? []),
-      ),
-      longestDropoutSeconds: dropouts.length === 0 ? null : Math.max(...dropouts),
+      finished: finishedInRange.length,
+      withReading: finishedInRange.filter(isObservation).length,
+      checkIns: finishedInRange.filter((sitting) => sitting.kind === "check_in").length,
+      rechecks: finishedInRange.filter((sitting) => sitting.kind === "recheck").length,
+      meanPerPatient: mean(sittingsPerPatient),
+      medianMinutesBetweenObservations: median(observationGaps),
+      meanHeartRateCoverage: mean(finishedInRange.map((sitting) => sitting.heartRateCoverage ?? 0)),
+      meanBreathingRateCoverage: mean(finishedInRange.map((sitting) => sitting.breathingRateCoverage ?? 0)),
+      medianTimeToFirstReadingSeconds: median(finishedInRange.flatMap((sitting) => sitting.timeToFirstReadingSeconds ?? [])),
     },
+    heartRate: distribution(
+      finishedInRange.flatMap((sitting) => sitting.heartRate ?? []),
+      HEART_RATE_BINS,
+    ),
+    breathingRate: distribution(
+      finishedInRange.flatMap((sitting) => sitting.breathingRate ?? []),
+      BREATHING_RATE_BINS,
+    ),
     flags: {
-      episodes: flags.length,
-      episodesPerPersonHour: personHours > 0 ? flags.length / personHours : null,
+      raised: flags.length,
+      byRule,
       acknowledged: minutesToAcknowledge.length,
       medianMinutesToAcknowledge: median(minutesToAcknowledge),
+      openNow: openFlags.length,
+      unacknowledgedNow: openFlags.filter((flag) => !firstAcknowledgement.has(flag.id)).length,
     },
-    perPatient: [...perPatient.entries()]
-      .sort(([a], [b]) => a - b)
-      .map(
-        ([patientNumber, patient]): PatientStatistics => ({
-          patientNumber,
-          sittings: patient.sittings,
-          coverage: mean(patient.coverage),
-          ...agreement(patient.pairs),
-        }),
-      ),
+    perPatient: rows.sort((a, b) => waitingFirst(a) - waitingFirst(b) || b.minutesInRoom - a.minutesInRoom),
   };
 }

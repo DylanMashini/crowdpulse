@@ -4,7 +4,6 @@ import { resolve } from "node:path";
 import {
   type FinishSittingRequest,
   type Reading,
-  type ReferenceReading,
   type Sitting,
   type SittingDetailResponse,
   SittingFileHeader,
@@ -20,7 +19,6 @@ import { ApiError } from "./http.ts";
 import { noteSittingEnded, noteSittingStarted } from "./intake.ts";
 import type { SittingRow } from "./serialize.ts";
 import { iso, toPatientRef, toSitting, toStoredReading } from "./serialize.ts";
-import { agreement, pairReadings } from "./stats/agreement.ts";
 import { findWaitingPatient } from "./patients.ts";
 import { syncPatients } from "./trend/engine.ts";
 
@@ -153,57 +151,17 @@ export async function finishSitting(sittingId: string, request: FinishSittingReq
   return wire;
 }
 
-/** Reference samples arrive on the laptop's clock, which is the server clock. Allowed after the sitting has finished. */
-export async function postReference(sittingId: string, readings: ReferenceReading[]): Promise<number> {
-  await findSitting(sittingId);
-  const stored = await db
-    .insert(schema.referenceReadings)
-    .values(
-      readings.map((reading) => ({
-        sittingId,
-        t: new Date(reading.t),
-        heartRate: reading.heartRate,
-        rrIntervalsMs: reading.rrIntervalsMs,
-        breathingRate: reading.breathingRate ?? null,
-        source: reading.source,
-      })),
-    )
-    .returning({ id: schema.referenceReadings.id });
-  return stored.length;
-}
-
 export async function sittingDetail(sittingId: string): Promise<SittingDetailResponse> {
   const { sitting, patient } = await findSitting(sittingId);
-  const [readings, references, [beats]] = await Promise.all([
+  const [readings, [beats]] = await Promise.all([
     db.select().from(schema.readings).where(eq(schema.readings.sittingId, sittingId)).orderBy(asc(schema.readings.t)),
-    db
-      .select()
-      .from(schema.referenceReadings)
-      .where(eq(schema.referenceReadings.sittingId, sittingId))
-      .orderBy(asc(schema.referenceReadings.t)),
     db.select().from(schema.beatIntervals).where(eq(schema.beatIntervals.sittingId, sittingId)),
   ]);
-
-  const pairs = pairReadings(
-    readings.flatMap((row) => (row.heartRate === null ? [] : [{ t: row.t.getTime(), heartRate: row.heartRate }])),
-    references.flatMap((row) => (row.heartRate === null ? [] : [{ t: row.t.getTime(), heartRate: row.heartRate }])),
-  );
-  const { pairedReadings, meanAbsoluteErrorBpm, within5BpmShare } = agreement(pairs);
 
   return {
     sitting: toSitting(sitting, patient.number),
     readings: readings.map(toStoredReading),
-    referenceReadings: references.map((row) => ({
-      t: iso(row.t),
-      heartRate: row.heartRate,
-      rrIntervalsMs: row.rrIntervalsMs,
-      breathingRate: row.breathingRate,
-      source: row.source,
-    })),
     beatIntervals: (beats?.intervalsMs ?? []).map((ms, index) => ({ tMs: beats?.beatTimesMs[index] ?? 0, ms })),
-    meanAbsoluteErrorBpm,
-    pairedReadings,
-    within5BpmShare,
   };
 }
 

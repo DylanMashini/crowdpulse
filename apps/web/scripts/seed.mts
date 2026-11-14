@@ -36,8 +36,6 @@ type SittingPlan = {
   /** Null is a sitting that gave no reading. */
   heartRate: number | null;
   breathingRate: number | null;
-  /** Also store chest-strap samples, so the statistics have agreement to report. */
-  withReference?: boolean;
 };
 
 type Intake = Pick<
@@ -73,8 +71,8 @@ const PLANS: PatientPlan[] = [
     portrait: { background: "#dfe9e4", skin: "#e8b995", hair: "#2b2320", top: "#3f6f66" },
     createdMinutesAgo: 52,
     sittings: [
-      { endedMinutesAgo: 50, heartRate: 74, breathingRate: 15, withReference: true },
-      { endedMinutesAgo: 22, heartRate: 76, breathingRate: 16, withReference: true },
+      { endedMinutesAgo: 50, heartRate: 74, breathingRate: 15 },
+      { endedMinutesAgo: 22, heartRate: 76, breathingRate: 16 },
     ],
   },
   {
@@ -91,9 +89,9 @@ const PLANS: PatientPlan[] = [
     portrait: { background: "#e6e2d8", skin: "#8a5a3c", hair: "#b9b6b0", top: "#4b5563" },
     createdMinutesAgo: 31,
     sittings: [
-      { endedMinutesAgo: 29, heartRate: 82, breathingRate: 16, withReference: true },
-      { endedMinutesAgo: 9, heartRate: 104, breathingRate: 22, withReference: true },
-      { endedMinutesAgo: 3, heartRate: 108, breathingRate: 24, withReference: true },
+      { endedMinutesAgo: 29, heartRate: 82, breathingRate: 16 },
+      { endedMinutesAgo: 9, heartRate: 104, breathingRate: 22 },
+      { endedMinutesAgo: 3, heartRate: 108, breathingRate: 24 },
     ],
     flagsOpenedMinutesAgo: 3,
   },
@@ -126,7 +124,7 @@ const PLANS: PatientPlan[] = [
     },
     createdMinutesAgo: 27,
     sittings: [
-      { endedMinutesAgo: 25, heartRate: 88, breathingRate: 18, withReference: true },
+      { endedMinutesAgo: 25, heartRate: 88, breathingRate: 18 },
       { endedMinutesAgo: 4, heartRate: null, breathingRate: null },
     ],
   },
@@ -247,18 +245,6 @@ async function addSitting(patientId: string, deviceId: string, plan: SittingPlan
     });
   }
 
-  if (plan.withReference && plan.heartRate !== null) {
-    const reference = plan.heartRate + jitter(2);
-    await db.insert(schema.referenceReadings).values(
-      Array.from({ length: SITTING_SECONDS }, (_, index) => ({
-        sittingId: sitting.id,
-        t: new Date(startedAt.getTime() + (index + 1) * 1000 + 200),
-        heartRate: Math.round(reference + jitter(1)),
-        rrIntervalsMs: [60_000 / reference + jitter(25)],
-        source: "chest_strap" as const,
-      })),
-    );
-  }
 }
 
 /**

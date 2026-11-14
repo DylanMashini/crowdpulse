@@ -92,17 +92,6 @@ export function percent(share: number): string {
   return `${Math.round(Math.max(0, Math.min(1, share)) * 100)}%`;
 }
 
-export function fixed(value: number, digits = 1): string {
-  return value.toFixed(digits);
-}
-
-/** A signed difference with a true minus sign: "+1.2", "−0.8". */
-export function signed(value: number, digits = 1): string {
-  const text = Math.abs(value).toFixed(digits);
-  if (Number(text) === 0) return text;
-  return `${value > 0 ? '+' : '−'}${text}`;
-}
-
 const REASONS: Record<EstimateReason, string> = {
   warming_up: 'Collecting the first seconds of signal',
   awaiting_agreement: 'Waiting for three windows to agree',

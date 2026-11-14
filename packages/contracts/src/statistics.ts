@@ -1,7 +1,8 @@
 import * as z from 'zod';
 
-import { PatientNumber, Timestamp, Unit } from './common.ts';
-import { TileState } from './worklist.ts';
+import { PatientNumber, PatientRef, Timestamp, Unit } from './common.ts';
+import { PatientStatus } from './patients.ts';
+import { FlagRule, Score, TileState, Trend } from './worklist.ts';
 
 export const StatisticsQuery = z.object({
   /** Inclusive start; default is the start of the server's local day. */
@@ -11,22 +12,51 @@ export const StatisticsQuery = z.object({
 });
 export type StatisticsQuery = z.infer<typeof StatisticsQuery>;
 
-/** Agreement between the camera estimate and the reference device. Null when nothing was paired. */
-export const Agreement = z.object({
-  /** Valid heart-rate readings with a reference sample within 1.5 s after clock correction. */
-  pairedReadings: z.int().nonnegative(),
-  meanAbsoluteErrorBpm: z.number().nonnegative().nullable(),
-  /** Mean of estimate minus reference, in bpm. */
-  biasBpm: z.number().nullable(),
-  within5BpmShare: Unit.nullable(),
-});
-export type Agreement = z.infer<typeof Agreement>;
+const count = z.int().nonnegative();
+/** A median or a mean with nothing under it is null, never 0. */
+const measure = z.number().nonnegative().nullable();
 
-export const PatientStatistics = Agreement.extend({
+/** How one rate was spread over the sittings that measured it. */
+export const RateDistribution = z.object({
+  /** Finished sittings whose summary has this rate. */
+  sittings: count,
+  median: measure,
+  lowest: measure,
+  highest: measure,
+  /**
+   * Whole-number bins, lowest first, with no gaps between them. `from` and `to` are both
+   * inclusive and a rate is binned after rounding, as the screens show it. Empty when
+   * `sittings` is 0.
+   */
+  bins: z.array(z.object({ from: z.int(), to: z.int(), sittings: count })),
+});
+export type RateDistribution = z.infer<typeof RateDistribution>;
+
+/** One patient who was in the waiting room during the range. */
+export const PatientStatistics = z.object({
   patientNumber: PatientNumber,
-  sittings: z.int().nonnegative(),
-  /** Mean heart-rate coverage across the patient's finished sittings. */
-  coverage: Unit.nullable(),
+  patient: PatientRef,
+  status: PatientStatus,
+  /** Null once discharged. */
+  state: TileState.nullable(),
+  arrivedAt: Timestamp,
+  dischargedAt: Timestamp.nullable(),
+  /** Whole minutes from arrival to discharge, or to generatedAt for a patient still waiting. */
+  minutesInRoom: count,
+  /** Whole minutes since the last observation at generatedAt. Null when discharged or never observed. */
+  minutesSinceObserved: count.nullable(),
+  /** Finished sittings started in the range. */
+  sittings: count,
+  /** Those that gave a heart or breathing rate. */
+  observations: count,
+  /** The first observation against the latest finished sitting, as on the worklist. */
+  pulse: Trend,
+  breathing: Trend,
+  /** Heart rate of every observation that has one, oldest first, in bpm. */
+  heartRates: z.array(z.number()),
+  score: Score.nullable(),
+  /** Flag episodes opened in the range. */
+  flags: count,
 });
 export type PatientStatistics = z.infer<typeof PatientStatistics>;
 
@@ -34,37 +64,61 @@ export const Statistics = z.object({
   generatedAt: Timestamp,
   from: Timestamp,
   to: Timestamp,
-  totals: z.object({
-    patientsWaiting: z.int().nonnegative(),
-    patientsDischarged: z.int().nonnegative(),
-    sittings: z.int().nonnegative(),
-    sittingsWithReference: z.int().nonnegative(),
-    openFlags: z.int().nonnegative(),
-    /** Sum over patients of time spent waiting inside the range, in hours. */
-    personHours: z.number().nonnegative(),
+  /** The re-check interval from the settings, to read the cadence against. */
+  recheckIntervalMin: z.number().positive(),
+  patients: z.object({
+    /** In the waiting room at any moment of the range. */
+    seen: count,
+    /** Intake started in the range. */
+    arrived: count,
+    /** Discharged in the range. */
+    discharged: count,
+    /** Arrival to the end of the first observation, over patients who arrived in the range. */
+    medianMinutesToFirstObservation: measure,
+    /** Arrival to discharge, over patients discharged in the range. */
+    medianMinutesToDischarge: measure,
   }),
-  /** Waiting patients in each tile state at generatedAt. Not limited to the range. */
-  tileStates: z.record(TileState, z.int().nonnegative()).optional(),
-  heartRate: Agreement,
+  /** The waiting room at generatedAt. Not limited to the range. */
+  waitingNow: z.object({
+    patients: count,
+    byState: z.record(TileState, count),
+    medianMinutesWaiting: measure,
+    longestMinutesWaiting: measure,
+    /** Since the last observation, or since arrival for a patient not yet observed. */
+    medianMinutesSinceObserved: measure,
+    longestMinutesSinceObserved: measure,
+  }),
+  /** Finished sittings started in the range. */
   sittings: z.object({
-    /** Finished sittings in the range. */
-    attempted: z.int().nonnegative(),
-    /** Those whose summary has a heart rate. */
-    withReading: z.int().nonnegative(),
-    /** Of attempted sittings that have a reference: share whose summary heart rate is within
-     *  5 bpm of the reference mean. A sitting with no reading counts as a miss. */
-    accurateAcceptedShare: Unit.nullable(),
-    meanCoverage: Unit.nullable(),
-    medianTimeToFirstReadingSeconds: z.number().nonnegative().nullable(),
-    longestDropoutSeconds: z.number().nonnegative().nullable(),
+    finished: count,
+    /** Those that gave a heart or breathing rate: the observations. */
+    withReading: count,
+    checkIns: count,
+    rechecks: count,
+    /** Finished sittings per patient who had at least one. */
+    meanPerPatient: measure,
+    /** Between one observation of a patient and the next, the later one started in the range. */
+    medianMinutesBetweenObservations: measure,
+    /** Mean share of a sitting's seconds that gave a heart rate. */
+    meanHeartRateCoverage: Unit.nullable(),
+    meanBreathingRateCoverage: Unit.nullable(),
+    medianTimeToFirstReadingSeconds: measure,
   }),
+  heartRate: RateDistribution,
+  breathingRate: RateDistribution,
   flags: z.object({
     /** Flag episodes opened in the range. */
-    episodes: z.int().nonnegative(),
-    episodesPerPersonHour: z.number().nonnegative().nullable(),
-    acknowledged: z.int().nonnegative(),
-    medianMinutesToAcknowledge: z.number().nonnegative().nullable(),
+    raised: count,
+    byRule: z.record(FlagRule, count),
+    /** Of those raised, how many a staff member acknowledged. */
+    acknowledged: count,
+    medianMinutesToAcknowledge: measure,
+    /** Open at generatedAt, whenever they were raised. */
+    openNow: count,
+    /** Open at generatedAt and not acknowledged by anyone. */
+    unacknowledgedNow: count,
   }),
+  /** Patients seen in the range: those waiting first, then by longest time in the room. */
   perPatient: z.array(PatientStatistics),
 });
 export type Statistics = z.infer<typeof Statistics>;
