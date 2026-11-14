@@ -20,6 +20,9 @@ apps/mobile/expo-env.d.ts
 apps/mobile/ios/
 apps/mobile/android/
 
+# simulator rig: driver build, screenshots and logs (apps/mobile/scripts/sim-qa.sh)
+apps/mobile/.sim-qa/
+
 # Swift
 .build/
 .swiftpm/
