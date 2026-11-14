@@ -11,6 +11,7 @@ import { LiveStatus } from '@/components/ui/LiveStatus';
 import { StateMessage } from '@/components/ui/StateMessage';
 import { api, errorMessage } from '@/lib/api';
 import { ageInYears, breathsPerMin, calendarDate, clockTime, heartRate, minutes, rate, ruleText, timeOrDayTime, years } from '@/lib/format';
+import { readIntakeDraft } from '@/lib/intake-draft';
 import { toTimelineItems } from '@/lib/mapping';
 import { useResource } from '@/lib/use-resource';
 
@@ -62,7 +63,8 @@ function PatientView({ detail, updatedAt, refreshError, onChanged }: PatientView
   const [saved, setSaved] = useState<{ patient: Patient; at: number } | null>(null);
   // Whichever arrived last: the answer to the form's own save, or the record as refetched.
   const patient = saved && saved.at > (updatedAt ?? 0) ? saved.patient : detail.patient;
-  const [editing, setEditing] = useState(false);
+  // Opens ready to edit when the tab holds intake text for this patient that was never saved.
+  const [editing, setEditing] = useState(() => readIntakeDraft(detail.patient.number) !== null);
   const age = ageInYears(patient.dateOfBirth);
   const facts = [age === null ? null : years(age), patient.sex ? SEX[patient.sex] : null].filter(Boolean).join(' · ');
   const { worklist } = useLive();

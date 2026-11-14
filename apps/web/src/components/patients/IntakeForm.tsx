@@ -7,6 +7,7 @@ import { Button, Field, PatientAvatar } from '@/components/ds';
 import { api, errorMessage } from '@/lib/api';
 import { clockTime } from '@/lib/format';
 import { cx } from '@/lib/cx';
+import { forgetIntakeDraftIfUnchanged, keepIntakeDraft, readIntakeDraft } from '@/lib/intake-draft';
 
 type TextKey = 'name' | 'reasonForVisit' | 'allergies' | 'notes';
 /** What has been typed or picked here and may not have reached the server yet. */
@@ -31,6 +32,24 @@ const SEXES: Array<{ value: PatientSex; label: string }> = [
 ];
 
 const PAIN = Array.from({ length: 11 }, (_, score) => score);
+
+/**
+ * The unsaved fields kept for this patient in the tab (`intake-draft.ts`), for example from
+ * before the session ended and staff signed in again. Only what the form could have written.
+ */
+function keptDraft(patientNumber: number): Draft {
+  const kept = readIntakeDraft(patientNumber);
+  const draft: Draft = {};
+  if (!kept) return draft;
+  for (const key of ['name', 'reasonForVisit', 'allergies', 'notes', 'dateOfBirth'] as const) {
+    const value = kept[key];
+    if (typeof value === 'string') draft[key] = value;
+  }
+  const { sex, painScore } = kept;
+  if (sex === null || SEXES.some((each) => each.value === sex)) draft.sex = sex as PatientSex | null;
+  if (painScore === null || PAIN.some((score) => score === painScore)) draft.painScore = painScore as number | null;
+  return draft;
+}
 
 /** Today on this screen's calendar, as YYYY-MM-DD. */
 function today(): string {
@@ -84,14 +103,15 @@ type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'saved'; at: nu
  * `key={patient.number}`.
  */
 export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoFocus }: IntakeFormProps) {
-  const [draft, setDraft] = useState<Draft>({});
+  // Starts from what was typed here and never reached the server, if the tab still holds any.
+  const [draft, setDraft] = useState<Draft>(() => keptDraft(patient.number));
   const [save, setSave] = useState<SaveState>({ kind: 'idle' });
   const [photo, setPhoto] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
   const [completing, setCompleting] = useState(false);
   /** Staff removed the photo on this form: nothing takes a new one until they ask. */
   const [removed, setRemoved] = useState(false);
 
-  const draftRef = useRef<Draft>({});
+  const draftRef = useRef<Draft>(draft);
   const focused = useRef<DraftKey | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlight = useRef(false);
@@ -123,6 +143,7 @@ export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoF
       const unsent = (Object.keys(next) as DraftKey[]).some((key) => next[key] !== sending[key]);
       draftRef.current = next;
       setDraft(next);
+      keepIntakeDraft(number, next);
       setSave({ kind: 'saved', at: Date.now() });
       inFlight.current = false;
       if (unsent) timer.current = setTimeout(() => again.current(), SAVE_AFTER_MS);
@@ -136,12 +157,25 @@ export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoF
     again.current = () => void flush();
   }, [flush]);
 
-  // Leaving the page with something typed in the last moment: send it on the way out.
+  // A draft the tab kept from last time is saved as soon as the form is back.
+  useEffect(() => {
+    if (Object.keys(draftRef.current).length > 0) timer.current = setTimeout(() => again.current(), 0);
+  }, []);
+
+  // Leaving the page with something typed in the last moment: send it on the way out. If that
+  // save is refused (the session ended), the tab still holds the text for when the form is back.
   useEffect(
     () => () => {
       if (timer.current) clearTimeout(timer.current);
       const unsent = sendable(draftRef.current);
-      if (Object.keys(unsent).length > 0 && !inFlight.current) void api.updatePatient(number, toRequest(unsent)).catch(() => {});
+      if (Object.keys(unsent).length === 0 || inFlight.current) return;
+      const whole = draftRef.current;
+      void api
+        .updatePatient(number, toRequest(unsent))
+        .then(() => {
+          if (Object.keys(unsent).length === Object.keys(whole).length) forgetIntakeDraftIfUnchanged(number, whole);
+        })
+        .catch(() => {});
     },
     [number],
   );
@@ -150,6 +184,7 @@ export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoF
     const next = { ...draftRef.current, [key]: value };
     draftRef.current = next;
     setDraft(next);
+    keepIntakeDraft(number, next);
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => void flush(), immediately ? 0 : SAVE_AFTER_MS);
   };
