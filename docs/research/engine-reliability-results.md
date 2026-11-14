@@ -438,3 +438,103 @@ A rule that would separate `9c65078f` (evidence 5.5) from subject14 (1.9), such 
 ### 11.9 Reproducing
 
 `reliability.py device --sittings <folder of phone files>`, `dimmed --sittings <ubfc> --set tuning|heldOut --work <dir>`, and `adversarial`, which now writes QA round 2's families (`sliding`, `stillbeat`). Add `--config '{"wholeSittingCorroboratingStretches": 3}'` or `'{"wholeSittingRegionAgreement": 1.5}'` for the two rules of 11.6. The capture module's type-check: build `Sources/SignalEngine` with `swiftc -emit-module` for `arm64-apple-ios17.0-simulator`, then `swiftc -typecheck` the module's files that do not import ExpoModulesCore with `-I` pointing at it. `swift test`: 200 tests in 50 suites.
+
+## 12. Round 4: QA round 3's findings
+
+14 November 2026, evening, commits `bb40a0f` to the head of the branch, by a development agent that wrote none of the earlier rounds. The brief is `engine-reliability-qa3.md`. Not signed off: a QA agent tests it next. Nothing was run on a phone or in the simulator. This was a narrow round: what QA found, and no new engine feature beyond the one check R1 needed.
+
+**The held-out set was not used to choose anything in this round** (QA's R2). Everything below was chosen on the tuning set, the owner's seven phone sittings and the controls. The held-out figures in 12.5 were run once, after the engine was frozen, and are there as information only.
+
+### 12.1 R1: a coloured screen flickering at a rate in the band
+
+QA's scripts were no longer on disk, so the control was written again from QA's description and now stands with the others: `reliability.py screen` (12.6). Each of the seven phone sittings is shuffled in blocks, which removes the pulse and keeps the phone's noise. The light then switches between two levels 1%, 2% or 3% apart every 0.4, 0.45, 0.5 or 0.6 s, grey or with red moving 0.5, 1 or 1.5 times further than green and blue 0.3 of that the other way; ramp 0 to 0.2 s, switch times jittered or not. 48 per sitting, 336 in all. It is harsher than QA's draw (round 3 gives 51 here against QA's 30), and it orders the engines the same way.
+
+| Sittings of 336 ending with a heart rate (with normal confidence) | Baseline | Round 2 | Round 3 | Round 3, levels not carried | **Now** |
+|---|---|---|---|---|---|
+| Seed 0 | 27 (27) | 34 (32) | 51 (51) | 40 (40) | **0** |
+| Seed 5000, run once after the change | | 22 (21) | 42 (41) | | **0** |
+| Seconds with a live reading, seed 0, of 16,368 | 336 | 610 | 897 | 746 | **26** |
+
+Every rate was the flicker's own, and none of the 84 grey ones gave a rate at any engine, as QA found.
+
+**Why it got through.** The projection adds two colour-difference signals: green minus blue, and green plus blue minus twice red. Blood moves them together. Light that turns warmer and cooler moves them against each other and they cancel, which the engine already tested for (`minimumProjectionYield`). But they cancel only when the flicker is large against the sensor's noise. When it is about the size of the noise, the scale between the two is set by the noise, little cancels (the yield was 0.3 to 0.9 against a limit of 0.1), the brightness checks see too little brightness, and what is left is a clean rhythm at the screen's rate. A synthetic sitting shows the same with nothing from a recording in it: skin with 0.5 counts of noise under a 1% flicker gives 50 valid seconds of 60 at exactly the flicker's rate.
+
+**The fix** is the missing half of the existing test: the two signals must not only fail to cancel, they must move the same way. `colourPhase` is the cosine of the angle between them at the rate the window would report. A window under 0 (`minimumColourPhase`) is refused as illumination. 0 is the line between "together" and "against" and was not tuned.
+
+| Valid windows by colour phase | Under 0 | 0 to 0.4 | Over 0.4 |
+|---|---|---|---|
+| UBFC tuning set, 16 sittings, 754 windows | 1 | 3 | 750 |
+| Owner's phone sittings, 37 windows (lowest 0.35) | 0 | 1 | 36 |
+| Screen control, the 897 seconds round 3 made valid | 855 | 17 | 25 |
+
+The check runs after the movement checks, so a moving head is still called movement and the operator's message does not change. Levels are still carried across cuts: with this check the control is at 0 with them on, so the valid seconds they bought on the phone are kept (12.3).
+
+**What it does not cover.** The same 336 with the colour of the flicker changed:
+
+| Flicker | Round 2 | Round 3 | Now | Now, levels not carried | Now, levels not carried and regions cut together |
+|---|---|---|---|---|---|
+| Red only, blue unchanged | 82 | 115 | 57 | 44 | |
+| Red and blue together against green | 64 | 83 | **79** | 73 | 61 |
+
+- Red alone leaves the first signal empty, so there is no angle to measure. The check catches about half.
+- Red and blue together against green is, in three colour means, what blood does: green falls against the other two. Nothing in the colour tells it from a pulse, and this round is still above round 2 there (79 against 64). Carrying levels accounts for 6 of the 15, and cutting regions separately for the rest. Both were kept: switching them off gives back every valid second round 3 gained on the phone and still leaves 61 of 336. **This is open**, and it is why the demo checklist says no screen faces the patient.
+- Neither variant was in QA's control, whose blue moves the other way. They are reported because they were found.
+
+### 12.2 R3: another person within the 2 s bridge
+
+Two things the file carries were measured.
+
+- **Colour does not separate them.** Across the phone's own ten face losses of 2 s or less, the same person comes back with the regions' colour shares changed by 4% to 28% (the middle region of three) and 0.4 to 1.5 times as bright. Two different UBFC tuning subjects differ by 3.9% at the median, and only 16% of pairs by more than 8%. A colour rule that caught another person would stop bridging the losses that bridging is for. Not built.
+- **The face box does, when the face is somewhere else.** A face found again is bridged only if its box is where the lost one was: centre within 0.6 of the wider box's width, width within 1.6 times (`bridgeMaximumJump`, `bridgeMaximumScaleChange`, the capture module's own limits for following one face). Otherwise it is another face and the history resets. Files without a box are bridged as before.
+
+So a second face elsewhere in the picture is no longer bridged, once the phone is rebuilt and records boxes. A person who sits down in the patient's place within 2 s still is, and the previous rate can stay for 1 to 4 s, as QA measured (94 of 240 spliced sittings; those files carry no box, so that figure has not moved). CONTRACTS section 1 and the code comments now say so. They used to say another face is never bridged.
+
+### 12.3 What moved, on tuning data, the owner's sittings and the controls
+
+Round 3 and now, on the same files, with `reliability.py`.
+
+| | Round 3 | Now |
+|---|---|---|
+| Phone sittings ending with a heart rate (7) | 2 (`2e056c81` 92.1 normal, `a88a50e1` 101.7 low) | the same |
+| Phone valid seconds, all seven (per sitting 1, 19, 7, 0, 0, 5, 5) | 37 | 37 |
+| UBFC tuning, 12 sound: coverage / within 5 bpm / MAE | 68.8% / 95.3% / 2.02 | 68.6% / 95.3% / 2.02 |
+| same: sittings with a heart rate (right, wrong) | 12 (11, 1) | 12 (11, 1) |
+| Tuning controls, 588, this round's draw: end with a rate / live seconds | 0 / 0.25% | 0 / 0.24% |
+| Dimmed to a half, tuning 24: right, wrong | 12, 0 | 12, 0 |
+| Dimmed to 0.3, tuning 24: right, wrong | 5, 0 | 5, 0 |
+| Light in the band, no pulse (32): end with a rate | 6 | **0** |
+| Leaking bob, no pulse (72) | 10 | 8 |
+| Sliding movement, no pulse (48) | 38 | 34 |
+| Sliding movement on a real pulse (48): right, wrong | 40, 6 | 40, 6 |
+| Still person, beat-locked brightness (360): right | 348 | 348 |
+| Faint synthetic pulses (648): end with a rate, wrong | 146, 0 | 149, 0 |
+| Harmonics (77): right, doubled | 14, 3 | 14, 3 |
+| Bobbing head (24) / colour jumps on a pulse (8) / seconds a rate stays on a covered face | 0 / 6 right / 1 or 2 | the same |
+
+The cost is one valid second of 754 on the tuning set (subject49, 50 against 51). No control gained a rate.
+
+### 12.4 The server and the screens
+
+- **N1.** The score rule measures a rise from the score of the two parameter baselines, as the shift rule measures from the baselines themselves. After a lower-confidence check-in with breathing, re-checks at 100 and 101 bpm raise nothing. 80 then 115 and 116 still flags. A lower-confidence re-check moves no baseline, score or flag (`rules.test.ts`, smoke step 19).
+- **N2.** The server stores the lower of the stated confidence and its own rule: `normal` on 3 valid seconds is stored `low` and is no baseline (`contracts.test.ts`, smoke step 17).
+- **N3 to N6.** A re-check baseline wraps inside the wall tile: no overrun at 768 to 1920 px, where it was 19 to 41 px. Flags, the flag card and the flag settings say baseline where it may be a re-check's. A finished sitting with a lower-confidence rate no longer says "No heart rate was accepted" or waits for a first reading. The waiting-room heading and the statistics page count lower-confidence patients under their own words (`waitingNow.lowConfidence`, optional).
+- **R5.** The clipping guard is unchanged: a face that still clips two stops down is never locked on. What changed is that it no longer waits in silence. After 8 s of "exposure adjusting" the check-in page and the camera's viewfinder say "Exposure will not settle. Too bright or too dark: move the light". The dashboard works it out from what the phone already sends, so it needs no rebuild. The phone's half is unit-tested only.
+- **Smoke on the production build.** A property of the script, not a fault. In production mode the server, by design, neither returns nor logs a verification link without a mail key, and refuses sitting files. The script now says so, and CONTRACTS section 9 gives the way to run it (`NODE_ENV=test next start`).
+
+### 12.5 Held-out, once, for information
+
+Run once after the engine was frozen. Nothing was decided on it, and after QA's R2 it cannot carry a decision.
+
+| | Round 3 | Now |
+|---|---|---|
+| UBFC held-out, 21: coverage / within 5 bpm / MAE | 61.5% / 89.2% / 2.39 | 60.5% / 89.4% / 2.37 |
+| same: sittings with a heart rate (right, wrong) | 20 (17, 3) | 20 (17, 3) |
+| Held-out controls, seed 770000 (648 in this round's draw, 636 in round 3's): end with a rate / live seconds | 0 / 0.18% | 0 / 0.18% |
+
+Coverage is a point lower, about 13 seconds of 1,345, which is more than the tuning set showed. It is reported, not acted on.
+
+### 12.6 Reproducing
+
+The tuning set was re-scored with `reliability.py score`, which runs `engine-cli` over the stored sitting files. `eval/run_eval.py --rescore` was not run: in a worktree it has no `eval/data`, and pointed at the main checkout's it would start fetching the five tuning subjects that have no sitting file.
+
+`reliability.py screen --sittings <folder of phone files> --work <dir> [--seed n] [--keep]` writes and runs the screen control and removes its files. `--config '{"minimumColourPhase": -1}'` switches the new check off, and `'{"levelsAcrossCuts": false}'` the levelling. `engine-cli diagnose` prints `colourPhase` for every window. `swift test`: 206 tests in 51 suites.
