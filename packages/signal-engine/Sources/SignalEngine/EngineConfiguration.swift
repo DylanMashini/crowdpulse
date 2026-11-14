@@ -134,6 +134,15 @@ public struct EngineConfiguration: Codable, Sendable, Equatable {
   /// changes with no frame lost in between is another face and always ends the segment.
   /// 0 ends the segment at the first frame without a face.
   public var bridgeSeconds: Double = 2
+  /// A face found again is bridged only if it is where the lost one was. When the frames on
+  /// both sides of the loss carry a face box, the centre of the new box may be no further
+  /// from the old one than this share of the wider box's width, and the wider may be no more
+  /// than `bridgeMaximumScaleChange` times the narrower. These are the capture module's own
+  /// limits for following one face from detection to detection (`FaceTracker.sameFace`).
+  /// Beyond them it is another face in the picture and the segment ends. Frames without a
+  /// box (files from before it was recorded, dataset video) are bridged on time alone.
+  public var bridgeMaximumJump: Double = 0.6
+  public var bridgeMaximumScaleChange: Double = 1.6
   /// After a cut, each channel of a region is scaled so that its level just after the cut
   /// equals its level just before, the cut itself is filled with a straight line, and the
   /// projection runs across it. A step in the light (a screen changing next to the patient)

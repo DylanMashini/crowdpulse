@@ -184,6 +184,70 @@ private func steppingLight(every: Double, _ change: (inout SyntheticSitting) -> 
     #expect(result.heartRates.filter { $0.elapsed > 30 }.allSatisfy { abs($0.bpm - 120) <= 2 })
   }
 
+  /// Two people, the second found `gap` seconds after the first was lost, under a new track
+  /// id. `boxes` are the face boxes each is recorded with; nil leaves the frames without one.
+  private func swap(gap: Double, boxes: (FaceBox, FaceBox)?) -> [FrameRecord] {
+    let first = sitting { $0.heartRateBpm = 70; $0.durationSeconds = 30 }
+    let second = sitting {
+      $0.heartRateBpm = 120
+      $0.durationSeconds = 30
+      $0.settleSeconds = 0
+      $0.startTime = first.startTime + 30 + gap
+      $0.faceTrackId = 2
+      $0.seed = 2
+    }
+    var lost: [FrameRecord] = []
+    var t = first.startTime + 30
+    while t < second.startTime - 0.5 / 60 {
+      lost.append(FrameRecord(t: t, facePresent: false, exposure: .locked, droppedFrames: 0))
+      t += 1.0 / 60
+    }
+    func boxed(_ frames: [FrameRecord], _ box: FaceBox?) -> [FrameRecord] {
+      frames.map { frame in
+        var frame = frame
+        if frame.facePresent { frame.face = box }
+        return frame
+      }
+    }
+    return boxed(first.frames(), boxes?.0) + lost + boxed(second.frames(), boxes?.1)
+  }
+
+  @Test func aFaceThatComesBackSomewhereElseIsAnotherFace() {
+    // QA round 3, R3: the patient's face is lost and a face elsewhere in the picture is
+    // found within the two seconds. The box says it is not the same face: nothing is bridged.
+    let patient = FaceBox(x: 0.35, y: 0.3, width: 0.3, height: 0.25)
+    let bystander = FaceBox(x: 0.72, y: 0.2, width: 0.2, height: 0.17)
+    for gap in [0.1, 0.6, 1.5] {
+      let result = replay(swap(gap: gap, boxes: (patient, bystander)))
+      #expect(result.heartReasons(in: 32...35).contains(.faceChanged), "gap \(gap)")
+      #expect(!result.heartRates.contains { $0.elapsed > 30.5 && abs($0.bpm - 70) <= 10 }, "gap \(gap)")
+      #expect(result.heartRates.contains { $0.elapsed > 40 && abs($0.bpm - 120) <= 2 }, "gap \(gap)")
+    }
+    // A face that comes back much larger or smaller is not the same one either.
+    let near = FaceBox(x: 0.25, y: 0.2, width: 0.5, height: 0.42)
+    #expect(replay(swap(gap: 0.6, boxes: (patient, near))).heartReasons(in: 32...35).contains(.faceChanged))
+  }
+
+  @Test func aFaceThatComesBackWhereItWasIsStillBridged() {
+    // The same place, a fifth of a face to one side, a little larger: bridged as before.
+    let before = FaceBox(x: 0.35, y: 0.3, width: 0.3, height: 0.25)
+    let after = FaceBox(x: 0.41, y: 0.31, width: 0.33, height: 0.27)
+    for boxes in [(before, after), (before, before)] {
+      var frames = sitting { $0.faceLoss = .init(start: 30, end: 30.8) }.frames()
+      frames = frames.map { frame in
+        var frame = frame
+        if frame.facePresent { frame.face = frame.t < 1030.4 ? boxes.0 : boxes.1 }
+        return frame
+      }
+      let result = replay(frames)
+      #expect(!result.heartReasons(in: 31...40).contains(.faceChanged))
+      #expect(result.heartRates.contains { $0.elapsed > 31 && $0.elapsed <= 35 })
+    }
+    // And a file with no boxes, or with a box on one side of the gap only, is bridged as before.
+    let unboxed = replay(swap(gap: 0.6, boxes: nil))
+    #expect(!unboxed.heartReasons(in: 31...36).contains(.faceChanged))
+  }
+
   @Test func aLostFaceWithNoPulseBehindItGivesNothing() {
     let result = replay(sitting { $0.subject = .noise; $0.faceLoss = .init(start: 30, end: 30.8) })
     #expect(result.heartRates.count <= 2)

@@ -412,6 +412,8 @@ struct PulseTracker {
   /// The face was lost since the last usable frame of this segment.
   /// If it is back within `bridgeSeconds` the segment carries on and the moment is cut out.
   private var interrupted = false
+  /// The face box of the newest usable frame of this segment, when the frame carried one.
+  private var lastFace: FaceBox?
 
   /// When true, every `tick` and `missedTick` leaves a `lastDiagnostic`, and a window that a
   /// check refuses before the analysis is analysed all the same, for the diagnostic only.
@@ -435,8 +437,9 @@ struct PulseTracker {
         faceChanged = true
         // A new track with no frame in between is another face in the picture: history
         // never carries over to it. A new track after the face was lost for a moment is
-        // what the tracker gives the same face when it finds it again, and is bridged.
-        if !(interrupted && bridges(at: frame.t)) {
+        // what the tracker gives the same face when it finds it again, and is bridged,
+        // unless its box says it is somewhere else in the picture.
+        if !(interrupted && bridges(at: frame.t) && isWhereTheFaceWas(frame.face)) {
           endSegment()
           warmUpReason = .faceChanged
         }
@@ -473,14 +476,16 @@ struct PulseTracker {
     if segmentStart == nil {
       segmentStart = frame.t
     } else if interrupted {
-      if bridges(at: frame.t) {
+      if bridges(at: frame.t), isWhereTheFaceWas(frame.face) {
         bridge = true
       } else {
+        if bridges(at: frame.t) { warmUpReason = .faceChanged }
         endSegment()
         segmentStart = frame.t
       }
     }
     interrupted = false
+    lastFace = frame.face
 
     let change = colourChange.push(time: frame.t, frame: frame)
     var chestMoving = false
@@ -512,16 +517,33 @@ struct PulseTracker {
   /// usable frame is no more than `bridgeSeconds` old. The face tracker gives up a face
   /// after half a second without a detection and numbers it anew when it is found again,
   /// so a blink of the detector would otherwise cost six seconds of warm-up and the
-  /// readings on either side of it. Nobody changes places with the patient in that time.
+  /// readings on either side of it. Time alone cannot tell the patient from someone who
+  /// takes their place within those seconds: a face in the same place is bridged whoever
+  /// it is, and the previous rate can stay on screen for a second or a few (QA round 3, R3).
+  /// A face somewhere else in the picture is not (`isWhereTheFaceWas`).
   private func bridges(at now: Double) -> Bool {
     guard configuration.bridgeSeconds > 0, segmentStart != nil, let last = history.times.last else { return false }
     return now - last <= configuration.bridgeSeconds
   }
 
-  /// Signal history never carries across an exposure change, or a face lost for longer
-  /// than `bridgeSeconds`.
+  /// Whether a face found again at `box` can be the one that was lost: no further from where
+  /// that one was than the capture module lets one face move between two detections, and
+  /// about the same size. True when either side has no box to compare.
+  private func isWhereTheFaceWas(_ box: FaceBox?) -> Bool {
+    guard let before = lastFace, let box, before.width > 0, box.width > 0 else { return true }
+    let jump = hypot(
+      (box.x + box.width / 2) - (before.x + before.width / 2),
+      (box.y + box.height / 2) - (before.y + before.height / 2))
+    let wider = max(before.width, box.width)
+    return jump <= configuration.bridgeMaximumJump * wider
+      && wider <= configuration.bridgeMaximumScaleChange * min(before.width, box.width)
+  }
+
+  /// Signal history never carries across an exposure change, a face lost for longer than
+  /// `bridgeSeconds`, or a face found again somewhere else.
   private mutating func endSegment() {
     interrupted = false
+    lastFace = nil
     segmentStart = nil
     colourChange.reset()
     acceptedSinceReset = false
