@@ -3,11 +3,12 @@
     {"dataset", "id", "group", "info": {...}, "prepare": callable(sitting_path) -> (counts, reference)}
 
 `prepare` writes the sitting file and returns the converter's counts and [(seconds, bpm)].
-Downloads go under eval/data/<dataset>; bulky video is deleted once it has been converted.
+Downloads go under <data directory>/<dataset>; bulky video is deleted once it has been converted.
 """
 import csv
 import datetime
 import pathlib
+import shutil
 import subprocess
 import threading
 
@@ -43,6 +44,10 @@ def fetch(url, path):
     with lock:
         if not path.exists():
             path.parent.mkdir(parents=True, exist_ok=True)
+            free = shutil.disk_usage(path.parent).free
+            if free < core.MIN_FREE_BYTES:
+                raise RuntimeError(f"download refused: {free / 1024 ** 3:.1f} GB free, "
+                                   f"under the floor of {core.MIN_FREE_BYTES / 1024 ** 3:.1f} GB")
             partial = path.with_suffix(path.suffix + ".part")
             subprocess.run(["curl", "-sfL", "--retry", "5", "--retry-all-errors", "-o", str(partial), url], check=True)
             partial.rename(path)

@@ -4,20 +4,31 @@
 # ///
 """Heart-rate accuracy of the SignalEngine on public rPPG datasets (master plan, section 16).
 
-    uv run eval/run_eval.py mcd --subjects 40
-    uv run eval/run_eval.py ubfc | scamps | rppg10 | cmu
+    uv run eval/run_eval.py ubfc --workers 3            # all 42 subjects, about 1.9 GB of video each
+    uv run eval/run_eval.py mcd --subjects 100 --workers 4
+    uv run eval/run_eval.py mcd --subjects 100 --rescore --split tuning
     uv run eval/run_eval.py report
 
 Each recording goes through the same path as a phone sitting: video frames -> the capture
 module's face regions -> a sitting file -> engine-cli. The dataset's own heart rate (or pulse
-waveform) is the reference. Videos are deleted after conversion; sitting files are kept in
-eval/out so the engine can be re-scored without downloading again (--rescore).
+waveform) is the reference. Videos are deleted after conversion; sitting files are kept in the
+output directory so the engine can be re-scored without downloading again (--rescore, which
+also resumes a run that was stopped: recordings without a sitting file are fetched).
+
+Subjects are split into a tuning set and a held-out set by eval/split.json (see eval/split.py).
+Tune on the tuning set only (--split tuning). Every published figure comes from the held-out set.
+
+Directories: --data and --out, or TRIAGECAM_EVAL_DATA and TRIAGECAM_EVAL_OUT, default eval/data
+and eval/out. A git worktree has neither, so point it at one shared data directory and at an
+output directory of its own. A download is refused when the data directory's disk has less than
+--min-free-gb free (default 5).
 """
 import argparse
 import concurrent.futures
 import csv
 import datetime
 import json
+import os
 import pathlib
 import statistics
 import subprocess
@@ -28,10 +39,12 @@ import numpy as np
 from scipy import signal
 
 import datasets
+import split
 
 ROOT = pathlib.Path(__file__).resolve().parent
-DATA = ROOT / "data"
-OUT = ROOT / "out"
+DATA = pathlib.Path(os.environ.get("TRIAGECAM_EVAL_DATA") or ROOT / "data").resolve()
+OUT = pathlib.Path(os.environ.get("TRIAGECAM_EVAL_OUT") or ROOT / "out").resolve()
+MIN_FREE_BYTES = 5 * 1024 ** 3  # a download is refused when the disk has less than this free
 CONVERTER = ROOT / "video-to-sitting/.build/release/video-to-sitting"
 ENGINE = ROOT.parent / "packages/signal-engine/.build/release/engine-cli"
 
@@ -116,7 +129,7 @@ def evaluate(recording, rescore):
     """Prepare (download, convert), score, clean up. Never raises: a failure is a result."""
     sitting = OUT / recording["dataset"] / f"{recording['id']}.jsonl"
     reference_cache = sitting.with_suffix(".reference.jsonl")
-    result = {k: recording[k] for k in ("dataset", "id", "group")}
+    result = {k: recording[k] for k in ("dataset", "id", "group", "split")}
     result.update(recording.get("info", {}))
     try:
         if rescore and sitting.exists() and reference_cache.exists():
@@ -132,7 +145,24 @@ def evaluate(recording, rescore):
     return result
 
 
-def run(dataset, recordings, workers, rescore):
+def with_split(dataset, recordings, only=None):
+    """Mark each recording with its subject's set from eval/split.json; keep one set if asked."""
+    sets = split.load().get(dataset, {})
+    for recording in recordings:
+        subject = recording["info"]["subject"]
+        if subject not in sets:
+            sys.exit(f"{dataset} subject {subject} is not in eval/split.json; see eval/split.py")
+        recording["split"] = sets[subject]
+    return [r for r in recordings if only in (None, r["split"])]
+
+
+def run(dataset, recordings, workers, rescore, only=None):
+    """Evaluate the recordings and write <out>/<dataset>.json. When only one set was asked for,
+    the other set's rows from the last run are kept, so the report still shows both."""
+    path = OUT / f"{dataset}.json"
+    kept = []
+    if only and path.exists():
+        kept = [r for r in json.loads(path.read_text()) if r.get("split") not in (None, only)]
     results = []
     with concurrent.futures.ThreadPoolExecutor(workers) as pool:
         for result in pool.map(lambda r: evaluate(r, rescore), recordings):
@@ -141,7 +171,8 @@ def run(dataset, recordings, workers, rescore):
                 f"MAE {result['meanAbsoluteErrorBpm']:.1f} bpm, coverage {result['coverage']:.0%}"
                 if result.get("meanAbsoluteErrorBpm") is not None else f"no reading, coverage {result['coverage']:.0%}")
             print(f"[{len(results)}/{len(recordings)}] {dataset} {result['id']}: {status}", flush=True)
-    (OUT / f"{dataset}.json").write_text(json.dumps(results, indent=1))
+    OUT.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(kept + results, indent=1))
     return results
 
 
@@ -157,6 +188,7 @@ def summarise(results):
                  if r.get("summaryHeartRateBpm") is not None and r.get("referenceMeanBpm") is not None]
     firsts = [r["timeToFirstReadingSeconds"] for r in scored if r.get("timeToFirstReadingSeconds") is not None]
     return {
+        "subjects": len({r.get("subject") for r in results}),
         "recordings": len(results), "failed": len(results) - len(scored), "withReading": len(paired),
         "pairedReadings": pairs,
         "maeBpm": weighted("meanAbsoluteErrorBpm"), "biasBpm": weighted("biasBpm"),
@@ -171,34 +203,62 @@ def summarise(results):
 
 def report():
     number = lambda v, f="{:.1f}": "n/a" if v is None else f.format(v)
+    recorded = json.loads(split.FILE.read_text())
     lines = ["# Heart-rate accuracy on public datasets", "",
              f"Generated {datetime.date.today().isoformat()} by `eval/run_eval.py`. Engine: `packages/signal-engine` at its default configuration.", "",
              "Readings are the engine's once-per-second heart rate, paired with the dataset's reference within 1.5 s. "
-             "Coverage is the share of seconds with a reading. Per-recording error compares the sitting summary with the mean reference.", ""]
-    header = ("| Set | Recordings | With a reading | Paired readings | MAE (bpm) | Bias (bpm) | Within 5 bpm | Coverage | "
+             "Coverage is the share of seconds with a reading. Per-recording error compares the sitting summary with the mean reference.", "",
+             f"Subjects are split into a tuning set and a held-out set by `eval/split.json` (seed {recorded['seed']}, by subject, "
+             "half of every subject in the dataset each). Engine parameters are tuned on the tuning set only. "
+             "**Published figures come from the held-out set.**", ""]
+    header = ("| Set | Subjects | Recordings | With a reading | Paired readings | MAE (bpm) | Bias (bpm) | Within 5 bpm | Coverage | "
               "Per-recording MAE (bpm) | Summaries within 5 bpm | Median time to first (s) |")
     for path in sorted(OUT.glob("*.json")):
         results = json.loads(path.read_text())
         name = path.stem
-        lines += [f"## {datasets.TITLES.get(name, name)}", "", datasets.NOTES.get(name, ""), "", header, "|" + "---|" * 11]
-        groups = {}
-        for r in results:
-            groups.setdefault(r["group"], []).append(r)
-        if len(groups) > 1:
-            groups = {"All": results, **groups}
-        for group, rows in groups.items():
-            s = summarise(rows)
-            lines.append(
-                f"| {group} | {s['recordings']} | {s['withReading']} | {s['pairedReadings']} | {number(s['maeBpm'])} | "
-                f"{number(s['biasBpm'], '{:+.1f}')} | {number(s['within5'], '{:.0%}')} | {number(s['coverage'], '{:.0%}')} | "
-                f"{number(s['perRecordingMaeBpm'])} | {number(s['perRecordingWithin5'], '{:.0%}')} "
-                f"(n={s['recordingsWithSummary']}) | {number(s['medianTimeToFirstS'], '{:.0f}')} |")
-        failed = [r for r in results if "error" in r]
-        if failed:
-            lines += ["", f"{len(failed)} recording(s) could not be scored: " + "; ".join(f"{r['id']} ({r['error']})" for r in failed[:5])]
-        lines.append("")
+        lines += [f"## {datasets.TITLES.get(name, name)}", "", datasets.NOTES.get(name, ""), ""]
+        sets = recorded["datasets"].get(name, {})
+        for key, listed in ((split.HELD_OUT, "heldOut"), (split.TUNING, "tuning")):
+            in_set = [r for r in results if r.get("split") == key]
+            evaluated = len({r.get("subject") for r in in_set})
+            lines += [f"### {split.NAMES[key]}: {evaluated} of the dataset's {len(sets.get(listed, []))} {key} subjects", ""]
+            if not in_set:
+                lines += ["Not evaluated.", ""]
+                continue
+            lines += [header, "|" + "---|" * 12]
+            groups = {}
+            for r in in_set:
+                groups.setdefault(r["group"], []).append(r)
+            if len(groups) > 1:
+                groups = {"All": in_set, **groups}
+            for group, rows in groups.items():
+                s = summarise(rows)
+                lines.append(
+                    f"| {group} | {s['subjects']} | {s['recordings']} | {s['withReading']} | {s['pairedReadings']} | {number(s['maeBpm'])} | "
+                    f"{number(s['biasBpm'], '{:+.1f}')} | {number(s['within5'], '{:.0%}')} | {number(s['coverage'], '{:.0%}')} | "
+                    f"{number(s['perRecordingMaeBpm'])} | {number(s['perRecordingWithin5'], '{:.0%}')} "
+                    f"(n={s['recordingsWithSummary']}) | {number(s['medianTimeToFirstS'], '{:.0f}')} |")
+            failed = [r for r in in_set if "error" in r]
+            if failed:
+                lines += ["", f"{len(failed)} recording(s) could not be scored: " + "; ".join(f"{r['id']} ({r['error']})" for r in failed[:5])]
+            lines.append("")
+        unmarked = sum(r.get("split") not in (split.HELD_OUT, split.TUNING) for r in results)
+        if unmarked:
+            lines += [f"{unmarked} recording(s) carry no set (scored before the split existed) and are left out. Run the dataset again.", ""]
+    OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "report.md").write_text("\n".join(lines))
     print("\n".join(lines))
+
+
+def set_directories(data, out, min_free_gb):
+    """This file runs as __main__ while datasets.py imports it again as run_eval: both copies are told."""
+    for module in (sys.modules[__name__], datasets.core):
+        if data:
+            module.DATA = pathlib.Path(data).resolve()
+        if out:
+            module.OUT = pathlib.Path(out).resolve()
+        if min_free_gb is not None:
+            module.MIN_FREE_BYTES = int(min_free_gb * 1024 ** 3)
 
 
 def main():
@@ -206,14 +266,23 @@ def main():
     parser.add_argument("dataset", choices=[*datasets.LOADERS, "report"])
     parser.add_argument("--subjects", type=int, default=None, help="limit the number of subjects")
     parser.add_argument("--workers", type=int, default=6)
-    parser.add_argument("--rescore", action="store_true", help="reuse sitting files already in eval/out")
+    parser.add_argument("--rescore", action="store_true", help="reuse sitting files already in the output directory")
+    parser.add_argument("--split", choices=[split.TUNING, split.HELD_OUT], default=None,
+                        help="evaluate one set only; the other set's rows from the last run are kept")
+    parser.add_argument("--data", default=None, help="dataset directory (default TRIAGECAM_EVAL_DATA, else eval/data)")
+    parser.add_argument("--out", default=None, help="output directory (default TRIAGECAM_EVAL_OUT, else eval/out)")
+    parser.add_argument("--min-free-gb", type=float, default=None, help="refuse downloads below this much free disk (default 5)")
     arguments = parser.parse_args()
+    set_directories(arguments.data, arguments.out, arguments.min_free_gb)
+    found = split.problems()
+    if found:
+        sys.exit("eval/split.json: " + "; ".join(found))
     if arguments.dataset != "report":
         for tool in (CONVERTER, ENGINE):
             if not tool.exists():
                 sys.exit(f"build {tool} first: swift build -c release in its package")
-        recordings = datasets.LOADERS[arguments.dataset](arguments.subjects)
-        run(arguments.dataset, recordings, arguments.workers, arguments.rescore)
+        recordings = with_split(arguments.dataset, datasets.LOADERS[arguments.dataset](arguments.subjects), arguments.split)
+        run(arguments.dataset, recordings, arguments.workers, arguments.rescore, arguments.split)
     report()
 
 
