@@ -102,7 +102,9 @@ export function SittingChart({ values, title = 'Heart rate over the sitting', wi
 
       {present.length === 0 ? (
         <p className="rounded-md border border-dashed border-line-strong px-4 py-6 type-caption text-ink-muted">
-          No readings in this sitting yet. The line starts with the first heart rate from the camera.
+          {ended
+            ? 'This sitting gave no live heart rate, so there is no line to draw.'
+            : 'No readings in this sitting yet. The line starts with the first heart rate from the camera.'}
         </p>
       ) : asTable ? (
         <div className="max-h-[260px] overflow-auto rounded-md border border-line">
