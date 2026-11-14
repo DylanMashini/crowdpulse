@@ -25,6 +25,15 @@ export function showFlagsInApp(): void {
 /** Asks for permission and an Expo push token. Never throws: an unavailable push has a reason. */
 export async function registerForPush(): Promise<PushRegistration> {
   if (!Device.isDevice) {
+    // Apple's push service does not reach a simulator, but `xcrun simctl push` does, and only
+    // once notifications are allowed. Asking here lets the test rig show a flag notification
+    // and tap it; the phone still reports push as off, because no server push can arrive.
+    try {
+      const permission = await Notifications.getPermissionsAsync();
+      if (!permission.granted && permission.canAskAgain) await Notifications.requestPermissionsAsync();
+    } catch (error) {
+      console.warn('Notification permission could not be asked on the simulator', error);
+    }
     return { available: false, reason: 'Push notifications do not reach a simulator' };
   }
   try {
