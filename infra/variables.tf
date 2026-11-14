@@ -137,8 +137,9 @@ variable "github_oidc_subject_prefix" {
     token's `sub` claim, up to but not including ":ref:...". Ask GitHub for it:
       gh api repos/<owner>/<repository>/actions/oidc/customization/sub -q .sub_claim_prefix
     It is "repo:<owner>/<repository>" for a repository on the classic format, and carries the
-    numeric owner and repository ids ("repo:<owner>@<id>/<repository>@<id>") on the immutable
-    format, which survives a rename.
+    numeric owner and repository ids as well ("repo:<owner>@<id>/<repository>@<id>") on the
+    immutable format. Both contain the repository's name, so after renaming or transferring
+    the repository this value has to be read again and applied, or every deploy is refused.
   EOT
   type        = string
 
