@@ -88,7 +88,7 @@ export default function FaceMatch() {
         if (permission !== 'granted') {
           return settle({ step: 'fallback', reason: 'Triage Cam is not allowed to use the camera', cameraDenied: true });
         }
-        await TriageCapture.startCapture({ camera: 'back', frameRate: 30 });
+        await TriageCapture.startCapture({ frameRate: 30 });
       } catch (error) {
         settle({ step: 'fallback', reason: captureErrorMessage(error) });
       }
@@ -113,6 +113,7 @@ export default function FaceMatch() {
             <LiveViewfinder
               state={viewfinder}
               message={match.step === 'matching' ? 'Checking for a matching patient. Keep still.' : undefined}
+              flipDisabled={match.step === 'matching'}
             />
           </View>
           <Text style={[theme.type.caption, { color: theme.colors.inkMuted }]}>

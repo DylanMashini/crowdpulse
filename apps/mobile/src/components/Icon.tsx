@@ -82,6 +82,21 @@ const GLYPHS = {
     { el: 'path', d: 'M6.5 7.7C4.5 9 3.1 10.8 2.5 12c1 2 4.5 6 9.5 6 1.3 0 2.5-.3 3.6-.7' },
     { el: 'path', d: 'M9.9 10a3 3 0 0 0 4.2 4.2' },
   ],
+  // The glyphs below are not in the design system's set. They are drawn on the same grid with
+  // the same stroke, for things only the phone has: the camera flip, search, and the tab icons'
+  // in-screen twins.
+  'flip-camera': [
+    { el: 'path', d: 'M4.5 10.5A8 8 0 0 1 18 6.5' },
+    { el: 'path', d: 'M18.5 3v4h-4' },
+    { el: 'path', d: 'M19.5 13.5A8 8 0 0 1 6 17.5' },
+    { el: 'path', d: 'M5.5 21v-4h4' },
+    { el: 'circle', cx: 12, cy: 12, r: 2.5 },
+  ],
+  search: [
+    { el: 'circle', cx: 11, cy: 11, r: 6.5 },
+    { el: 'path', d: 'M16 16l4.5 4.5' },
+  ],
+  close: [{ el: 'path', d: 'M6 6l12 12M18 6L6 18' }],
 } as const satisfies Record<string, readonly Shape[]>;
 
 export type IconName = keyof typeof GLYPHS;
