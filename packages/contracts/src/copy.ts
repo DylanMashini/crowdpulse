@@ -14,4 +14,4 @@ export const PROTOTYPE_NOTICE = 'Research prototype, not validated for clinical 
 export const LOWER_CONFIDENCE = 'Lower confidence';
 
 /** What that label means, where there is room for a sentence. */
-export const LOWER_CONFIDENCE_DETAIL = 'Too little of this sitting gave a clear pulse. Not used for the baseline or for flags. Repeat the sitting.';
+export const LOWER_CONFIDENCE_DETAIL = 'Too little of the sitting gave a clear pulse. Not used for trends or flags. Repeat the sitting.';
