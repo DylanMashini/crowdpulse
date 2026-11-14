@@ -1,4 +1,13 @@
-import { byFlagRule, timelineByAlert, type CaptureSource, type FlagRule, type TimelineEntry, type WorklistItem } from '@triagecam/contracts';
+import {
+  byFlagRule,
+  isLowConfidence,
+  LOWER_CONFIDENCE,
+  timelineByAlert,
+  type CaptureSource,
+  type FlagRule,
+  type TimelineEntry,
+  type WorklistItem,
+} from '@triagecam/contracts';
 
 import type { Provenance, TimelineItem, WorklistRow } from '@/components/ds';
 
@@ -42,6 +51,7 @@ function toTimelineItem(entry: TimelineEntry, rules: Map<string, FlagRule>, aler
         time,
         title: entry.kind === 'check_in' ? 'Check-in sitting' : 'Re-check sitting',
         vitals: { pulse: entry.heartRate, breathing: entry.breathingRate },
+        pulseNote: entry.heartRate != null && isLowConfidence(entry.heartRateConfidence) ? LOWER_CONFIDENCE : undefined,
         score: entry.score,
         state: noReading ? 'no-reading' : 'observed',
         source: provenance.kind,

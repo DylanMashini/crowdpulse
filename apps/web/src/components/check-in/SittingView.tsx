@@ -1,6 +1,15 @@
 'use client';
 
-import type { Estimate, PatientRef, Sitting, StoredReading, SummaryValue } from '@triagecam/contracts';
+import {
+  isLowConfidence,
+  LOWER_CONFIDENCE,
+  LOWER_CONFIDENCE_DETAIL,
+  type Estimate,
+  type PatientRef,
+  type Sitting,
+  type StoredReading,
+  type SummaryValue,
+} from '@triagecam/contracts';
 import Link from 'next/link';
 import { useMemo } from 'react';
 
@@ -68,10 +77,11 @@ function liveContent(readings: StoredReading[], pick: (reading: StoredReading) =
   };
 }
 
-function summaryContent(value: SummaryValue, endedAt: string): ReadoutContent {
-  return value.value == null
-    ? { state: 'none', reason: 'No reading was accepted in this sitting', coverage: value.coverage }
-    : { state: 'valid', value: rate(value.value), age: `Median of the sitting that ended at ${clockTime(endedAt)}`, coverage: value.coverage };
+function summaryContent(value: SummaryValue, endedAt: string, lowConfidence = false): ReadoutContent {
+  if (value.value == null) return { state: 'none', reason: 'No reading was accepted in this sitting', coverage: value.coverage };
+  // A lower-confidence rate is not the median of anything much: say what it is instead.
+  const age = lowConfidence ? LOWER_CONFIDENCE_DETAIL : `Median of the sitting that ended at ${clockTime(endedAt)}`;
+  return { state: 'valid', value: rate(value.value), age, coverage: value.coverage };
 }
 
 function Vital({ label, icon, unit, content, tag }: { label: string; icon: IconName; unit: string; content: ReadoutContent; tag: ReturnType<typeof provenanceOf> }) {
@@ -113,7 +123,11 @@ export function SittingView({ sitting, patient, readings, serverNow }: SittingVi
   const provenance = provenanceOf(sitting.source);
   const tag = running && sitting.source === 'camera' ? { kind: 'live' as const, label: 'Live' } : provenance;
 
-  const heart = sitting.summary && sitting.endedAt ? summaryContent(sitting.summary.heartRate, sitting.endedAt) : liveContent(readings, (r) => r.heartRate, serverNow);
+  const lowConfidence = sitting.summary?.heartRate.value != null && isLowConfidence(sitting.summary.heartRateConfidence);
+  const heart =
+    sitting.summary && sitting.endedAt
+      ? summaryContent(sitting.summary.heartRate, sitting.endedAt, lowConfidence)
+      : liveContent(readings, (r) => r.heartRate, serverNow);
   const breathing =
     sitting.summary && sitting.endedAt ? summaryContent(sitting.summary.breathingRate, sitting.endedAt) : liveContent(readings, (r) => r.breathingRate, serverNow);
 
@@ -148,7 +162,7 @@ export function SittingView({ sitting, patient, readings, serverNow }: SittingVi
         </div>
 
         <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2">
-          <Vital label="Heart rate" icon="pulse" unit="bpm" content={heart} tag={tag} />
+          <Vital label="Heart rate" icon="pulse" unit="bpm" content={heart} tag={lowConfidence ? { kind: 'experimental', label: LOWER_CONFIDENCE } : tag} />
           <Vital label="Breathing rate" icon="breath" unit="breaths per min" content={breathing} tag={tag} />
         </div>
 

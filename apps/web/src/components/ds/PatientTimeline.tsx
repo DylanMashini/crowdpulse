@@ -12,6 +12,8 @@ export interface TimelineItem {
   title: string;
   /** Present, even when both values are null, for an entry that is a sitting. Rounded when shown. */
   vitals?: { pulse: number | null; breathing: number | null };
+  /** Words that qualify the pulse value, shown as a tag beside it: "Lower confidence". */
+  pulseNote?: string;
   score?: ScoreValue | null;
   state?: TileState;
   source?: Provenance;
@@ -46,6 +48,7 @@ export function PatientTimeline({ items }: { items: TimelineItem[] }) {
               {item.vitals ? (
                 <div className="mt-[2px] flex flex-wrap items-center gap-4 text-[13px] text-ink-muted">
                   <TimelineValue value={item.vitals.pulse} unit="bpm" missing="No pulse reading" />
+                  {item.pulseNote ? <ProvenanceTag kind="experimental">{item.pulseNote}</ProvenanceTag> : null}
                   <TimelineValue value={item.vitals.breathing} unit="breaths per min" missing="No breathing reading" />
                   {item.score != null ? <ScoreChip score={item.score} caption={false} /> : null}
                 </div>
