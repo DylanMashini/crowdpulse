@@ -44,6 +44,18 @@ variable "operator_cidrs" {
   default     = []
 }
 
+variable "origin_header_check" {
+  description = <<-EOT
+    Have Cloudflare add a secret header to every request it sends to the load balancer, and have
+    the load balancer refuse requests without it. The security group already admits only
+    Cloudflare's addresses, but those are shared by every Cloudflare customer; this is what
+    tells this zone's traffic from theirs. Needs a Cloudflare token that also has
+    "Zone > Transform Rules > Edit", which the DNS-only token does not. See docs/DEPLOY.md.
+  EOT
+  type        = bool
+  default     = false
+}
+
 # --- sizes --------------------------------------------------------------------------------------
 
 variable "task_cpu" {

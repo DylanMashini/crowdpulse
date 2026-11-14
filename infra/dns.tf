@@ -69,3 +69,56 @@ resource "aws_acm_certificate_validation" "this" {
     create = "45m"
   }
 }
+
+# --- origin check ---------------------------------------------------------------------------
+# The load balancer's security group admits Cloudflare's addresses, and every Cloudflare
+# customer sends from those. With var.origin_header_check, Cloudflare adds a header holding a
+# secret to each request of this zone on its way to the origin, and the listener rule that
+# forwards to the app (alb.tf) requires it, so traffic sent through anyone else's zone or
+# Worker gets the listener's 404.
+#
+# The secret is made here and exists only in the state (an encrypted, private bucket), at
+# Cloudflare and in the listener rule: it is not a variable and is never typed by anyone.
+# To change it: terraform apply -replace='random_password.origin_header[0]'. Cloudflare and
+# the load balancer are updated one after the other, so expect a few seconds of 404s.
+
+locals {
+  origin_header_check = var.origin_header_check && local.domain_live
+  origin_header_name  = "x-origin-verify"
+}
+
+resource "random_password" "origin_header" {
+  count = local.origin_header_check ? 1 : 0
+
+  length  = 48
+  special = false
+}
+
+# The zone's one ruleset for this phase ("Modify request header" rules in the dashboard). If
+# rules were added there by hand, Cloudflare refuses a second ruleset: import the existing one.
+resource "cloudflare_ruleset" "origin_header" {
+  count = local.origin_header_check ? 1 : 0
+
+  zone_id     = var.cloudflare_zone_id
+  name        = "Triage Cam origin header (Terraform)"
+  description = "Adds the header the load balancer requires to every request sent to the origin."
+  kind        = "zone"
+  phase       = "http_request_late_transform"
+
+  rules = [{
+    ref         = "origin_header"
+    description = "Add the origin header"
+    expression  = "true"
+    action      = "rewrite"
+    enabled     = true
+
+    action_parameters = {
+      headers = {
+        (local.origin_header_name) = {
+          operation = "set"
+          value     = random_password.origin_header[0].result
+        }
+      }
+    }
+  }]
+}

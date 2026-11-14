@@ -119,6 +119,18 @@ resource "aws_lb_listener_rule" "web" {
     }
   }
 
+  # Only requests that came through this Cloudflare zone carry the header (dns.tf).
+  dynamic "condition" {
+    for_each = local.origin_header_check ? [1] : []
+
+    content {
+      http_header {
+        http_header_name = local.origin_header_name
+        values           = [random_password.origin_header[0].result]
+      }
+    }
+  }
+
   action {
     type = "forward"
 
@@ -140,6 +152,9 @@ resource "aws_lb_listener_rule" "web" {
     ignore_changes        = [action]
     create_before_destroy = true
   }
+
+  # The load balancer must not start asking for the header before Cloudflare sends it.
+  depends_on = [cloudflare_ruleset.origin_header]
 }
 
 resource "aws_lb_listener_rule" "www" {

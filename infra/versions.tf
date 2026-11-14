@@ -14,6 +14,10 @@ terraform {
       source  = "hashicorp/http"
       version = "~> 3.6"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.7"
+    }
   }
 
   # The bucket name carries the AWS account id, so it is given at init time:
