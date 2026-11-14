@@ -90,6 +90,9 @@ async function refused(status: number, code: string, method: string, path: strin
   const body = ErrorResponse.parse(JSON.parse(text));
   assert.equal(body.error.code, code, `${method} ${path}`);
   assert.ok(!/\bat .+:\d+:\d+/.test(text), "an error body must not carry a stack trace");
+  if (status === 429) {
+    assert.match(response.headers.get("retry-after") ?? "", /^[1-9]\d*$/, `${method} ${path}: a 429 carries Retry-After in whole seconds`);
+  }
 }
 
 let step = 0;
