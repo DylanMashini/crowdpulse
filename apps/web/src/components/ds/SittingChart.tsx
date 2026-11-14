@@ -4,7 +4,7 @@ import { useState, type MouseEvent } from 'react';
 
 import { cx } from '@/lib/cx';
 
-import { tableCell, tableHeadCell } from './WorklistTable';
+import { tableCell, tableHeadCell } from './TableFrame';
 
 export interface SittingChartProps {
   /** One value per second of the sitting, in bpm. Null where there was no reading. */

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { useLiveEvents } from '@/components/app/live';
-import { PatientIdentity, ScoreChip, StatusBadge, TrendValue, buttonClass, tableCell, tableFrame, tableHeadCell } from '@/components/ds';
+import { PatientIdentity, ScoreChip, StatusBadge, TrendValue, buttonClass, TableFrame, tableCell, tableHeadCell } from '@/components/ds';
 import { LiveStatus } from '@/components/ui/LiveStatus';
 import { PageHeader, Panel } from '@/components/ui/Panel';
 import { Segmented } from '@/components/ui/Segmented';
@@ -273,7 +273,7 @@ function Results({ data }: { data: Statistics }) {
         <h2 id="per-patient-heading" className="type-heading">
           Patients in this period
         </h2>
-        <div className={tableFrame}>
+        <TableFrame label="Patients in this period">
           <table className="w-full border-collapse text-[15px]">
             <thead>
               <tr>
@@ -290,7 +290,7 @@ function Results({ data }: { data: Statistics }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </TableFrame>
         <p className="max-w-[720px] type-caption text-ink-muted">
           Counted from this waiting room&apos;s own sittings. How the camera compares with contact sensors is measured on public recordings:{' '}
           <Link href="/#accuracy" className="font-medium text-signal underline underline-offset-[3px]">

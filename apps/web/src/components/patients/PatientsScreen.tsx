@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 
 import { useLive, useLiveEvents } from '@/components/app/live';
-import { Button, PatientIdentity, StatusBadge, tableCell, tableFrame, tableHeadCell } from '@/components/ds';
+import { Button, PatientIdentity, StatusBadge, TableFrame, tableCell, tableHeadCell } from '@/components/ds';
 import { LiveStatus } from '@/components/ui/LiveStatus';
 import { PageHeader } from '@/components/ui/Panel';
 import { Segmented } from '@/components/ui/Segmented';
@@ -86,7 +86,7 @@ export function PatientsScreen() {
       ) : null}
 
       {items.length > 0 ? (
-        <div className={tableFrame}>
+        <TableFrame label="Patients">
           <table className="w-full border-collapse text-[15px]">
             <thead>
               <tr>
@@ -146,7 +146,7 @@ export function PatientsScreen() {
               })}
             </tbody>
           </table>
-        </div>
+        </TableFrame>
       ) : null}
 
       {nextCursor ? (

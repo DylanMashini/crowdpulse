@@ -17,5 +17,6 @@ export { PatientAvatar, initialsOf, type AvatarSize } from './PatientAvatar';
 export { PatientIdentity, VisitNumber, intakeSummary } from './PatientIdentity';
 export { PatientTimeline, type TimelineItem } from './PatientTimeline';
 export { TrendValue } from './TrendValue';
-export { WorklistTable, tableCell, tableFrame, tableHeadCell } from './WorklistTable';
+export { TableFrame, tableCell, tableHeadCell } from './TableFrame';
+export { WorklistTable } from './WorklistTable';
 export type { Provenance, ScoreValue, TileState, Trend, WorklistRow } from './types';

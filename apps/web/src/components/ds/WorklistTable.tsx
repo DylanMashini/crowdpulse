@@ -5,12 +5,10 @@ import { ProvenanceTag } from './ProvenanceTag';
 import { ScoreChip } from './ScoreChip';
 import { StatusBadge } from './StatusBadge';
 import { PatientIdentity, intakeSummary } from './PatientIdentity';
+import { TableFrame, tableCell, tableHeadCell } from './TableFrame';
 import { TrendValue } from './TrendValue';
 import type { WorklistRow } from './types';
 
-export const tableHeadCell = 'bg-surface-sunken px-3 py-2 text-left type-label whitespace-nowrap text-ink-muted';
-export const tableCell = 'border-t border-line p-3 align-middle';
-export const tableFrame = 'w-full overflow-x-auto rounded-lg border border-line bg-surface-raised';
 
 export interface WorklistTableProps {
   /** Already in rank order. The table does not sort. */
@@ -23,7 +21,7 @@ export interface WorklistTableProps {
 /** The ranked waiting-room worklist: who to walk to first. */
 export function WorklistTable({ rows, selected, onSelect }: WorklistTableProps) {
   return (
-    <div className={tableFrame}>
+    <TableFrame label="Waiting-room worklist">
       <table className="w-full border-collapse text-[15px]">
         <thead>
           <tr>
@@ -98,7 +96,7 @@ export function WorklistTable({ rows, selected, onSelect }: WorklistTableProps) 
                   {row.source ? (
                     <ProvenanceTag kind={row.source}>{row.sourceLabel}</ProvenanceTag>
                   ) : (
-                    <span className="text-[13px] whitespace-nowrap text-ink-muted">No finished sitting</span>
+                    <span className="text-[13px] whitespace-nowrap text-ink-muted">No sitting yet</span>
                   )}
                 </td>
               </tr>
@@ -106,6 +104,6 @@ export function WorklistTable({ rows, selected, onSelect }: WorklistTableProps) 
           })}
         </tbody>
       </table>
-    </div>
+    </TableFrame>
   );
 }
