@@ -143,9 +143,11 @@ export function ruleText(rule: FlagRule): string {
   return RULES[rule];
 }
 
-/** The rules one alert tripped, as one phrase: "Partial score rose from check-in, moved from the check-in baseline". */
+/** The rules one alert tripped, as one phrase: "Score rose and vitals moved from check-in". */
 export function rulesText(rules: readonly FlagRule[]): string {
-  return rules.map((rule, index) => (index === 0 ? RULES[rule] : RULES[rule].charAt(0).toLowerCase() + RULES[rule].slice(1))).join(', ');
+  // The two trend rules name the same baseline, so together they share it.
+  if (rules.length === 2 && rules.includes('score_rise') && rules.includes('baseline_shift')) return 'Score rose and vitals moved from check-in';
+  return rules.map((rule, index) => (index === 0 ? RULES[rule] : RULES[rule].charAt(0).toLowerCase() + RULES[rule].slice(1))).join(' and ');
 }
 
 /** Whole years since a YYYY-MM-DD date of birth, in the browser's zone. Null when it is not known. */
