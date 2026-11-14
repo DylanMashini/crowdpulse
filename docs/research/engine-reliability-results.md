@@ -4,7 +4,7 @@
 
 Every number is measured. Reproduce with `packages/signal-engine/Scripts/reliability.py` (its header lists the commands) and `eval/run_eval.py --rescore`. Parameters were chosen on the UBFC-rPPG tuning set, the owner's sitting and tuning-set negative controls. The held-out set and held-out controls were run once, after the last change to the engine, and nothing was changed afterwards.
 
-Sections 1 to 9 are round 1, which QA round 1 (`engine-reliability-qa1.md`) found not ready: section 10 is what was changed in answer, and is current where the two differ. Nothing here was run on a phone.
+Sections 1 to 9 are round 1, which QA round 1 (`engine-reliability-qa1.md`) found not ready: section 10 is what was changed in answer. Section 11 is round 3, after QA round 2 (`engine-reliability-qa2.md`), and is current where it differs from the others. Nothing here was run on a phone.
 
 ## 1. Headline
 
@@ -317,3 +317,124 @@ One figure went the wrong way: with 0.5 counts of noise added, one more held-out
 ### 10.9 Reproducing
 
 `reliability.py score`, `controls`, `accepts`, `degrade` as before, and new: `reliability.py adversarial --work <dir> [--weak]` writes and runs QA's controls (`Scripts/adversarial.py` lists the families: noise, flicker, lighting, movement, bobbing, leak, splice, short, dropout, jumps, harmonics, cover, weak). The engine's tests carry the bobbing head (24 sittings), the covered face over six seeds, and the evidence tiers. `swift test`: 180 tests in 45 suites.
+
+## 11. Round 3: the owner's phone sittings, and QA round 2
+
+14 November 2026, commits `b14f989` to the head of the branch, by a development agent that wrote neither earlier round. The brief is `engine-reliability-qa2.md`. Not signed off: a QA agent tests it next. Nothing was run on a phone or in the simulator.
+
+**The goal was that a still person on the owner's phone ends with a heart rate. It is not met: 2 of the 7 stored phone sittings end with one, as in round 2.** What this round did is find out why, change how the signal is extracted so that more of each sitting is read, change the capture module where the recordings show the camera or the room working against the signal, and measure two ways of accepting more sittings that looked right on the tuning data and each cost one error on the held-out set, so they are switched off.
+
+The phone sittings have no reference heart rate. Everything said about them shows whether a rate comes out, whether it is stable within a sitting and whether the sittings agree with each other, not whether it is right.
+
+### 11.1 Four points
+
+Tuning set, phone sittings and tuning controls were used to choose; the held-out set was looked at once the engine was frozen, and then once more (11.6). Baseline is `a14e7ab`, round 1 `8b32a18`, round 2 `d0b1cd7`. All four engines were run on the same files by `reliability.py` (`device`, `score`, `dimmed`, `accepts`, `adversarial`); the dimmed sets are this round's own draws, so they differ a little from QA's.
+
+| | Baseline | Round 1 | Round 2 | Now |
+|---|---|---|---|---|
+| Phone sittings ending with a heart rate (7) | 1 | 2 | 2 (one lower confidence) | 2 (one lower confidence) |
+| Phone sittings: valid seconds, all seven together | 14 | 32 | 31 | 37 |
+| UBFC tuning, 12 sound references: coverage / within 5 bpm / MAE | 62.5% / 95.5% / 2.02 | 68.4% / 96.0% / 1.96 | 68.1% / 96.0% / 1.96 | 68.8% / 95.3% / 2.02 |
+| same: sittings with a heart rate (right, wrong) | 11 (10, 1) | 12 (11, 1) | 12 (11, 1) | 12 (11, 1) |
+| UBFC held-out, 21: coverage / within 5 bpm / MAE | 59.8% / 88.9% / 2.51 | 62.2% / 88.2% / 2.58 | 60.4% / 89.8% / 2.38 | 61.5% / 89.2% / 2.39 |
+| same: sittings with a heart rate (right, wrong) | 20 (17, 3) | 20 (17, 3) | 20 (17, 3) | 20 (17, 3) |
+| Real faces dimmed to a half, 0.25 counts of noise, 66 (24 tuning, 42 held-out): end with no heart rate | 19 (29%) | 34 (52%) | 37 (56%) | 37 (56%) |
+| same: end with a rate (right, wrong) | 47 (37, 10) | 32 (31, 1) | 29 (27, 2) | 29 (27, 2) |
+| Dimmed to 0.3, 66: end with a rate (right, wrong) | 20 (11, 9) | 10 (9, 1) | 8 (5, 3) | 8 (5, 3) |
+| Tuning controls, 588: end with a rate / seconds with a live reading | 40 / 0.77% | 0 / 0.32% | 0 / 0.23% | 0 / 0.25% |
+| Held-out controls, 636 (seed 770000): the same | 25 / 0.51% | 1 / 0.22% | 0 / 0.18% | 0 / 0.18% |
+| Bobbing head, no pulse (24): end with a rate | 0 | 22 | 0 | 0 |
+| Sliding movement, no pulse (QA's `L`, 48): end with a rate | 38 | 38 | 38 | 38 |
+| Sliding movement on a real pulse (48): right, wrong | 40, 6 | 40, 6 | 40, 6 | 40, 6 |
+| Still person, beat-locked brightness (QA's `S`, 360): right, none, wrong | 360, 0, 0 | 360, 0, 0 | 348, 12, 0 | 348, 12, 0 |
+| Light in the band (32) / leaking bob (72): end with a rate | 12 / 17 | 12 / 53 | 6 / 9 | 6 / 10 |
+| Colour that jumps every 2 to 3 s on a 66 bpm pulse (8): right | 1 | 2 | 2 | 6 |
+| Harmonics (77): right, doubled | 15, 11 | 14, 3 | 14, 3 | 14, 3 |
+| Faint synthetic pulses (648): end with a rate, wrong | 242, 5 | 210, 0 | 146, 0 | 146, 0 |
+| Seconds a rate stays after the face is covered | up to 6 | up to 6 | 1 or 2 | 1 or 2 |
+
+In words: this round reads 0.7 points more of the tuning set and 1.1 more of the held-out set than round 2, at 0.7 points less accuracy on tuning readings (95.3% within 5 bpm against 96.0%) and 0.6 less on held-out. No control gained a sitting rate. One more leaking-bob control ends with a rate (10 of 72 against 9). Dimmed faces are exactly where round 2 left them: more blank than at baseline, with a fifth of the wrong answers. The cost QA measured on weak still subjects stands.
+
+### 11.2 The seven phone sittings, one by one
+
+`apps/web/recordings` in the main checkout, `"source":"camera"`. All seven: 60.0 frames per second, 1st to 99th percentile of the frame interval 16.7 to 16.7 ms, no dropped frame, no gap over a quarter of a second. Frame timing is not the problem in any of them. Exposure is reported locked for 90% to 100% of each. What little power the regions' brightness holds above 3 Hz sits at 11.6 to 12.4 Hz in three sittings, which is where the regions' own updates would be if the face detector returned about twelve detections a second; no line at a mains alias.
+
+"Quiet" below means a frame-to-frame change in a region's brightness under 1.5%; in the quiet stretches the change is 0.03% to 0.1% a frame, better than the webcam recordings. "Ceiling" is what eight-second windows that are quiet from end to end hold, each region on its own, POS and CHROM (a numpy check, not the engine).
+
+| Sitting (EST) | Length, face, lock | What the picture did | Ceiling | Valid seconds and result: baseline; round 1; round 2; now |
+|---|---|---|---|---|
+| `a88a50e1` 11:26 | 60 s, one track, locked throughout | 7 steps of 3% to 15% in every region at once, in pairs one or two seconds apart; 94% to 97% quiet | forehead and right cheek 95 to 109 bpm in about half of their quiet windows, quality 0.3 to 0.5; left cheek nothing steady | 0; 3, 101.5; 3, 101.5 low; **5, 101.7 low** |
+| `60d28943` 13:37 | 48 s, face lost 4 times for 0.1 to 0.7 s | forehead a third as bright as the cheeks for 24 s, three times brighter for 9 s, then back: not one surface; large movement from 34 s; 55% to 67% quiet | cheeks 86 to 92 bpm in 7 windows, quality 0.3 to 0.55; forehead never quiet for 8 s | 0; 0; 0; **0, none** (whole-sitting peak now 90.6, evidence 0.68) |
+| `2e056c81` 13:38 | 60 s, one face gap at 2 s | forehead half as bright as the cheeks and twice as noisy; 6 steps; 86% to 94% quiet | cheeks 88 to 96 bpm in about 40 windows, quality 0.4 to 0.75 | 13, 92.4; 18, 92.3; 17, 92.1; **19, 92.1** |
+| `7bcf632a` 13:40 | 18 s; track changed at 12.7 s | red channel mean 234 to 242 of 255, highest frame 253: clipped | no quiet window | 0; 0; 0; **0, none** |
+| `9c65078f` 13:41 | 47 s; locked at 2.9 s; face lost at 41 s | 9 steps of 3% to 8%; 62% to 72% quiet | forehead 78 to 80 at 0.65 to 0.7, left cheek 77 to 83 | 0; 4; 4; **5, none** (79.5, evidence 5.5, three stretches) |
+| `38e3aa4b` 13:42 | 51 s; 4 tracks in 4 s, locked at 4.9 s | quiet from 6 to 17 s; from 18 to 25 s 3% to 8% a frame, the track changed twice with no frame lost and the face was gone for 1.3 s; 45% to 53% quiet | all three regions 69 to 76 bpm at 0.35 to 0.8, in seconds 6 to 18 only | 1; 7; 7; **7, none** (72.7, two stretches) |
+| `1c542d63` 14:23 | 60 s; locked at 2.9 s | forehead half as bright as the cheeks, jumping most seconds; 8 steps of 3% to 14%; movement 23 to 33 s; 56% to 77% quiet | cheeks 79 to 92 bpm in most of 17 windows spread over the minute; forehead never quiet for 8 s | 0; 0; 0; **1, none** (84.9, evidence 1.15) |
+
+**What separates the two that pass from the five that fail.** The two that pass have a face and a locked exposure for the whole minute in one piece, 86% or more of it quiet, and six or seven steps. Each of the five that fail has at least one of:
+
+1. **A clipped red channel** (`7bcf632a`). The exposure check looks at luma, which was fine; red was at the ceiling. Nothing can be read from it, and it ended at 18 s.
+2. **Light that steps.** In every sitting the brightness of all three regions moves together by 3% to 15% within about 0.2 s and stays there, several times a minute, while the picture is otherwise still to 0.05% a frame. At the step measured most closely (`1c542d63`, 42.8 s) red over green falls 8% and blue over green does not move. A camera whose exposure moved would scale the channels alike, and a person moving would not leave the picture that still. Inference: part of the light on the face comes from something that changes in steps, most likely a screen. The file did not record the camera's settings, so the camera cannot be ruled out from these files; it records them now (11.4).
+3. **A forehead region that is not on forehead.** In three sittings the forehead is half as bright as the cheeks, or a third, and jumps where the cheeks are steady. Hair, a shadow, or a region placed too high: the file holds region means only, so which cannot be told.
+4. **A face the tracker loses.** Lost for 0.1 to 1.3 s and found again under a new track id, one to five times, each costing six seconds of warm-up and the agreement after it. Twice in `38e3aa4b` the track changed with no frame lost, which is a detection that jumped by more than half a face: another face in the picture, or the tracker's own error.
+5. **Movement**, in the first and last seconds of most sittings (the phone being touched) and for 7 to 14 s in the middle of three.
+
+The owner was sitting still, and the recordings agree: what moves is the light, the regions and the tracker. Read in time order the sittings that hold a rate say 102 (11:26), about 90 and 92 (13:37, 13:38), 80 (13:41), 73 (13:42) and 85 (14:23). Each is steady within its sitting; whether a heart went from 92 to 73 in four minutes nobody can say without a reference.
+
+### 11.3 What was changed in the engine
+
+| Change | Where | What it does |
+|---|---|---|
+| Regions are cut separately | `PulseHistory.disturbance`, `PulseTracker.tick`, `cutsRegionsSeparately` | Each region is cut around its own colour jumps. A region cut by more than 30% is left out of the window; the window is refused as motion only when no region is left. Before, a jump in one region cut all three. |
+| A face lost for a moment is bridged | `PulseTracker.ingest`, `bridgeSeconds` 2 | When the face is lost and a usable frame follows within 2 s, the segment carries on: the frames around the gap are cut, nothing warms up again. A track id that changes with no frame lost is still another face and still resets everything (requirement 10; a test holds both). |
+| Levels are carried across cuts | `PulseAnalyzer.levelled`, `levelsAcrossCuts` | After a cut each channel is scaled so that its level just after equals its level just before, the cut is filled with a straight line, and the projection runs across it. A step then costs the frames of the step, not every projection window that straddled it and every stretch under 1.6 s between two steps. |
+| The whole-sitting estimate looks above the drift hump | `wholeSittingLooksAboveDrift` | When the strongest summed peak is under 55 bpm, the strongest at or above 55 is judged, by the same bars. It changes no result on any set; it is why `60d28943` now shows a peak at 90.6 bpm in the diagnostics. |
+| The estimate counts regions that agree, and can vouch from three stretches | `agreeingRegions`, `wholeSittingRegionAgreement` 1, `wholeSittingCorroboratingStretches` 4 | Both are measured and **switched off** (11.6). |
+
+Valid seconds over the seven phone sittings as each was added: round 2, 31; regions cut separately and any interruption bridged, 35; levels carried across cuts, 38; bridging narrowed to a lost face, so that another face is never bridged, 37. The UBFC and control figures in 11.1 are for all of them together; they were not measured one by one. The 0.7 points of accuracy lost on tuning readings come from windows that were refused before and are read now (subject12: 43 valid seconds against 39).
+
+What the changes buy is shown best by the synthetic cases in the tests (`WeakCaptureTests.swift`): a forehead that jumps every 2 s over steady cheeks reads for 40 seconds or more, and under half of that with the old cutting; light that steps every 2 s on a still 72 bpm person reads for 20 seconds or more and ends within 2 bpm, at 50 to 131 bpm too; a face lost for 0.8 s is read again within 4 s instead of 8; and each of those with no pulse behind it gives nothing. On the phone sittings themselves the gain is six valid seconds and no sitting.
+
+### 11.4 Capture module
+
+Type-checked against the iOS simulator SDK with the engine built as a module for the same target (14 of the module's 17 Swift files, all that do not import ExpoModulesCore, `Payloads.swift` among them, which no earlier round had compiled). **Not built into an app, not run in the simulator, not on a device.**
+
+- **Every frame records the face box, the ISO and the shutter time** (`FrameRecord.face`, `iso`, `exposureMs`; optional, additive, in `packages/contracts` and CONTRACTS section 1). Nothing reads them. With these in the file the next recording says whether a step in brightness was the camera (ISO or shutter moved while "locked"), the patient (the box moved) or the room (neither), and whether the face was small or off-centre.
+- **A face whose red channel clips is no longer locked on** (`ExposureController`): a region whose strongest channel averages over 235 counts as badly exposed, and while metering such a face the exposure target is lowered a third of a stop every half second, down to two stops. Until it no longer clips the sitting says "exposure adjusting" instead of locking on a picture that cannot be read.
+
+### 11.5 What the operator is told
+
+The check-in page and the camera screen already show the reason for every second without a reading. Two of them now say what to do: "Signal too weak. Keep still, more light" and "Too much movement. Keep still". The things a file like these would let the screen say in time (too dark, face too small or off-centre, the light is changing) need the face box and a brightness on the live reading, which is a contract change and work on both screens: not done.
+
+### 11.6 Measured and not taken, with the held-out look
+
+The held-out set was scored once when the engine was frozen with two sitting-level rules switched on. Each had cost nothing on the tuning data. On the held-out set each cost one error, and both were switched off. That decision was made on the held-out set, and the column "Now" in 11.1 is a second run, with them off: for those two rules the held-out figure is not an untouched one. For everything in 11.3 that is on, nothing was changed after the first run. With both on, the first run gave: 21 held-out sittings with a heart rate (17 right, 4 wrong), 1 control of 636, dimmed to a half 19 of 42 with a rate (17 right, 2 wrong) against 17 (15, 2).
+
+| Rule | Tuning data | Held-out, first run | Decision |
+|---|---|---|---|
+| Three ten-second stretches, with 45% of the windows, may vouch for 3 to 9 readings (QA's lead W6) | `9c65078f` ends at 81.5 bpm, lower confidence: 3 of 7. No tuning control; 1 more of the 32 lights in the band | subject14 ends at 67.9 bpm against a reference of 80.1 (6 readings, evidence 1.9) | Off (`wholeSittingCorroboratingStretches` 4) |
+| Evidence times 1.5 when every region's own summed peak agrees, for standing alone | Faint synthetic pulses 194 of 648 against 146, none wrong; dimmed to 0.3, 6 of 24 against 5; no tuning control | One control ends at 59.6 bpm with no live reading: the same shuffled subject4 that round 1 let through | Off (`wholeSittingRegionAgreement` 1) |
+| The same at 2, for vouching as well | Dimmed to a half 15 of 24 against 12; faint pulses 236; one more doubled rate among the harmonics | not run | Not taken |
+| Regions added in proportion to quality over their noise between 4 and 8 Hz | Tuning 68.0% / 94.9%; dimmed unchanged; fewer valid seconds in the best phone sitting (14 against 19) | not run | Not taken, removed |
+| CHROM beside POS | Numpy only, quiet windows of the phone sittings: where the pulse is clear (`2e056c81`, `38e3aa4b`, `9c65078f`) the two put their peaks within 2 bpm of each other in most windows and regions; in the weakest (`a88a50e1`) each finds the rate in some windows where the other does not, about as often either way | | Not built into the engine: no consistent gain to justify it, and two methods fed the same three means do not give independent evidence |
+
+A rule that would separate `9c65078f` (evidence 5.5) from subject14 (1.9), such as asking the stand-alone evidence of an estimate that vouches from three stretches, was not tried: it would be chosen with the held-out answer in view. It needs data that has not been looked at (UBFC subjects 34 to 38, or a phone sitting with an oximeter).
+
+### 11.7 QA round 2's findings
+
+- **B1, W1, W2, M1, M2, M3, M5** (server, dashboard, nurse app, kept files): fixed in `b14f989..088b774`; CONTRACTS sections 4 and 6 describe the result. A finish without `heartRateConfidence` is stored low when it rests on fewer than ten valid seconds; pulse and breathing each take their baseline from the first sitting that gave one that counts, and say so when that is a re-check; the nurse app and every dashboard surface tag a lower-confidence pulse and never trend on it; kept sitting files are bounded at five across restarts. Web seen in a headless browser against a private database; mobile by unit tests only.
+- **W3, sliding movement.** 38 of 48 at every engine, this one included. In QA's model the colour change is tied to where the region is, with almost no brightness change, and its size is a pulse's: nothing in three colour means per frame tells it from blood, and nothing tried here did (the brightness ratio, the size limit, regions cut separately; the three regions agree by construction). What can tell them apart is the face's position, which the file now records. A check that refuses a window when the face box moves in rhythm at the rate the window would report is the next step; it was not written, because its threshold would have to come from a recording of a person nodding, and none exists. Open.
+- **W4, W5.** Unchanged: 12 of 360 beat-locked still subjects end blank, and dimmed faces are as in round 2.
+- **W6.** Measured; costs a wrong held-out sitting; off (11.6).
+
+### 11.8 Open after round 3
+
+- Five of the owner's seven sittings end with no heart rate. Three of them hold a steady rate that the engine sees and does not have the evidence to report (`9c65078f` 79.5, `1c542d63` 84.9, `60d28943` 90.6).
+- What changes the light on the face, and whether the forehead region sits on hair: both need a person and the new fields (backlog, "Needs a person").
+- Sliding movement (W3); a doubled rate under about 48 bpm; slow hearts under 55 bpm with fewer than ten readings; coloured light in the band.
+- Dimmed and faint signals end blank more often than at baseline.
+- The capture changes are unbuilt.
+
+### 11.9 Reproducing
+
+`reliability.py device --sittings <folder of phone files>`, `dimmed --sittings <ubfc> --set tuning|heldOut --work <dir>`, and `adversarial`, which now writes QA round 2's families (`sliding`, `stillbeat`). Add `--config '{"wholeSittingCorroboratingStretches": 3}'` or `'{"wholeSittingRegionAgreement": 1.5}'` for the two rules of 11.6. The capture module's type-check: build `Sources/SignalEngine` with `swiftc -emit-module` for `arm64-apple-ios17.0-simulator`, then `swiftc -typecheck` the module's files that do not import ExpoModulesCore with `-I` pointing at it. `swift test`: 200 tests in 50 suites.
