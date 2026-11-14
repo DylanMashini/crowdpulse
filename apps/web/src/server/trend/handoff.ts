@@ -2,12 +2,23 @@ import type { Trend } from "@triagecam/contracts";
 
 import { breathsPerMin, heartRate, minutes, minutesAgo, rate } from "../../lib/format.ts";
 
+/** Said of a parameter whose baseline is not from the check-in sitting but from a re-check. */
+export type LaterBaseline = {
+  /** Whole minutes from that re-check to the latest observation; null when it is the latest observation. */
+  minutesLater: number | null;
+  /** Why the check-in is not the baseline: it read the parameter with lower confidence, or not at all. */
+  checkIn: "lower_confidence" | "not_measured";
+};
+
 export type HandoffInput = {
   /** What to call the patient: their name, or "Patient 14" until one has been entered. */
   label: string;
-  /** Check-in value against the latest observation. */
+  /** Baseline value against the latest observation. */
   pulse: Trend;
   breathing: Trend;
+  /** Set when the pulse baseline is from a re-check; left out, it is the check-in. */
+  pulseFrom?: LaterBaseline;
+  breathingFrom?: LaterBaseline;
   /** Whole minutes from check-in to the latest observation; null while check-in is the only observation. */
   minutesLater: number | null;
   /** Null when the patient has never been observed. */
@@ -38,7 +49,8 @@ export function handoffSentence(input: HandoffInput): string {
     return `${input.label}: not yet observed, waiting ${minutes(input.minutesWaiting)}.${noReading}`;
   }
 
-  const body = input.minutesLater === null ? atCheckIn(input) : sinceCheckIn(input, input.minutesLater);
+  const checkInOnly = input.minutesLater === null && !input.pulseFrom && !input.breathingFrom;
+  const body = checkInOnly ? atCheckIn(input) : sinceCheckIn(input, input.minutesLater);
   return `${input.label}: ${body}. Last observed ${minutesAgo(input.minutesSinceObserved)}.${noReading}`;
 }
 
@@ -50,18 +62,26 @@ function atCheckIn({ pulse, breathing }: HandoffInput): string {
   return `${values.join(", ")} at check-in`;
 }
 
-function sinceCheckIn({ pulse, breathing }: HandoffInput, minutesLater: number): string {
-  let elapsedStated = false;
-  const clause = (name: string, { base, now }: Trend, withUnit: WithUnit): string | null => {
+function sinceCheckIn(input: HandoffInput, minutesLater: number | null): string {
+  let elapsedStated: number | null = null;
+  const clause = (name: string, { base, now }: Trend, withUnit: WithUnit, from: LaterBaseline | undefined): string | null => {
     if (base === null && now === null) return null;
     if (base === null) return `${name} ${withUnit(now as number)} now, not measured at check-in`;
+    if (from) {
+      // The baseline is a re-check's. Never "at check-in", and never the short form, which implies it.
+      const why = from.checkIn === "lower_confidence" ? "lower confidence at check-in" : "not measured at check-in";
+      if (from.minutesLater === null) return `${name} ${withUnit(base)} now, ${why}`;
+      if (now === null) return `${name} ${withUnit(base)} at a re-check, no reading now`;
+      return `${name} ${withUnit(base)} at a re-check, ${withUnit(now)} now (${minutes(from.minutesLater)} later)`;
+    }
+    if (minutesLater === null) return `${name} ${withUnit(base)} at check-in`;
     if (now === null) return `${name} ${withUnit(base)} at check-in, no reading now`;
     // The short form states the unit once: "16 to 24 breaths per min".
-    if (elapsedStated) return `${name} ${rate(base)} to ${withUnit(now)}`;
-    elapsedStated = true;
+    if (elapsedStated === minutesLater) return `${name} ${rate(base)} to ${withUnit(now)}`;
+    elapsedStated = minutesLater;
     return `${name} ${withUnit(base)} at check-in, ${withUnit(now)} now (${minutes(minutesLater)} later)`;
   };
-  return [clause("pulse", pulse, heartRate), clause("breathing", breathing, breathsPerMin)]
+  return [clause("pulse", input.pulse, heartRate, input.pulseFrom), clause("breathing", input.breathing, breathsPerMin, input.breathingFrom)]
     .filter((part) => part !== null)
     .join("; ");
 }

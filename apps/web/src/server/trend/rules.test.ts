@@ -198,7 +198,8 @@ describe("snapshotPatient", () => {
     assert.equal(checkIn.minutesSinceObserved, null);
     assert.equal(checkIn.latestGaveNoReading, true);
     assert.equal(checkIn.latestLowConfidencePulse, 62);
-    assert.deepEqual(checkIn.pulse, { base: null, now: null });
+    // The rate travels with the trend so every screen can show it, tagged; it is neither value of the trend.
+    assert.deepEqual(checkIn.pulse, { base: null, now: null, lowConfidence: 62 });
     assert.equal(checkIn.score, null);
 
     // The next sitting with a rate that stands is the baseline, and the weak one is not compared with it.
@@ -213,6 +214,75 @@ describe("snapshotPatient", () => {
     assert.equal(noFlag.rules.score_rise.met, false);
     assert.equal(noFlag.rules.overdue.met, true);
     assert.equal(noFlag.latestLowConfidencePulse, 114);
+    assert.deepEqual(noFlag.pulse, { base: 72, now: null, lowConfidence: 114 });
+    assert.deepEqual(noFlag.flagDetail.pulse, { base: 72, now: 72 });
+  });
+
+  it("takes the pulse baseline from the first heart rate that counts, apart from breathing (QA round 2, W1)", () => {
+    const weak = (minutes: number, bpm: number, breathing: number | null): SittingFacts => ({
+      ...sitting(minutes, null, breathing),
+      kind: "check_in",
+      lowConfidenceHeartRate: bpm,
+    });
+    const recheck = (minutes: number, bpm: number | null, breathing: number | null): SittingFacts => ({ ...sitting(minutes, bpm, breathing), kind: "recheck" });
+    const visit = [weak(2, 101.5, 16), recheck(10, 55, 16), recheck(20, 85, 16), recheck(30, 86, 16)];
+
+    // The check-in is an observation (breathing), and its pulse is shown tagged and is no baseline.
+    const first = snapshot(visit.slice(0, 1), 3);
+    assert.equal(first.baseline?.id, visit[0]?.id);
+    assert.deepEqual(first.pulse, { base: null, now: null, lowConfidence: 101.5 });
+    assert.deepEqual(first.breathing, { base: 16, now: 16 });
+    assert.equal(first.pulseFrom, undefined);
+
+    // The first re-check with a rate that counts is the pulse baseline, and says it is a re-check's.
+    const second = snapshot(visit.slice(0, 2), 11);
+    assert.equal(second.baseline?.id, visit[0]?.id);
+    assert.equal(second.pulseBaseline?.id, visit[1]?.id);
+    assert.equal(second.breathingBaseline?.id, visit[0]?.id);
+    assert.deepEqual(second.pulse, { base: 55, now: 55, baseAt: at(10).toISOString() });
+    assert.deepEqual(second.breathing, { base: 16, now: 16 });
+    assert.deepEqual(second.pulseFrom, { minutesLater: null, checkIn: "lower_confidence" });
+    assert.equal(second.breathingFrom, undefined);
+    assert.equal(second.rules.baseline_shift.met, false);
+
+    // One raised observation is not yet a flag; two are.
+    const third = snapshot(visit.slice(0, 3), 21);
+    assert.deepEqual(third.pulse, { base: 55, now: 85, baseAt: at(10).toISOString() });
+    assert.deepEqual(third.rules.baseline_shift, { met: false, cleared: false });
+    const fourth = snapshot(visit, 31);
+    assert.deepEqual(fourth.rules.baseline_shift, { met: true, cleared: false });
+    assert.deepEqual(fourth.flagDetail.pulse, { base: 55, now: 86, baseAt: at(10).toISOString() });
+    assert.deepEqual(fourth.pulseFrom, { minutesLater: 20, checkIn: "lower_confidence" });
+    assert.equal(baselineShift(visit, defaultSettings).met, true);
+    // The score was never raised by any of it: 55, 85 and 86 bpm all band 0.
+    assert.equal(fourth.rules.score_rise.met, false);
+
+    // Back within the threshold of the re-check's 55: the flag clears.
+    const settled = snapshot([...visit, recheck(40, 60, 16)], 41);
+    assert.deepEqual(settled.rules.baseline_shift, { met: false, cleared: true });
+
+    // A lower-confidence re-check in between is no baseline either, and leaves the baseline where it was.
+    const interrupted = snapshot(
+      [weak(2, 101.5, 16), { ...weak(8, 99, 16), kind: "recheck" }, recheck(10, 55, 16), recheck(20, 85, 16), recheck(30, 86, 16)],
+      31,
+    );
+    assert.equal(interrupted.pulse.base, 55);
+    assert.equal(interrupted.rules.baseline_shift.met, true);
+  });
+
+  it("gives breathing its own baseline too, and labels a check-in baseline as nothing but the check-in", () => {
+    const recheck = (minutes: number, bpm: number | null, breathing: number | null): SittingFacts => ({ ...sitting(minutes, bpm, breathing), kind: "recheck" });
+    const checkIn: SittingFacts = { ...sitting(2, 72, null), kind: "check_in" };
+    const result = snapshot([checkIn, recheck(10, 74, 14), recheck(20, 73, 22), recheck(30, 72, 23)], 31);
+    assert.deepEqual(result.pulse, { base: 72, now: 72 });
+    assert.deepEqual(result.breathing, { base: 14, now: 23, baseAt: at(10).toISOString() });
+    assert.deepEqual(result.breathingFrom, { minutesLater: 20, checkIn: "not_measured" });
+    assert.equal(result.rules.baseline_shift.met, true);
+
+    // A check-in with no reading at all, then a re-check: the baseline is the re-check's and says so.
+    const repeated = snapshot([{ ...sitting(2, null, null), kind: "check_in" }, recheck(6, 74, null)], 7);
+    assert.deepEqual(repeated.pulse, { base: 74, now: 74, baseAt: at(6).toISOString() });
+    assert.deepEqual(repeated.pulseFrom, { minutesLater: null, checkIn: "not_measured" });
   });
 
   it("ignores a sitting that was abandoned without a summary", () => {

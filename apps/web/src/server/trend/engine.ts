@@ -26,6 +26,7 @@ export type SyncOptions = { now?: Date; notify?: boolean };
 export const sittingFacts = (row: SittingRow): SittingFacts => ({
   id: row.id,
   source: row.source,
+  kind: row.kind,
   startedAt: row.startedAt,
   endedAt: row.endedAt,
   finished: hasSummary(row),
@@ -40,6 +41,8 @@ export const patientHandoff = (patient: Pick<PatientRow, "number" | "name">, sna
     label: patientLabel(patient),
     pulse: snapshot.flagDetail.pulse,
     breathing: snapshot.flagDetail.breathing,
+    pulseFrom: snapshot.pulseFrom,
+    breathingFrom: snapshot.breathingFrom,
     minutesLater: snapshot.minutesToLatestObservation,
     minutesSinceObserved: snapshot.minutesSinceObserved,
     minutesWaiting: snapshot.minutesWaiting,
