@@ -1,16 +1,19 @@
+import type { PatientRef } from '@triagecam/contracts';
 import { View } from 'react-native';
 
 import { sentences } from '@/lib/format';
 import { fonts } from '@/theme';
 
 import { Button } from './Button';
-import { Icon } from './Icon';
+import { PatientAvatar } from './PatientIdentity';
 import { useScopedTheme } from './ThemeScope';
 import { Touchable } from './Touchable';
 import { Text } from './Text';
 
 type Props = {
-  /** "Trend flag, patient 14": the same words as the system push. */
+  /** Who the flag is about: their photo, or their initials, leads the banner. */
+  patient: PatientRef;
+  /** "Trend flag: Maya Chen": the same words as the system push. */
   title: string;
   /** Clock time the flag opened. */
   time: string;
@@ -44,7 +47,7 @@ export function PushBanner(props: Props) {
       }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.space2 }}>
-        <Icon name={acknowledged ? 'check' : 'flag'} size={18} color={acknowledged ? colors.inkMuted : colors.flag} />
+        <PatientAvatar patient={props.patient} size="sm" />
         <Text style={[theme.type.bodyTouch, { flex: 1, fontFamily: fonts.sans[600], color: colors.ink }]}>
           {props.title}
         </Text>

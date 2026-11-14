@@ -289,6 +289,7 @@ export function NurseProvider({ children }: { children: ReactNode }) {
         >
           <View style={{ width: '100%', maxWidth: 528 }}>
             <PushBanner
+              patient={banner.patient}
               title={flagTitle(banner.rule, banner.patient)}
               time={clockTime(banner.openedAt)}
               body={banner.handoff}
