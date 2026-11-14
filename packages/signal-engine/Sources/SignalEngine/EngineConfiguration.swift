@@ -112,6 +112,28 @@ public struct EngineConfiguration: Codable, Sendable, Equatable {
   /// the rest is analysed. The window is rejected as motion only when more than this share
   /// of it is cut.
   public var maximumDisturbedShare: Double = 0.3
+  /// Each skin region is cut around its own colour jumps, and a region cut by more than
+  /// `maximumDisturbedShare` is left out of the window, instead of every region being cut
+  /// around a jump in any of them. On the phone a forehead region that touches the hairline
+  /// jumps several times in ten seconds while the cheeks do not jump at all.
+  public var cutsRegionsSeparately: Bool = true
+  /// A face that is lost ends the segment only when no usable frame follows within this
+  /// many seconds. A shorter loss is cut out of the window like a colour jump and the
+  /// history carries on, under whatever track id the face comes back with. A track id that
+  /// changes with no frame lost in between is another face and always ends the segment.
+  /// 0 ends the segment at the first frame without a face.
+  public var bridgeSeconds: Double = 2
+  /// After a cut, each channel of a region is scaled so that its level just after the cut
+  /// equals its level just before, the cut itself is filled with a straight line, and the
+  /// projection runs across it. A step in the light (a screen changing next to the patient)
+  /// or a region settling on a slightly different patch of skin then costs the frames of
+  /// the step itself, not every projection window that would have straddled it and every
+  /// stretch between two steps shorter than a projection window. False gives the older
+  /// behaviour: each stretch between cuts is projected on its own.
+  public var levelsAcrossCuts: Bool = true
+  /// Seconds on each side of a cut the levels are measured over, and the shortest stretch
+  /// between two cuts that is kept, when `levelsAcrossCuts` is set.
+  public var levelSeconds: Double = 0.5
   /// A window is rejected as motion when, at the rate it would report, the regions'
   /// brightness swings more than this many times as far as their pulse signal. Blood alone
   /// gives about 1 (median 0.9 on the UBFC tuning set, 95% of valid windows under 2.2); a
@@ -196,13 +218,28 @@ public struct EngineConfiguration: Codable, Sendable, Equatable {
   /// estimate its second harmonic. Real sittings reach 1.7 there, a doubled rate 3.7 and up.
   public var wholeSittingMaximumHalfRateProminence: Double = 2.5
   /// Those windows must come from at least this many separate ten-second stretches of
-  /// the sitting, so that one lucky stretch of noise is not enough.
+  /// the sitting, so that one lucky stretch of noise is not enough, before the estimate
+  /// may stand for a sitting on its own.
   public var wholeSittingStretches: Int = 4
+  /// And from this many before it may vouch for a few valid readings at its rate, provided
+  /// `wholeSittingSupport` of the windows are among them. The readings are evidence of their
+  /// own, and a sitting interrupted twice (a face lost, an exposure change) has three
+  /// stretches to offer, not four. A pulse seen for a quarter of a minute and then gone also
+  /// reaches three stretches, but not that share of the windows.
+  public var wholeSittingCorroboratingStretches: Int = 3
+  /// `evidence` is multiplied by this when every skin region, summed over the sitting on
+  /// its own, has its strongest peak within `agreementToleranceBpm` of the estimate. It
+  /// counts towards `wholeSittingEvidence` (standing alone) only; vouching for a few
+  /// readings is held to the product without it. 1 switches it off.
+  public var wholeSittingRegionAgreement: Double = 1.5
   /// The whole-sitting estimate reports no rate under this, in bpm. Drift and slow light
   /// changes pile up at the bottom of the pulse band in every window alike, so down there
   /// "the same peak all through the sitting" is what noise looks like too. A slow heart
   /// still gets its one-second readings, which are held to the full quality threshold.
   public var wholeSittingMinimumBpm: Double = 55
+  /// When the strongest peak of the summed spectrum is under `wholeSittingMinimumBpm`, the
+  /// strongest at or above it is judged instead of giving up.
+  public var wholeSittingLooksAboveDrift: Bool = true
   /// Sum each region over the sitting and weigh it by its own summed peak, instead of
   /// adding up the windows' combined spectra.
   public var wholeSittingWeighsRegions: Bool = true

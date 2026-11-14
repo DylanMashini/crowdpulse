@@ -256,17 +256,97 @@ struct PulseAnalyzer {
   /// - Parameter usable: samples that may be analysed; the others were cut out around a
   ///   colour jump or a movement. Nil when all of them may.
   func analyse(_ regions: [RegionSeries], rate: Double, frameRate: Double?, usable: [Bool]? = nil) -> Outcome {
+    analyse(regions, rate: rate, frameRate: frameRate, masks: [[Bool]?](repeating: usable, count: regions.count))
+  }
+
+  /// A region with the level of each channel carried across its cuts: from each cut on,
+  /// the channel is scaled so that its mean over the `levelSeconds` after the cut equals its
+  /// mean over the `levelSeconds` before, and the cut is filled with a straight line. The
+  /// pulse rides on the level as a fraction of it, so scaling does not change it; what goes
+  /// is the step, which the projection's sliding normalisation would otherwise smear over
+  /// every window that straddles it.
+  func levelled(_ region: RegionSeries, usable: [Bool]?, rate: Double) -> RegionSeries {
+    guard let usable, usable.contains(false), usable.contains(true) else { return region }
+    let count = usable.count
+    let span = max(2, Int((configuration.levelSeconds * rate).rounded()))
+    var channels = [region.r, region.g, region.b]
+    var index = 0
+    var previousEnd: Int?  // one past the last usable sample before the cut being handled
+    while index < count {
+      guard !usable[index] else {
+        index += 1
+        previousEnd = index
+        continue
+      }
+      let cutStart = index
+      while index < count, !usable[index] { index += 1 }
+      let cutEnd = index  // first usable sample after the cut, or count
+      guard let before = previousEnd, cutStart == before else {
+        // The window starts inside a cut: hold the first usable value back over it.
+        if cutEnd < count {
+          for channel in 0..<3 {
+            for sample in cutStart..<cutEnd { channels[channel][sample] = channels[channel][cutEnd] }
+          }
+        }
+        continue
+      }
+      guard cutEnd < count else {
+        // The window ends inside a cut: hold the last usable value.
+        for channel in 0..<3 {
+          for sample in cutStart..<count { channels[channel][sample] = channels[channel][before - 1] }
+        }
+        break
+      }
+      // Usable samples on each side, no further than `span` and not into the next cut.
+      var from = before
+      while from > 0, before - from < span, usable[from - 1] { from -= 1 }
+      var to = cutEnd
+      while to < count, to - cutEnd < span, usable[to] { to += 1 }
+      for channel in 0..<3 {
+        let levelBefore = vDSP.mean(channels[channel][from..<before])
+        let levelAfter = vDSP.mean(channels[channel][cutEnd..<to])
+        if levelBefore > 0, levelAfter > 0 {
+          let gain = levelBefore / levelAfter
+          for sample in cutEnd..<count { channels[channel][sample] *= gain }
+        }
+        let start = channels[channel][before - 1]
+        let end = channels[channel][cutEnd]
+        let steps = Double(cutEnd - before + 1)
+        for sample in cutStart..<cutEnd {
+          channels[channel][sample] = start + (end - start) * Double(sample - before + 1) / steps
+        }
+      }
+    }
+    return RegionSeries(r: channels[0], g: channels[1], b: channels[2])
+  }
+
+  /// As above, with each region's own usable samples (`masks[i]` belongs to `regions[i]`).
+  func analyse(_ regions: [RegionSeries], rate: Double, frameRate: Double?, masks: [[Bool]?]) -> Outcome {
+    guard configuration.levelsAcrossCuts, masks.contains(where: { $0 != nil }) else {
+      return analyse(regions, rate: rate, frameRate: frameRate, masks: masks, runs: masks)
+    }
+    // Levelled regions are projected in one piece; the cuts are still blanked afterwards.
+    let levelled = regions.indices.map { levelled(regions[$0], usable: masks[$0], rate: rate) }
+    return analyse(
+      levelled, rate: rate, frameRate: frameRate, masks: masks, runs: [[Bool]?](repeating: nil, count: masks.count))
+  }
+
+  /// `masks` blank the samples that were cut; `runs` are the stretches projected on their
+  /// own (nil: the whole window in one piece).
+  private func analyse(
+    _ regions: [RegionSeries], rate: Double, frameRate: Double?, masks: [[Bool]?], runs: [[Bool]?]
+  ) -> Outcome {
     guard let count = regions.first?.r.count, count > 1 else { return Outcome(peak: .flat, weights: []) }
     let search = search(windowSeconds: Double(count) / rate)
     let band = configuration.heartRateBandHz
-    let kept = usable.map { $0.map { $0 ? 1.0 : 0.0 } }
+    let kept = masks.map { $0.map { $0.map { $0 ? 1.0 : 0.0 } } }
     // What the band-pass rings into a cut is not signal.
-    func cut(_ signal: [Double]) -> [Double] {
-      kept.map { vDSP.multiply(signal, $0) } ?? signal
+    func cut(_ signal: [Double], _ region: Int) -> [Double] {
+      kept[region].map { vDSP.multiply(signal, $0) } ?? signal
     }
-    let projected = regions.map { DSP.detrend(project($0, rate: rate, usable: usable)) }
-    let waveforms = projected.map {
-      cut(fourier.bandPass($0, rate: rate, band: band, transitionHz: PulseAnalyzer.transitionHz))
+    let projected = regions.indices.map { DSP.detrend(project(regions[$0], rate: rate, usable: runs[$0])) }
+    let waveforms = projected.indices.map {
+      cut(fourier.bandPass(projected[$0], rate: rate, band: band, transitionHz: PulseAnalyzer.transitionHz), $0)
     }
     let weights = regionWeights(waveforms, rate: rate, search: search)
     let scales = scales(waveforms, weights: weights)
@@ -302,9 +382,10 @@ struct PulseAnalyzer {
     // rate in the search range. It is only ever used to overrule a peak, never to report one.
     let open = (band.lowerBound / 2)...band.upperBound
     let wide = spectrum(
-      of: cut(
-        fourier.bandPass(
-          mix(projected, scales: scales), rate: rate, band: open, transitionHz: PulseAnalyzer.transitionHz)),
+      of: mix(
+        projected.indices.map {
+          cut(fourier.bandPass(projected[$0], rate: rate, band: open, transitionHz: PulseAnalyzer.transitionHz), $0)
+        }, scales: scales),
       rate: rate)
     let found = wide.hasSubharmonic(
       of: hz, toleranceHz: search.qualityHalfWidthHz / 2, floor: configuration.subharmonicPowerFloor,
@@ -330,16 +411,29 @@ struct PulseAnalyzer {
       if let yield = detail.projectionYield, yield < configuration.minimumProjectionYield {
         return finished(.illumination)
       }
+      // A sample counts as seen when the regions that carry half the weight could use it.
+      var usable: [Bool]?
+      if kept.contains(where: { $0 != nil }) {
+        var share = [Double](repeating: 0, count: count)
+        for (region, weight) in weights.enumerated() where weight > 0 {
+          if let mask = kept[region] {
+            for index in 0..<count { share[index] += weight * mask[index] }
+          } else {
+            for index in 0..<count { share[index] += weight }
+          }
+        }
+        usable = share.map { $0 >= 0.5 }
+      }
       detail.recentQuality = recentQuality(combined, usable: usable, at: reportedHz, rate: rate)
       detail.recentAmplitudeShare = recentAmplitudeShare(combined, at: reportedHz, rate: rate)
 
       // The same mix of regions, of their brightness instead of their pulse signal.
       let bright = mix(
-        regions.map {
+        regions.indices.map {
           cut(
             fourier.bandPass(
-              DSP.detrend(brightness($0, rate: rate, usable: usable)), rate: rate, band: band,
-              transitionHz: PulseAnalyzer.transitionHz))
+              DSP.detrend(brightness(regions[$0], rate: rate, usable: runs[$0])), rate: rate, band: band,
+              transitionHz: PulseAnalyzer.transitionHz), $0)
         }, scales: scales)
       let window = DSP.hann(count)
       func size(_ signal: [Double]) -> Double {

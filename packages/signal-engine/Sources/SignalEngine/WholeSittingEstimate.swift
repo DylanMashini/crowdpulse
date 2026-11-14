@@ -37,11 +37,24 @@ public struct WholeSittingEstimate: Codable, Sendable, Equatable {
   public var windows: Int
   /// `quality`, `prominence` and `support`, each as a multiple of its reference level
   /// (`wholeSittingQuality`, `wholeSittingProminence`, `wholeSittingSupport`), multiplied
-  /// together. One figure, so that a sitting strong on two counts and a little short on the
-  /// third is not thrown out by a single limit. 0 when the estimate cannot be used at all:
-  /// too few windows or stretches, a peak under `wholeSittingMinimumBpm`, or a peak that
-  /// has a fundamental under it (`wholeSittingMaximumHalfRateProminence`).
+  /// together, and by `wholeSittingRegionAgreement` when every region agrees. One figure,
+  /// so that a sitting strong on two counts and a little short on the third is not thrown
+  /// out by a single limit. 0 when the estimate cannot be used at all: too few windows or
+  /// stretches (`wholeSittingCorroboratingStretches`), a peak under `wholeSittingMinimumBpm`,
+  /// or a peak that has a fundamental under it (`wholeSittingMaximumHalfRateProminence`).
   public var evidence: Double = 0
+  /// The product `evidence` is made of, before the conditions that can set it to 0. For
+  /// tuning: nothing decides anything from it.
+  public var rawEvidence: Double = 0
+  /// The strongest peak of the summed spectrum lies under `wholeSittingMinimumBpm`, where
+  /// drift gathers, and `heartRate` is the strongest peak at or above it instead.
+  public var aboveDrift: Bool = false
+  /// How many skin regions were summed, and in how many of them the region's own summed
+  /// spectrum has its strongest peak, at or above `wholeSittingMinimumBpm`, within
+  /// `agreementToleranceBpm` of `heartRate`. Sensor noise is the regions' own; a pulse is
+  /// in all of them.
+  public var regions: Int = 0
+  public var agreeingRegions: Int = 0
   /// `evidence` reaches `wholeSittingCorroboratingEvidence`: the estimate may vouch for a
   /// few valid readings at its own rate.
   public var corroborates: Bool = false
@@ -86,6 +99,10 @@ struct WholeSittingAnalyzer {
       tieRatio: configuration.harmonicTieRatio,
       qualityHalfWidthHz: configuration.qualityHalfWidthResolutions / configuration.heartRateWindowSeconds)
     var summed = [Double](repeating: 0, count: bins)
+    var regionMeans: [[Double]] = []
+    // The search range from the floor up: where a peak can be told from drift.
+    var upper = search
+    upper.rangeHz = max(search.rangeHz.lowerBound, configuration.wholeSittingMinimumBpm / 60)...search.rangeHz.upperBound
     if configuration.wholeSittingWeighsRegions {
       var total = 0.0
       for region in 0..<PulseHistory.regionCount {
@@ -105,6 +122,7 @@ struct WholeSittingAnalyzer {
         let weight = peak.quality * peak.quality
         for bin in 0..<bins { summed[bin] += weight * mean[bin] }
         total += weight
+        regionMeans.append(mean)
       }
       guard total > 0 else { return .none }
       summed = summed.map { $0 / total }
@@ -115,13 +133,27 @@ struct WholeSittingAnalyzer {
     }
 
     let spectrum = PowerSpectrum(power: summed, binHz: first.binHz)
-    guard let peak = spectrum.strongestCandidate(search) else { return .none }
+    guard var peak = spectrum.strongestCandidate(search) else { return .none }
     var estimate = WholeSittingEstimate(
       heartRate: nil, quality: peak.quality, support: 0, supportingStretches: 0, windows: usable.count,
       accepted: false)
+    // The strongest peak of the whole range may be the hump drift leaves at the bottom of
+    // the band. That is no heart rate, and no reason to ignore a clear peak above it: the
+    // conditions further down decide whether that one stands.
+    if configuration.wholeSittingLooksAboveDrift, peak.atEdge || peak.hz * 60 < configuration.wholeSittingMinimumBpm,
+      let higher = spectrum.strongestCandidate(upper), !higher.atEdge
+    {
+      peak = higher
+      estimate.aboveDrift = true
+    }
     guard !peak.atEdge else { return estimate }
     let bpm = peak.hz * 60
     estimate.heartRate = bpm
+    estimate.regions = regionMeans.count
+    estimate.agreeingRegions = regionMeans.reduce(0) { count, mean in
+      guard let own = PowerSpectrum(power: mean, binHz: first.binHz).strongestCandidate(upper) else { return count }
+      return count + (abs(own.hz * 60 - bpm) <= configuration.agreementToleranceBpm ? 1 : 0)
+    }
     // The peak is the strongest of the whole search range. If that is down where drift
     // gathers, there is no estimate; nothing higher up is looked for, because the second
     // harmonic of a slow heart is up there and is just as steady as its fundamental.
@@ -157,21 +189,32 @@ struct WholeSittingAnalyzer {
     }
     estimate.support = Double(supporting.count) / Double(usable.count)
     estimate.supportingStretches = Set(supporting.map { Int(($0.end - origin) / stretchSeconds) }).count
-    // The peak is the strongest of the whole search range. If that is down where drift
-    // gathers, there is no estimate; nothing higher up is looked for, because the second
-    // harmonic of a slow heart is up there and is just as steady as its fundamental.
-    guard bpm >= configuration.wholeSittingMinimumBpm,
-      usable.count >= configuration.wholeSittingWindows,
-      estimate.supportingStretches >= configuration.wholeSittingStretches,
-      // A clear peak at half the rate is the heart, and this one its second harmonic.
-      estimate.halfRateProminence < configuration.wholeSittingMaximumHalfRateProminence
-    else { return estimate }
-    estimate.evidence =
+    estimate.rawEvidence =
       (estimate.quality / configuration.wholeSittingQuality)
       * (estimate.prominence / configuration.wholeSittingProminence)
       * (estimate.support / configuration.wholeSittingSupport)
-    estimate.corroborates = estimate.evidence >= configuration.wholeSittingCorroboratingEvidence
-    estimate.accepted = estimate.evidence >= configuration.wholeSittingEvidence
+    // Under the floor there is no estimate. A peak above the floor that has a clear one at
+    // half its rate is refused below: the second harmonic of a slow heart is just as steady
+    // as its fundamental.
+    guard bpm >= configuration.wholeSittingMinimumBpm,
+      usable.count >= configuration.wholeSittingWindows,
+      estimate.supportingStretches >= configuration.wholeSittingCorroboratingStretches,
+      // A clear peak at half the rate is the heart, and this one its second harmonic.
+      estimate.halfRateProminence < configuration.wholeSittingMaximumHalfRateProminence
+    else { return estimate }
+    // Every region, summed on its own, has its strongest peak at the same rate. The
+    // regions' noise is their own, so that is evidence the three measures above do not hold.
+    let regionsAgree = estimate.regions >= 2 && estimate.agreeingRegions == estimate.regions
+    estimate.evidence = estimate.rawEvidence * (regionsAgree ? configuration.wholeSittingRegionAgreement : 1)
+    // What a few readings need is not lowered by the regions agreeing: a pulse seen for a
+    // quarter of a minute is in every region too.
+    estimate.corroborates =
+      estimate.rawEvidence >= configuration.wholeSittingCorroboratingEvidence
+      && (estimate.supportingStretches >= configuration.wholeSittingStretches
+        || estimate.support >= configuration.wholeSittingSupport)
+    estimate.accepted =
+      estimate.evidence >= configuration.wholeSittingEvidence
+      && estimate.supportingStretches >= configuration.wholeSittingStretches
     return estimate
   }
 }

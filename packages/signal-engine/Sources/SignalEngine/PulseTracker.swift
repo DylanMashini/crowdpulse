@@ -73,14 +73,27 @@ struct PulseHistory {
   private(set) var times: [Double] = []
   /// Nine series: region (forehead, left cheek, right cheek) times channel (r, g, b).
   private(set) var channels = [[Double]](repeating: [], count: 3 * PulseHistory.regionCount)
-  /// How far the regions' colour moved over the last half second (`ColourChangeDetector`).
+  /// How far the regions' colour moved over the last half second (`ColourChangeDetector`):
+  /// the largest of the three regions.
   private(set) var colourChange: [Double] = []
+  /// The same for each region on its own.
+  private(set) var regionColourChange = [[Double]](repeating: [], count: PulseHistory.regionCount)
   /// The chest moved fast in this frame while it was tracked steadily.
   private(set) var chestMotion: [Bool] = []
+  /// This frame is the first after the face was lost for a moment or its track changed, and
+  /// the segment carried on across it (`bridgeSeconds`). The frames around it are cut.
+  private(set) var bridge: [Bool] = []
 
-  mutating func append(time: Double, frame: FrameRecord, colourChange: Double, chestMotion: Bool) {
+  mutating func append(
+    time: Double, frame: FrameRecord, colourChange: Double, chestMotion: Bool,
+    regionChanges: [Double]? = nil, bridge: Bool = false
+  ) {
     self.colourChange.append(colourChange)
+    for region in 0..<PulseHistory.regionCount {
+      regionColourChange[region].append(regionChanges?[region] ?? colourChange)
+    }
     self.chestMotion.append(chestMotion)
+    self.bridge.append(bridge)
     times.append(time)
     for (region, colour) in [frame.forehead, frame.leftCheek, frame.rightCheek].enumerated() {
       channels[3 * region].append(colour?.r ?? .nan)
@@ -105,7 +118,9 @@ struct PulseHistory {
     guard count > 0 else { return }
     times.removeFirst(count)
     colourChange.removeFirst(count)
+    for region in regionColourChange.indices { regionColourChange[region].removeFirst(count) }
     chestMotion.removeFirst(count)
+    bridge.removeFirst(count)
     for series in channels.indices { channels[series].removeFirst(count) }
   }
 
@@ -118,10 +133,25 @@ struct PulseHistory {
 
   /// Frames of a window to cut out of the analysis, and which check asked for each.
   struct Disturbance {
+    /// A colour jump in any region.
     var colour: [Bool]
     var chest: [Bool]
+    /// A colour jump in each region on its own.
+    var regionColour: [[Bool]] = []
+    /// Frames around a bridged interruption: no region may use them.
+    var bridged: [Bool] = []
 
-    var frames: [Bool] { zip(colour, chest).map { $0 || $1 } }
+    var frames: [Bool] {
+      colour.indices.map { colour[$0] || chest[$0] || (bridged.isEmpty ? false : bridged[$0]) }
+    }
+
+    /// The frames one region must do without: its own colour jumps, a fast chest, and the
+    /// frames around a bridged interruption.
+    func frames(of region: Int) -> [Bool] {
+      guard region < regionColour.count else { return frames }
+      let own = regionColour[region]
+      return own.indices.map { own[$0] || chest[$0] || (bridged.isEmpty ? false : bridged[$0]) }
+    }
 
     func share(_ flags: [Bool]) -> Double {
       flags.isEmpty ? 0 : Double(flags.reduce(0) { $0 + ($1 ? 1 : 0) }) / Double(flags.count)
@@ -134,24 +164,52 @@ struct PulseHistory {
   /// the half second before it, so the jump itself lies a quarter of a second back, and the
   /// frames cut are the ones around that moment.
   func disturbance(in range: Range<Int>, configuration: EngineConfiguration) -> Disturbance {
-    var colour = [Bool](repeating: false, count: range.count)
-    let noise = DSP.median(Array(colourChange[range])) ?? 0
-    let limit = min(
-      configuration.colourJumpCeiling,
-      max(configuration.colourJumpDeviation, configuration.colourJumpNoiseRatio * noise))
     let half = configuration.colourJumpSeconds
-    var from = range.lowerBound
-    for index in range where colourChange[index] > limit {
-      let earliest = times[index] - 1.5 * half
-      let latest = times[index] - 0.5 * half
-      while from < index, times[from] < earliest { from += 1 }
-      var frame = from
-      while frame <= index, times[frame] <= latest {
-        colour[frame - range.lowerBound] = true
-        frame += 1
+    func jumps(_ change: [Double]) -> [Bool] {
+      var colour = [Bool](repeating: false, count: range.count)
+      let noise = DSP.median(Array(change[range])) ?? 0
+      let limit = min(
+        configuration.colourJumpCeiling,
+        max(configuration.colourJumpDeviation, configuration.colourJumpNoiseRatio * noise))
+      var from = range.lowerBound
+      for index in range where change[index] > limit {
+        let earliest = times[index] - 1.5 * half
+        let latest = times[index] - 0.5 * half
+        while from < index, times[from] < earliest { from += 1 }
+        var frame = from
+        while frame <= index, times[frame] <= latest {
+          colour[frame - range.lowerBound] = true
+          frame += 1
+        }
       }
+      return colour
     }
-    return Disturbance(colour: colour, chest: Array(chestMotion[range]))
+    var disturbance = Disturbance(colour: jumps(colourChange), chest: Array(chestMotion[range]))
+    if configuration.cutsRegionsSeparately {
+      disturbance.regionColour = regionColourChange.map(jumps)
+    }
+    // Around a bridged interruption: the face was leaving before it and the regions are
+    // settling after it. The frame before the gap and the first after it are always cut,
+    // so that no sample between them is analysed.
+    if bridge[range].contains(true) {
+      var bridged = [Bool](repeating: false, count: range.count)
+      for index in range.dropFirst() where bridge[index] {
+        let earliest = times[index - 1] - half
+        let latest = times[index] + half
+        var frame = index - 1
+        while frame >= range.lowerBound, times[frame] >= earliest {
+          bridged[frame - range.lowerBound] = true
+          frame -= 1
+        }
+        frame = index
+        while frame < range.upperBound, times[frame] <= latest {
+          bridged[frame - range.lowerBound] = true
+          frame += 1
+        }
+      }
+      disturbance.bridged = bridged
+    }
+    return disturbance
   }
 
   /// Which samples of the window's grid may be analysed: those between two undisturbed
@@ -217,6 +275,8 @@ struct ColourChangeDetector {
   private var newerSums = [Double](repeating: 0, count: 9)
   private var olderMissing = [Int](repeating: 0, count: 3)
   private var newerMissing = [Int](repeating: 0, count: 3)
+  /// What the newest `push` found for each region on its own; 0 for a region left out.
+  private(set) var lastChanges = [Double](repeating: 0, count: 3)
 
   init(seconds: Double) {
     half = seconds
@@ -278,16 +338,16 @@ struct ColourChangeDetector {
     let newer = times.count - split
     // The older stretch must be at least half full, or the first frames after a reset
     // would compare a mean with a single frame.
+    lastChanges = [0, 0, 0]
     guard older >= 2, newer >= 2, times[head] <= time - 1.5 * half else { return 0 }
-    var largest = 0.0
     for region in 0..<3 where olderMissing[region] == 0 && newerMissing[region] == 0 {
       for series in (3 * region)..<(3 * region + 3) {
         let before = olderSums[series] / Double(older)
         let after = newerSums[series] / Double(newer)
-        if before > 0 { largest = max(largest, abs(after - before) / before) }
+        if before > 0 { lastChanges[region] = max(lastChanges[region], abs(after - before) / before) }
       }
     }
-    return largest
+    return lastChanges.max() ?? 0
   }
 }
 
@@ -349,6 +409,9 @@ struct PulseTracker {
   /// The newest valid reading from a window whose rhythm could not be movement
   /// (`movesInRhythm`), and when it was read.
   private var steadyRate: (bpm: Double, time: Double)?
+  /// The face was lost since the last usable frame of this segment.
+  /// If it is back within `bridgeSeconds` the segment carries on and the moment is cut out.
+  private var interrupted = false
 
   /// When true, every `tick` and `missedTick` leaves a `lastDiagnostic`, and a window that a
   /// check refuses before the analysis is analysed all the same, for the diagnostic only.
@@ -369,9 +432,14 @@ struct PulseTracker {
     var faceChanged = false
     if let id = frame.faceTrackId {
       if let previous = trackId, previous != id {
-        endSegment()
-        warmUpReason = .faceChanged
         faceChanged = true
+        // A new track with no frame in between is another face in the picture: history
+        // never carries over to it. A new track after the face was lost for a moment is
+        // what the tracker gives the same face when it finds it again, and is bridged.
+        if !(interrupted && bridges(at: frame.t)) {
+          endSegment()
+          warmUpReason = .faceChanged
+        }
       }
       trackId = id
     }
@@ -391,7 +459,7 @@ struct PulseTracker {
 
     let regions = [frame.forehead, frame.leftCheek, frame.rightCheek].compactMap { $0 }
     guard frame.facePresent, !regions.isEmpty else {
-      endSegment()
+      if bridges(at: frame.t) { interrupted = true } else { endSegment() }
       blocked = .noFace
       return faceChanged
     }
@@ -401,14 +469,27 @@ struct PulseTracker {
       return faceChanged
     }
     blocked = nil
-    if segmentStart == nil { segmentStart = frame.t }
+    var bridge = false
+    if segmentStart == nil {
+      segmentStart = frame.t
+    } else if interrupted {
+      if bridges(at: frame.t) {
+        bridge = true
+      } else {
+        endSegment()
+        segmentStart = frame.t
+      }
+    }
+    interrupted = false
 
     let change = colourChange.push(time: frame.t, frame: frame)
     var chestMoving = false
     if let chest = frame.chestMotion, let interval, abs(chest) / interval > configuration.motionChestSpeed {
       chestMoving = chestIsTracked(at: frame.t)
     }
-    history.append(time: frame.t, frame: frame, colourChange: change, chestMotion: chestMoving)
+    history.append(
+      time: frame.t, frame: frame, colourChange: change, chestMotion: chestMoving,
+      regionChanges: colourChange.lastChanges, bridge: bridge)
 
     if frame.t - history.times[0] > 2 * configuration.maximumHistorySeconds {
       history.removeFrames(before: frame.t - configuration.maximumHistorySeconds)
@@ -427,8 +508,20 @@ struct PulseTracker {
       >= configuration.minimumChestTrackedShare * Double(chestTimes.count - chestHead)
   }
 
-  /// Signal history never carries across a lost face, an exposure change or a new face.
+  /// Whether a face lost at `now` may still be bridged: a segment is running and its last
+  /// usable frame is no more than `bridgeSeconds` old. The face tracker gives up a face
+  /// after half a second without a detection and numbers it anew when it is found again,
+  /// so a blink of the detector would otherwise cost six seconds of warm-up and the
+  /// readings on either side of it. Nobody changes places with the patient in that time.
+  private func bridges(at now: Double) -> Bool {
+    guard configuration.bridgeSeconds > 0, segmentStart != nil, let last = history.times.last else { return false }
+    return now - last <= configuration.bridgeSeconds
+  }
+
+  /// Signal history never carries across an exposure change, or a face lost for longer
+  /// than `bridgeSeconds`.
   private mutating func endSegment() {
+    interrupted = false
     segmentStart = nil
     colourChange.reset()
     acceptedSinceReset = false
@@ -485,7 +578,7 @@ struct PulseTracker {
     // A window never spans a gap: it starts after the newest one, and is rejected until
     // enough gap-free signal has built up again.
     if let afterGap = range.dropFirst().last(where: {
-      history.times[$0] - history.times[$0 - 1] > configuration.maximumGapSeconds
+      !history.bridge[$0] && history.times[$0] - history.times[$0 - 1] > configuration.maximumGapSeconds
     }) {
       range = afterGap..<range.upperBound
       windowSeconds = now - history.times[afterGap]
@@ -502,15 +595,21 @@ struct PulseTracker {
       if collectsDiagnostics { describeRefused(range, windowSeconds: windowSeconds, in: &diagnostic) }
       return .withheld(.none, rejection)
     }
-    let usable = usableSamples(of: range)
-    if PulseTracker.share(cutFrom: usable) > configuration.maximumDisturbedShare {
+    let complete = history.regions(in: range, rate: configuration.resampleRateHz)
+    let masks = usableSamples(of: range)
+    // A region that had to be cut too much is left out of this window; the window is
+    // refused as motion only when that leaves none.
+    let regions = complete.filter {
+      PulseTracker.share(cutFrom: masks[$0.region]) <= configuration.maximumDisturbedShare
+    }
+    let leastCut = masks.map { PulseTracker.share(cutFrom: $0) }.min() ?? 0
+    if regions.isEmpty, !complete.isEmpty || leastCut > configuration.maximumDisturbedShare {
       gate.push(nil)
       diagnostic.gate = .motion
       if collectsDiagnostics { describeRefused(range, windowSeconds: windowSeconds, in: &diagnostic) }
       return .withheld(.none, .motion)
     }
     if collectsDiagnostics { measure(range, windowSeconds: windowSeconds, in: &diagnostic) }
-    let regions = history.regions(in: range, rate: configuration.resampleRateHz)
     guard !regions.isEmpty else {
       gate.push(nil)
       diagnostic.gate = .incompleteRegions
@@ -518,7 +617,7 @@ struct PulseTracker {
     }
     let outcome = analyzer.analyse(
       regions.map(\.series), rate: configuration.resampleRateHz, frameRate: frameRate(of: range),
-      usable: usable)
+      masks: regions.map { masks[$0.region] })
     diagnostic.note(outcome.detail)
     if let spectrum = outcome.spectrum {
       // A window whose strongest peak is where lamp flicker aliases, or is what the
@@ -621,11 +720,26 @@ struct PulseTracker {
 
   /// The samples of the window's grid left after the frames around a colour jump or a fast
   /// chest are cut. Nil when nothing is cut.
-  private func usableSamples(of range: Range<Int>) -> [Bool]? {
+  private func usableSamples(of range: Range<Int>) -> [[Bool]?] {
     let rate = configuration.resampleRateHz
-    return history.usableSamples(
-      in: range, disturbed: history.disturbance(in: range, configuration: configuration).frames, rate: rate,
-      minimumRun: Int((PulseAnalyzer.projectionWindowSeconds * rate).rounded()))
+    let disturbance = history.disturbance(in: range, configuration: configuration)
+    // A stretch between two cuts must hold a projection window, or, when levels are
+    // carried across cuts, enough samples to measure a level from.
+    let run = Int(
+      ((configuration.levelsAcrossCuts ? configuration.levelSeconds : PulseAnalyzer.projectionWindowSeconds)
+        * rate).rounded())
+    guard configuration.cutsRegionsSeparately else {
+      let all = history.usableSamples(in: range, disturbed: disturbance.frames, rate: rate, minimumRun: run)
+      return [[Bool]?](repeating: all, count: PulseHistory.regionCount)
+    }
+    return (0..<PulseHistory.regionCount).map {
+      history.usableSamples(in: range, disturbed: disturbance.frames(of: $0), rate: rate, minimumRun: run)
+    }
+  }
+
+  /// The share cut from the region that lost least.
+  private func leastCutShare(of range: Range<Int>) -> Double {
+    usableSamples(of: range).map { PulseTracker.share(cutFrom: $0) }.min() ?? 0
   }
 
   static func share(cutFrom usable: [Bool]?) -> Double {
@@ -646,7 +760,7 @@ struct PulseTracker {
     }
     diagnostic.framesPerSecond = Double(range.count) / windowSeconds
     let disturbance = history.disturbance(in: range, configuration: configuration)
-    diagnostic.motionShare = PulseTracker.share(cutFrom: usableSamples(of: range))
+    diagnostic.motionShare = leastCutShare(of: range)
     diagnostic.colourJumpShare = disturbance.share(disturbance.colour)
     diagnostic.chestMotionShare = disturbance.share(disturbance.chest)
   }
@@ -657,9 +771,10 @@ struct PulseTracker {
     measure(range, windowSeconds: windowSeconds, in: &diagnostic)
     let regions = history.regions(in: range, rate: configuration.resampleRateHz)
     guard !regions.isEmpty else { return }
+    let masks = usableSamples(of: range)
     let outcome = analyzer.analyse(
       regions.map(\.series), rate: configuration.resampleRateHz, frameRate: frameRate(of: range),
-      usable: usableSamples(of: range))
+      masks: regions.map { masks[$0.region] })
     diagnostic.note(outcome.detail)
   }
 
@@ -673,6 +788,13 @@ struct PulseTracker {
       intervals.append(times[index] - times[index - 1])
     }
     guard let typical = DSP.median(intervals) else { return .gaps }
+    // Time inside a bridged interruption holds no frames by design.
+    var covered = windowSeconds
+    for index in range.dropFirst() where history.bridge[index] {
+      covered -= max(0, times[index] - times[index - 1] - typical)
+    }
+    guard covered > 0 else { return .gaps }
+    let windowSeconds = covered
     let expected = windowSeconds / typical
     if Double(range.count) < configuration.minimumSampleShare * expected
       || Double(range.count) / windowSeconds < configuration.minimumFrameRate
