@@ -31,8 +31,9 @@ export function orderTimeline(entries: TimelineEntry[]): TimelineEntry[] {
 type Acknowledgement = { flagId: string; at: Date; by: string };
 
 /**
- * One acknowledgement can cover both of a patient's trend flags (see `acknowledgeFlag`). It
- * was one act by one person, so the timeline shows it once, under the first flag it covered.
+ * One acknowledgement covers every flag of an alert, usually both trend flags of one
+ * deterioration (see `acknowledgeFlag`). It was one act by one person, so the timeline shows
+ * it once, under the first flag it covered.
  */
 export function distinctAcknowledgements<T extends Acknowledgement>(acknowledgements: T[]): T[] {
   const seen = new Set<string>();

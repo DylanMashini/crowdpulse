@@ -1,4 +1,4 @@
-import { type Flag, type FlagListQuery, type FlagListResponse, type FlagRule, patientLabel } from "@triagecam/contracts";
+import { type Flag, type FlagListQuery, type FlagListResponse, patientLabel } from "@triagecam/contracts";
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, or, type SQL } from "drizzle-orm";
 import * as z from "zod";
 
@@ -120,30 +120,27 @@ export async function listFlags(query: FlagListQuery): Promise<FlagListResponse>
   };
 }
 
-const TREND_RULES: FlagRule[] = ["score_rise", "baseline_shift"];
-
 /**
  * Records who acknowledged and when. A second acknowledgement by the same person changes nothing.
  *
- * One deterioration usually trips both trend rules, and to the nurse it is one alert. So
- * acknowledging an open trend flag also acknowledges the patient's other open trend flag when
- * nobody has acknowledged that one yet. An overdue flag is a different alert and is never
- * covered by, or covers, a trend flag.
+ * A nurse acknowledges an alert, not a rule. One deterioration usually trips both trend rules
+ * on the same sitting, and those two flags are one alert (`alertIdOf`), so acknowledging an
+ * open flag also acknowledges the other open flags of its alert that nobody has acknowledged
+ * yet. Nothing else is covered: a trend flag raised by another sitting carries other numbers,
+ * which this nurse has not been shown, and an overdue flag is an alert on its own.
  */
 export async function acknowledgeFlag(flagId: string, userId: string): Promise<Flag> {
   const [row] = await selectFlags().where(eq(schema.flags.id, flagId)).limit(1);
   if (!row) throw new ApiError("not_found", "There is no flag with that id");
 
   let covered: FlagWithPatient[] = [];
-  if (row.flag.closedAt === null && TREND_RULES.includes(row.flag.rule)) {
-    const others = await selectFlags().where(
-      and(
-        eq(schema.flags.patientId, row.flag.patientId),
-        ne(schema.flags.id, flagId),
-        isNull(schema.flags.closedAt),
-        inArray(schema.flags.rule, TREND_RULES),
-      ),
-    );
+  if (row.flag.closedAt === null) {
+    const alertId = alertIdOf(row.flag, row.patient);
+    const others = (
+      await selectFlags().where(
+        and(eq(schema.flags.patientId, row.flag.patientId), ne(schema.flags.id, flagId), isNull(schema.flags.closedAt)),
+      )
+    ).filter((other) => alertIdOf(other.flag, other.patient) === alertId);
     const acknowledged = await firstAcknowledgements(others.map((other) => other.flag.id));
     covered = others.filter((other) => !acknowledged.has(other.flag.id));
   }
