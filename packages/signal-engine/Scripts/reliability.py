@@ -7,6 +7,7 @@
     python3 packages/signal-engine/Scripts/reliability.py adversarial --work <dir> [--weak]
     python3 packages/signal-engine/Scripts/reliability.py dimmed   --sittings <dir> --set tuning --work <dir>
     python3 packages/signal-engine/Scripts/reliability.py device   --sittings <dir of phone sitting files>
+    python3 packages/signal-engine/Scripts/reliability.py screen   --sittings <dir of phone sitting files> --work <dir>
 
 `--sittings` is a folder of sitting files with a `<name>.reference.jsonl` beside each, as the
 evaluation harness leaves them in its output directory (`<out>/ubfc`). `--set` is `tuning` or
@@ -38,6 +39,14 @@ dimmed    QA round 2's model of less light, darker skin or a farther face: every
 device    sitting files from a phone, with no reference: for each, whether it ends with a heart
           rate, from where, with what confidence, and what refused its seconds. `--sittings` is a
           folder; only files whose header says `"source":"camera"` are read.
+
+screen    QA round 3's control (R1): a screen facing the patient. Each phone sitting is shuffled in
+          blocks, which removes the pulse and keeps the phone's own noise, and the light on the face
+          then switches between two levels 1% to 3% apart every 0.4 to 0.6 s (50 to 75 times a minute
+          there and back), grey or with red moving further than green and blue a little the other
+          way. 48 per sitting. Counts those that end with a heart rate, those that do so with normal
+          confidence, and those whose rate is the flicker's. `--seed` moves the shuffles. The files
+          are removed after each sitting's batch is run unless `--keep` is given.
 
 Controls and degraded sittings are derived from recordings of real people: keep `--work`
 outside the repository. Needs numpy for `controls` and `degrade`.
@@ -321,6 +330,85 @@ def device(arguments):
     print(f"\n{ended} of {len(files)} end with a heart rate. No reference was worn: this shows whether a rate comes out, not whether it is right.")
 
 
+SCREEN_PERIODS = (0.4, 0.45, 0.5, 0.6)
+SCREEN_DEPTHS = (0.01, 0.02, 0.03)
+SCREEN_COLOURS = (0.0, 0.5, 1.0, 1.5)
+
+
+def screen_level(times, period, depth, ramp, jitter, generator, numpy):
+    """The light's level at each time: two values `depth` apart, switching every `period` seconds
+    over `ramp` seconds, each switch moved by up to `jitter` seconds."""
+    switches = numpy.arange(times[0] + generator.uniform(0, period), times[-1] + period, period)
+    switches = switches + generator.uniform(-jitter, jitter, size=len(switches)) if jitter else switches
+    level = numpy.full(len(times), -0.5)
+    for number, at in enumerate(switches):
+        target = 0.5 if number % 2 == 0 else -0.5
+        if ramp > 0:
+            rising = (times >= at) & (times < at + ramp)
+            level[rising] = -target + 2 * target * (times[rising] - at) / ramp
+        level[times >= at + ramp] = target
+    return 1 + depth * level
+
+
+def screen_sitting(source, target, generator, numpy, period, depth, colour, ramp, jitter):
+    """`source` (already shuffled) with the screen's light on it."""
+    lines = source.read_text().splitlines()
+    frames = [json.loads(line) for line in lines[1:]]
+    level = screen_level(numpy.array([frame["t"] for frame in frames]), period, depth, ramp, jitter, generator, numpy)
+    for frame, light in zip(frames, level):
+        for key in ("forehead", "leftCheek", "rightCheek"):
+            if frame.get(key):
+                frame[key]["r"] *= light * (1 + colour * (light - 1))
+                frame[key]["g"] *= light
+                frame[key]["b"] *= light * (1 - 0.3 * colour * (light - 1))
+    target.write_text("\n".join([lines[0]] + [json.dumps(frame) for frame in frames]) + "\n")
+
+
+def screen(arguments):
+    import numpy
+    folder = pathlib.Path(arguments.work) / "screen"
+    folder.mkdir(parents=True, exist_ok=True)
+    sources = sorted(path for path in pathlib.Path(arguments.sittings).glob("*.jsonl")
+                     if '"source":"camera"' in path.open().readline())
+    rows = collections.defaultdict(collections.Counter)
+    notes = []
+    for number, source in enumerate(sources):
+        base = folder / f"base_{source.stem[:8]}.jsonl"
+        shuffled(source, base, numpy.random.default_rng(arguments.seed + number))
+        files, settings = [], []
+        index = 0
+        for period in SCREEN_PERIODS:
+            for depth in SCREEN_DEPTHS:
+                for colour in SCREEN_COLOURS:
+                    ramp, jitter = (0.0, 0.1, 0.2)[index % 3], (0.0, 0.03)[index % 2]
+                    target = folder / f"screen_{source.stem[:8]}_p{period}_d{depth}_c{colour}_r{ramp}_j{jitter}.jsonl"
+                    screen_sitting(base, target, numpy.random.default_rng(arguments.seed + 1000 * number + index), numpy,
+                                   period, depth, colour, ramp, jitter)
+                    files.append(target)
+                    settings.append((period, colour))
+                    index += 1
+        for file, (period, colour), (ticks, summary) in zip(files, settings, run_all(arguments.engine, files, arguments.config)):
+            value = summary["heartRate"].get("value")
+            confident = value is not None and summary.get("heartRateConfidence") != "low"
+            rates = [30 / period, 60 / period]
+            at_rate = value is not None and any(abs(value - rate * multiple) <= 3 for rate in rates for multiple in (0.5, 1, 2))
+            valid = sum(tick["state"] == "valid" for tick in ticks)
+            for row in (rows["grey" if colour == 0 else "coloured"], rows[f"every {period} s"], rows[source.stem[:8]], rows["all"]):
+                row.update(sittings=1, seconds=len(ticks), valid=valid, ended=value is not None, confident=confident, at_rate=at_rate)
+            if value is not None:
+                notes.append(f"{file.stem}: {value:.1f} bpm from {source_of(summary)}, "
+                             f"{'normal' if confident else 'low'}, {valid} valid seconds")
+            if not arguments.keep:
+                file.unlink()
+        base.unlink()
+    print("| Screen control | Sittings | Valid seconds | End with a heart rate | With normal confidence | At the flicker's rate |")
+    print("|---|---|---|---|---|---|")
+    for key, row in rows.items():
+        print(f"| {key} | {row['sittings']} | {row['valid']} of {row['seconds']} | {row['ended']} | {row['confident']} | {row['at_rate']} |")
+    print()
+    print("\n".join(notes))
+
+
 def adversarial(arguments):
     import numpy
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -367,7 +455,7 @@ def adversarial(arguments):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("command", choices=["score", "controls", "accepts", "degrade", "adversarial", "dimmed", "device"])
+    parser.add_argument("command", choices=["score", "controls", "accepts", "degrade", "adversarial", "dimmed", "device", "screen"])
     parser.add_argument("--sittings")
     parser.add_argument("--set", choices=["tuning", "heldOut"], default="tuning")
     parser.add_argument("--split", default=str(REPO / "eval" / "split.json"))
@@ -378,6 +466,7 @@ def main():
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--weak", action="store_true")
+    parser.add_argument("--keep", action="store_true")
     arguments = parser.parse_args()
     if arguments.command not in ("accepts", "adversarial") and not arguments.sittings:
         sys.exit("--sittings is needed")
@@ -388,7 +477,7 @@ def main():
             file.write(arguments.config)
         arguments.config = file.name
     {"score": score, "controls": controls, "accepts": accepts, "degrade": degrade, "adversarial": adversarial,
-     "dimmed": dimmed, "device": device}[arguments.command](arguments)
+     "dimmed": dimmed, "device": device, "screen": screen}[arguments.command](arguments)
 
 
 if __name__ == "__main__":
