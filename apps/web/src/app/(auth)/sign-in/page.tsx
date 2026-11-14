@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: 'Sign in' };
 export default async function Page({ searchParams }: PageProps<'/sign-in'>) {
   const { next } = await searchParams;
   return (
-    <AuthFrame title="Sign in" lead="For operators and nurses using the vitals station and the waiting-room worklist">
+    <AuthFrame notice title="Sign in" lead="The vitals station and waiting-room worklist for triage staff">
       <SignInForm next={typeof next === 'string' ? next : undefined} />
     </AuthFrame>
   );
