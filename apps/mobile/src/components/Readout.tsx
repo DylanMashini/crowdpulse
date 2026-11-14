@@ -11,8 +11,12 @@ type Props = {
   label: string;
   /** Printed for `valid`, struck through for `stale`. */
   value?: string;
-  /** Written out: "bpm", "breaths per min", "ms". */
+  /** Printed beside the value: "bpm", "per min", "ms". */
   unit: string;
+  /** The unit as it is read aloud, when the printed one leans on the label: "breaths per minute". */
+  unitSpoken?: string;
+  /** Closes the gaps between the lines, for a cell that also carries a trace. */
+  dense?: boolean;
   size?: 'xl' | 'lg' | 'md';
   state?: 'valid' | 'settling' | 'none' | 'stale';
   /** A value being measured now is ice-white. A settled one is `ink`. */
@@ -23,12 +27,15 @@ type Props = {
   experimental?: boolean;
 };
 
+/** How far a readout's number and unit grow with the system text size. */
+const READOUT_TEXT_SCALE = 1.3;
+
 /**
  * One measured value with its unit, source and age, set as an instrument: a fixed-width face
  * with tabular figures, so the number keeps still when it changes. `none` prints the words
  * "No reading", never a dash or a faded number.
  */
-export function Readout({ label, value, unit, size = 'lg', state = 'valid', live, icon, foot, experimental }: Props) {
+export function Readout({ label, value, unit, unitSpoken, dense, size = 'lg', state = 'valid', live, icon, foot, experimental }: Props) {
   const theme = useScopedTheme();
   const { colors } = theme;
   const valueStyle = { xl: theme.type.readoutXl, lg: theme.type.readoutLg, md: theme.type.readoutMd }[size];
@@ -37,11 +44,11 @@ export function Readout({ label, value, unit, size = 'lg', state = 'valid', live
   const wordStyle = size === 'md' ? theme.type.subheading : theme.type.heading;
   const showsNumber = state === 'valid' || state === 'stale';
   const spoken = showsNumber
-    ? `${label}, ${state === 'stale' ? 'stale, last value ' : ''}${value} ${unit}. ${foot}`
+    ? `${label}, ${state === 'stale' ? 'stale, last value ' : ''}${value} ${unitSpoken ?? unit}. ${foot}`
     : `${label}, ${state === 'settling' ? 'settling' : 'no reading'}. ${foot}`;
 
   return (
-    <View accessible accessibilityLabel={spoken} style={{ gap: theme.space.space2, alignSelf: 'stretch' }}>
+    <View accessible accessibilityLabel={spoken} style={{ gap: dense ? theme.space.space1 : theme.space.space2, alignSelf: 'stretch' }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, minHeight: 22 }}>
         {icon ? <Icon name={icon} size={16} color={colors.inkMuted} /> : null}
         <Text style={[theme.type.caption, { color: colors.inkMuted }]}>{label}</Text>
@@ -49,16 +56,21 @@ export function Readout({ label, value, unit, size = 'lg', state = 'valid', live
       </View>
       {showsNumber ? (
         <View style={{ flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', columnGap: 6 }}>
+          {/* The number is already display size, so it and its unit follow the text size a shorter
+              way than body text and stay on one line in a half-width cell. */}
           <Text
-            style={[
-              valueStyle,
-              { color: live ? colors.signalStrong : colors.ink },
-              state === 'stale' && { color: colors.inkFaint, textDecorationLine: 'line-through' },
-            ]}
+            maxFontSizeMultiplier={READOUT_TEXT_SCALE}
+            style={
+              state === 'stale'
+                ? { ...valueStyle, color: colors.inkFaint, textDecorationLine: 'line-through' }
+                : { ...valueStyle, color: live ? colors.signalStrong : colors.ink }
+            }
           >
             {value}
           </Text>
-          <Text style={[theme.type.dense, { color: colors.inkMuted }]}>{unit}</Text>
+          <Text maxFontSizeMultiplier={READOUT_TEXT_SCALE} style={[theme.type.dense, { color: colors.inkMuted }]}>
+            {unit}
+          </Text>
         </View>
       ) : (
         <View style={{ minHeight: valueStyle.lineHeight, justifyContent: 'center' }}>
@@ -68,8 +80,7 @@ export function Readout({ label, value, unit, size = 'lg', state = 'valid', live
       <Text
         style={[
           theme.type.caption,
-          { color: colors.inkFaint },
-          state === 'stale' && { color: colors.watch, fontWeight: weight.medium },
+          state === 'stale' ? { color: colors.watch, fontWeight: weight.medium } : { color: colors.inkFaint },
         ]}
       >
         {foot}

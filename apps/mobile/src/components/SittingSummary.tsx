@@ -38,6 +38,7 @@ export function SittingSummary({ items, status, sourceNote, children }: Props) {
             icon={item.icon}
             value={item.value ?? undefined}
             unit={item.unit}
+            unitSpoken={item.key === 'breathingRate' ? 'breaths per minute' : undefined}
             state={item.value == null ? 'none' : 'valid'}
             foot={item.reason ?? 'Median of this sitting'}
             experimental={item.experimental}
