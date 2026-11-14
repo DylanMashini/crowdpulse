@@ -1,29 +1,27 @@
 import { PRIVACY_CAPTURE, PROTOTYPE_NOTICE } from '@triagecam/contracts';
 import Link from 'next/link';
 
-import { Icon, type IconName } from '@/components/ds';
+import { BrandLockup, Icon, buttonClass } from '@/components/ds';
 
 import { Accuracy } from './Accuracy';
-import { bpm, heldOut, provenance } from './eval-data';
+import { bpm, heldOut, percent, provenance } from './eval-data';
+import { HeroSignal } from './HeroSignal';
 import { Viability } from './Viability';
 import { Viewfinder } from './Viewfinder';
 import { WorklistPreview } from './WorklistPreview';
 
 import './landing.css';
 
-const STEPS: Array<{ icon: IconName; title: string; body: string }> = [
+const STEPS: Array<{ title: string; body: string }> = [
   {
-    icon: 'user',
     title: 'Check in',
     body: 'The patient sits down facing a phone on a stand. The operator takes their name, a photo and what they have come in for.',
   },
   {
-    icon: 'scan',
     title: 'Sit for a minute',
     body: 'The camera reads the colour of the forehead and cheeks and the rise of the chest. Pulse and breathing rate settle on screen as the operator watches.',
   },
   {
-    icon: 'list',
     title: 'Wait, and stay seen',
     body: 'Every sitting joins the worklist, and a re-check is another minute at the station. When a patient’s numbers move away from where they were at check-in, they rise to the top and the nurse’s phone buzzes.',
   },
@@ -38,56 +36,70 @@ export function LandingPage({ signedIn }: { signedIn: boolean }) {
         Skip to content
       </a>
 
-      <div className="lp-top" data-theme="dark">
-        <header className="lp-wrap lp-nav">
-          <Link href="/" className="lp-wordmark">
-            Triage Cam
-          </Link>
-          <nav className="lp-nav-links" aria-label="Sections">
-            <a href="#how">How it works</a>
-            <a href="#accuracy">Accuracy</a>
-            <a href="#technology">The technology</a>
-          </nav>
-          <div className="lp-nav-actions">
-            {signedIn ? null : (
-              <Link href="/sign-in" className="lp-link-quiet">
-                Sign in
-              </Link>
-            )}
-            <Link href={primary.href} className="lp-button lp-button-primary lp-button-small">
-              {primary.label}
+      <header className="lp-wrap lp-nav">
+        <Link href="/" className="lp-brand">
+          <BrandLockup />
+        </Link>
+        <nav className="lp-nav-links" aria-label="Sections">
+          <a href="#how">How it works</a>
+          <a href="#accuracy">Accuracy</a>
+          <a href="#technology">The technology</a>
+        </nav>
+        <div className="lp-nav-actions">
+          {signedIn ? null : (
+            <Link href="/sign-in" className="lp-nav-signin">
+              Sign in
             </Link>
-          </div>
-        </header>
-      </div>
+          )}
+          <Link href={primary.href} className={buttonClass('secondary')}>
+            {primary.label}
+          </Link>
+        </div>
+      </header>
 
       <main id="main">
-        <div className="lp-hero" data-theme="dark">
-          <div className="lp-wrap lp-hero-grid">
-            <div className="lp-hero-copy">
-              <h1 className="lp-h1">Vital signs without touching the patient</h1>
-              <p className="lp-hero-lead">
-                Triage Cam turns a phone on a stand into a contact-free vitals station. It measures heart rate and breathing from the camera
-                alone, and moves the patients whose numbers are changing to the top of the nurse’s list.
-              </p>
-              <div className="lp-hero-actions">
-                <Link href={primary.href} className="lp-button lp-button-primary">
-                  {primary.label}
-                </Link>
-                <a href="#how" className="lp-button lp-button-ghost">
-                  See how it works
-                </a>
+        <div className="lp-wrap lp-hero">
+          <div className="lp-hero-copy">
+            <h1 className="lp-h1">Vital signs without touching the patient</h1>
+            <p className="lp-hero-lead">
+              Triage Cam turns a phone on a stand into a contact-free vitals station. It measures heart rate and breathing from the camera
+              alone, and moves the patients whose numbers are changing to the top of the nurse’s list.
+            </p>
+            <div className="lp-actions">
+              <Link href={primary.href} className={buttonClass('primary', 'lg')}>
+                {primary.label}
+              </Link>
+              <a href="#how" className={buttonClass('quiet', 'lg')}>
+                See how it works
+              </a>
+            </div>
+            <div className="lp-proof">
+              <dl>
+              <div>
+                <dd>
+                  {bpm(heldOut.maeBpm)}
+                  <span>bpm</span>
+                </dd>
+                <dt>mean error against a fingertip oximeter, on the seconds it gave a reading</dt>
               </div>
-              <p className="lp-hero-proof">
-                On public recordings of people seated facing a camera, its heart rate came within {bpm(heldOut.maeBpm)} bpm of a fingertip
-                oximeter on average whenever it gave a reading. {provenance()}. <a href="#accuracy">Read the evaluation</a>
+              <div>
+                <dd>{percent(heldOut.within5)}</dd>
+                <dt>of readings within 5 bpm of the oximeter</dt>
+              </div>
+              <div>
+                <dd>{percent(heldOut.coverage)}</dd>
+                <dt>of seconds gave a reading</dt>
+              </div>
+              </dl>
+              <p className="lp-proof-source">
+                People seated facing a camera. {provenance()}. <a href="#accuracy">Read the evaluation</a>
               </p>
             </div>
-            <Viewfinder />
           </div>
+          <HeroSignal />
         </div>
 
-        <section id="how" className="lp-section lp-how">
+        <section id="how" className="lp-section">
           <div className="lp-wrap">
             <header className="lp-section-head">
               <h2 className="lp-h2">No cuff, no clip, no contact</h2>
@@ -96,34 +108,38 @@ export function LandingPage({ signedIn }: { signedIn: boolean }) {
                 chair, with nothing to attach and nothing to clean.
               </p>
             </header>
-            <ol className="lp-steps">
-              {STEPS.map((step, index) => (
-                <li key={step.title} className="lp-step">
-                  <span className="lp-step-mark">
-                    <span className="lp-step-number">{index + 1}</span>
-                    <Icon name={step.icon} size={20} />
-                  </span>
-                  <h3 className="lp-h3">{step.title}</h3>
-                  <p>{step.body}</p>
-                </li>
-              ))}
-            </ol>
+            <div className="lp-how">
+              <ol className="lp-steps">
+                {STEPS.map((step, index) => (
+                  <li key={step.title} className="lp-step">
+                    <span className="lp-step-number" aria-hidden="true">
+                      {index + 1}
+                    </span>
+                    <div>
+                      <h3 className="lp-h3">{step.title}</h3>
+                      <p>{step.body}</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+              <Viewfinder />
+            </div>
             <p className="lp-privacy">
-              <Icon name="eye-off" size={18} />
+              <Icon name="eye-off" />
               <span>{PRIVACY_CAPTURE}</span>
             </p>
           </div>
         </section>
 
-        <section className="lp-section lp-context">
-          <div className="lp-wrap lp-context-grid">
+        <section className="lp-section">
+          <div className="lp-wrap lp-context">
             <div className="lp-context-copy">
               <h2 className="lp-h2">The list reorders itself around who is changing</h2>
               <p className="lp-lead">
                 Nurses see one ranked worklist on the dashboard and on their phone. It shows each patient’s face, name and reason for the
                 visit beside what was measured and when.
               </p>
-              <dl className="lp-context-points">
+              <dl className="lp-points">
                 <div>
                   <dt>Trend flags</dt>
                   <dd>A pulse or breathing rate that has drifted since check-in flags the patient for a person to check.</dd>
@@ -145,20 +161,20 @@ export function LandingPage({ signedIn }: { signedIn: boolean }) {
         <Accuracy />
         <Viability />
 
-        <section className="lp-cta" data-theme="dark">
-          <div className="lp-wrap lp-cta-inner">
+        <section className="lp-section lp-cta">
+          <div className="lp-wrap">
             <h2 className="lp-h2">Set up a station with the phone you already have</h2>
             <p className="lp-lead">
               {signedIn
                 ? 'Open the dashboard, put the app on a phone in camera mode, and run a sitting in about a minute.'
                 : 'Create an account, open the app on a phone in camera mode, and run your first sitting in a few minutes.'}
             </p>
-            <div className="lp-hero-actions">
-              <Link href={primary.href} className="lp-button lp-button-primary">
+            <div className="lp-actions">
+              <Link href={primary.href} className={buttonClass('primary', 'lg')}>
                 {primary.label}
               </Link>
               {signedIn ? null : (
-                <Link href="/sign-in" className="lp-button lp-button-ghost">
+                <Link href="/sign-in" className={buttonClass('quiet', 'lg')}>
                   Sign in
                 </Link>
               )}
@@ -167,13 +183,9 @@ export function LandingPage({ signedIn }: { signedIn: boolean }) {
         </section>
       </main>
 
-      <footer className="lp-foot" data-theme="dark">
-        <div className="lp-wrap">
-          <div className="lp-footer">
-            <span className="lp-wordmark">Triage Cam</span>
-            <span>{PROTOTYPE_NOTICE}</span>
-          </div>
-        </div>
+      <footer className="lp-wrap lp-footer">
+        <BrandLockup />
+        <span>{PROTOTYPE_NOTICE}</span>
       </footer>
     </div>
   );
