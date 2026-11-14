@@ -20,6 +20,8 @@ import {
   type WorklistItem,
 } from '@triagecam/contracts';
 
+import { breathsPerMin, heartRate, minutes, minutesAgo, rate } from '@/lib/format';
+
 const MINUTE = 60_000;
 /** Everything is placed relative to the moment the mock was loaded. */
 export const loadedAt = Date.now();
@@ -100,13 +102,20 @@ export const runningSittingId = uuid(3, 1700);
 export const acknowledged = new Map<string, string>();
 export const discharged = new Map<number, string>([[13, ago(95)]]);
 
+/** The server's fixed template, written out with the same formatters. */
 function handoffFor(seed: Seed): string {
   const [pulseBase, pulseNow] = seed.pulse;
   const [breathingBase, breathingNow] = seed.breathing;
-  const pulse = pulseNow == null ? `pulse ${pulseBase} at check-in, no reading now` : `pulse ${pulseBase} at check-in, ${pulseNow} now (${seed.waitedMin - (seed.observedMin ?? 0) - 2} min later)`;
-  const breathing = breathingNow == null ? `breathing ${breathingBase} at check-in, no reading now` : `breathing ${breathingBase} to ${breathingNow}`;
-  return `${labelOf(seed.number)}: ${pulse}; ${breathing}. Last observed ${seed.observedMin} min ago.`;
+  if (pulseBase == null || breathingBase == null) return `${labelOf(seed.number)}: not measured at check-in.`;
+  const later = minutes(seed.waitedMin - (seed.observedMin ?? 0) - 2);
+  const pulse =
+    pulseNow == null ? `pulse ${heartRate(pulseBase)} at check-in, no reading now` : `pulse ${heartRate(pulseBase)} at check-in, ${heartRate(pulseNow)} now (${later} later)`;
+  const breathing =
+    breathingNow == null ? `breathing ${breathsPerMin(breathingBase)} at check-in, no reading now` : `breathing ${rate(breathingBase)} to ${breathsPerMin(breathingNow)}`;
+  return `${labelOf(seed.number)}: ${pulse}; ${breathing}. Last observed ${minutesAgo(seed.observedMin ?? 0)}.`;
 }
+
+const CHECK_IN_ONLY = `pulse ${heartRate(77)}, breathing ${breathsPerMin(16)} at check-in`;
 
 function flagFor(seed: Seed): Flag | null {
   if (!seed.flag) return null;
@@ -179,7 +188,7 @@ export function worklistItems(): WorklistItem[] {
       parametersMeasured: done ? 2 : 0,
       source: done ? 'camera' : null,
       flags: [],
-      handoff: done ? `${labelOf(RUNNING_PATIENT)}: pulse 77 at check-in; breathing 16. Last observed 0 min ago.` : `${labelOf(RUNNING_PATIENT)}: not yet observed.`,
+      handoff: done ? `${labelOf(RUNNING_PATIENT)}: ${CHECK_IN_ONLY}. Last observed just now.` : `${labelOf(RUNNING_PATIENT)}: not yet observed, waiting under 1 min.`,
       sittingInProgress: !done,
     });
   }
@@ -292,7 +301,7 @@ export function patientDetail(number: number): PatientDetailResponse | null {
       sittings: [sitting],
       flags: [],
       timeline,
-      handoff: item?.handoff ?? `${labelOf(number)}: pulse 77 at check-in; breathing 16.`,
+      handoff: item?.handoff ?? `${labelOf(number)}: ${CHECK_IN_ONLY}. Last observed just now.`,
     };
   }
 
@@ -310,7 +319,7 @@ export function patientDetail(number: number): PatientDetailResponse | null {
         { type: 'sitting', at: baseline.endedAt!, sittingId: baseline.id, kind: 'check_in', source: 'camera', heartRate: 71, breathingRate: 15, score: 0 },
         { type: 'created', at: patient.createdAt },
       ],
-      handoff: `${labelOf(number)}: pulse 71 at check-in; breathing 15. Discharged.`,
+      handoff: `${labelOf(number)}: pulse ${heartRate(71)}, breathing ${breathsPerMin(15)} at check-in.`,
     };
   }
 
