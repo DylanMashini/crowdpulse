@@ -74,7 +74,7 @@ The spec's `heading` (15/22) is the token `subheading`, and the spec's `title-2`
 
 Weights: 600 is now for iOS large titles only. On the web, replace `font-semibold` with `font-medium`. Body text on the web was set to 15/22 in `apps/web/src/app/globals.css`; it should become 14/22, and the spec also sets `font-feature-settings: "ss01", "cv11"` on the body.
 
-**Mobile `fonts`.** `fonts.sans[400|500|600]` and `fonts.mono[…]` still exist, but every weight now returns the same family name (`System` or `ui-monospace`), so `fontFamily: fonts.sans[600]` no longer makes text heavier. Replace each of those with a weight from the new `weight` export (`weight.normal`, `weight.medium`, `weight.semibold`) or with a `type` style, which now carries both `fontFamily` and `fontWeight`:
+**Mobile `fonts`.** `fonts.sans[400|500|600]` and `fonts.mono[…]` still exist, but every weight now returns the same family name (`System` or `Menlo`), so `fontFamily: fonts.sans[600]` no longer makes text heavier. Replace each of those with a weight from the new `weight` export (`weight.normal`, `weight.medium`, `weight.semibold`) or with a `type` style, which now carries both `fontFamily` and `fontWeight`:
 
 ```ts
 // before
@@ -83,7 +83,7 @@ Weights: 600 is now for iOS large titles only. On the web, replace `font-semibol
 { fontWeight: weight.medium }
 ```
 
-If `ui-monospace` does not resolve in the simulator, set `type.mobileFamilies.mono` to `Menlo` in `tokens.json` and run `pnpm tokens`. The six Atkinson TTFs in `apps/mobile/assets/fonts` and their `expo-font` entry in `app.json` are no longer referenced by any token; removing the `app.json` entry changes native config, so leave it unless a new development build is planned.
+`type.mobileFamilies.mono` is `Menlo`. It was `ui-monospace` first, which did not resolve reliably in the simulator (QA finding NS-IOS-02), so the family iOS ships is named outright. The six Atkinson TTFs in `apps/mobile/assets/fonts` and their `expo-font` entry in `app.json` are no longer referenced by any token; removing the `app.json` entry changes native config, so leave it unless a new development build is planned.
 
 ## Spacing
 

@@ -97,7 +97,7 @@ Geist for everything people read. Geist Mono only for vitals, timers and clock t
 
 **Fonts on the web** are the two variable files in `fonts/` (Geist 1.9.2, SIL Open Font License), served by `@font-face` from the generated `tokens.css`. Nothing else has to load them.
 
-**Fonts on mobile** are the faces iOS ships: the system face (`System`) for text and the system monospace (`ui-monospace`) for vitals, both with tabular figures. Bundling Geist changes the native project and would force a new development build, which this redesign does not do. The generated type styles carry `fontFamily` and `fontWeight`; `fonts.sans[500]` no longer selects a weight on its own (see `MIGRATION.md`).
+**Fonts on mobile** are the faces iOS ships: the system face (`System`) for text and Menlo for vitals, both with tabular figures. Menlo is named outright because `ui-monospace` did not hold in the iOS 27 simulator: the same style drew some readings in the monospace face and others (digits with no zero, such as 72 and 16) in the proportional one. Bundling Geist changes the native project and would force a new development build, which this redesign does not do. The generated type styles carry `fontFamily` and `fontWeight`; `fonts.sans[500]` no longer selects a weight on its own (see `MIGRATION.md`).
 
 ## Space, size and shape
 
