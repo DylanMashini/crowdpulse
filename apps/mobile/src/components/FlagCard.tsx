@@ -22,6 +22,12 @@ type Props = {
   hidePatient?: boolean;
   /** Opens the patient. Left out on the patient's own screen. */
   onOpen?: () => void;
+  /**
+   * The flag's handoff sentence is written when the flag opens and does not change after.
+   * `show` prints it. `whenFlagged` prints it under those words, for a flag that has closed.
+   * `hide` leaves it out where the patient's current handoff is printed beside the card.
+   */
+  sentence?: 'show' | 'whenFlagged' | 'hide';
 };
 
 /**
@@ -29,7 +35,7 @@ type Props = {
  * the acknowledgement, made in place. Acknowledging says "I have seen this"; it does not close
  * the flag, which closes when an observation is back inside the thresholds.
  */
-export function FlagCard({ flag, hidePatient, onOpen }: Props) {
+export function FlagCard({ flag, hidePatient, onOpen, sentence = 'show' }: Props) {
   const theme = useScopedTheme();
   const { colors, space } = theme;
   const { acknowledge, now } = useNurse();
@@ -90,7 +96,14 @@ export function FlagCard({ flag, hidePatient, onOpen }: Props) {
           {closed && flag.closedAt ? `${flagOpenedText(flag, now)}, closed` : flagOpenedText(flag, now)}
         </Text>
       </View>
-      <Text style={[theme.type.bodyTouch, { color: colors.ink }]}>{flag.handoff}</Text>
+      {sentence === 'hide' ? null : (
+        <View style={{ gap: space.space1 }}>
+          {sentence === 'whenFlagged' ? (
+            <Text style={[theme.type.caption, { color: colors.inkMuted }]}>When flagged</Text>
+          ) : null}
+          <Text style={[theme.type.bodyTouch, { color: colors.ink }]}>{flag.handoff}</Text>
+        </View>
+      )}
       {flag.acknowledgedAt ? (
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.space2 }}>
           <View style={{ paddingTop: 2 }}>

@@ -184,17 +184,20 @@ export default function PatientScreen() {
           <>
             {failure ? <Notice title="Not updated" body={sentences(failure.message, 'What is shown may be out of date')} /> : null}
 
-            {openFlags.length > 0 ? (
-              <View style={{ gap: space.space3 }}>
-                {openFlags.map((flag: Flag) => (
-                  <FlagCard key={flag.id} flag={flag} hidePatient />
-                ))}
-              </View>
-            ) : null}
-
+            {/* The handoff as it stands now, once. The open flags under it say why and take the acknowledgement. */}
             <Section heading="Handoff">
               <HandoffNote sentence={detail.handoff} />
             </Section>
+
+            {openFlags.length > 0 ? (
+              <Section heading="Open flags" count={openFlags.length}>
+                <View style={{ gap: space.space3 }}>
+                  {openFlags.map((flag: Flag) => (
+                    <FlagCard key={flag.id} flag={flag} hidePatient sentence="hide" />
+                  ))}
+                </View>
+              </Section>
+            ) : null}
 
             <Section heading="Vitals">
               <Card>
@@ -289,7 +292,7 @@ export default function PatientScreen() {
               <Section heading="Earlier flags" count={closedFlags.length}>
                 <View style={{ gap: space.space3 }}>
                   {closedFlags.map((flag) => (
-                    <FlagCard key={flag.id} flag={flag} hidePatient />
+                    <FlagCard key={flag.id} flag={flag} hidePatient sentence="whenFlagged" />
                   ))}
                 </View>
               </Section>
