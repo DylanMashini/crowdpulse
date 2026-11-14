@@ -29,6 +29,12 @@ authors' file: `check-references` does that, and the next re-score records the r
 Subjects are split into a tuning set and a held-out set by eval/split.json (see eval/split.py).
 Tune on the tuning set only (--split tuning). Every published figure comes from the held-out set.
 
+The UBFC-rPPG reference is the dataset's own oximeter heart rate, samples at 0 dropped: the rule
+the harness used before the split existed. It is written out with its reason in
+datasets.REFERENCE_RULES and printed in the report. Do not change it, or choose between
+references, by comparing held-out results; decide on principle or on the tuning set, record why
+there, and only then score the held-out set again.
+
 Directories: --data and --out, or TRIAGECAM_EVAL_DATA and TRIAGECAM_EVAL_OUT, default eval/data
 and eval/out. A git worktree has neither, so point it at one shared data directory and at an
 output directory of its own. Downloads are held back, and after 20 minutes refused, when they
@@ -263,6 +269,8 @@ def write_report(target, names, recorded, lines):
         results = json.loads(path.read_text())
         name = path.stem
         lines += [f"## {datasets.TITLES.get(name, name)}", "", datasets.NOTES.get(name, ""), ""]
+        if name in datasets.REFERENCE_RULES:
+            lines += ["**Reference rule.** " + datasets.REFERENCE_RULES[name], ""]
         sets = recorded["datasets"].get(name, {})
         for key, listed in ((split.HELD_OUT, "heldOut"), (split.TUNING, "tuning")):
             in_set = [r for r in results if r.get("split") == key]

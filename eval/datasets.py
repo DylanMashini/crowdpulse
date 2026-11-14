@@ -36,6 +36,21 @@ NOTES = {
     "rppg10": "Cropped skin patches, not full faces: the face and region tracking is skipped and the whole frame is every region. Reference: ECG.",
     "cmu": "Cropped skin patches from darker-skinned subjects; the whole frame is every region. Reference: one mean pulse rate per video.",
 }
+# How each published dataset's reference is built, and why. Printed in the report under the
+# dataset. A rule is never changed by comparing held-out results: a change is decided on
+# principle or on the tuning set, written here with its reason, and only then is the held-out
+# set scored again.
+REFERENCE_RULES = {
+    "ubfc": "The reference is the heart-rate line of each subject's `ground_truth.txt`: the fingertip oximeter's own rate as the "
+            "dataset's authors recorded it, with samples equal to 0 dropped and nothing else filtered, smoothed or derived. "
+            "Why this rule: it is the one the harness has used since its first UBFC-rPPG run (commit `3cd1d6d`), before any subject was "
+            "assigned to a set (`1bf1907`), so it was fixed with no held-out result in view; and it is the dataset's own rate, so the "
+            "reference involves none of our signal processing. A rate derived from the same file's pulse waveform gives different "
+            "held-out figures, which is exactly why the choice is not reopened by looking at them. "
+            "Known fault, tuning set only: in subjects 11, 18, 20 and 24 the oximeter line drops out and tops out at 127 (BUG-19), "
+            "which is most of the tuning set's error. No held-out sample is below 40 or at 127. A fix to the rule is decided on the "
+            "tuning set with A2 and A3, recorded here, and only then is the held-out figure computed again.",
+}
 
 
 _fetch_locks = {}
@@ -205,6 +220,7 @@ def ubfc(subjects):
         width, height, fps = core.probe(video)
         counts = core.convert(["-i", str(video)], width, height, fps, sitting)
         video.unlink()
+        # The reference rule: see REFERENCE_RULES["ubfc"] before changing this line.
         _, rates, times = (np.array(line.split(), dtype=float) for line in truth.read_text().splitlines()[:3])
         return {**counts, "referenceCheck": check}, [(float(t), float(hr)) for t, hr in zip(times, rates) if hr > 0]
 
