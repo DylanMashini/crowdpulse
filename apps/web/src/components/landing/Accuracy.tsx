@@ -49,7 +49,11 @@ export function Accuracy() {
           <div className="lp-figure-groups">
             <div className="lp-figure-group">
               <p className="lp-figure-caption">
-                Second by second <span>Every one-second reading against the sensor at that second</span>
+                Second by second{' '}
+                <span>
+                  Every one-second reading against the sensor at that second. {rest.withReading} of the {rest.recordings} recordings gave at least one
+                  reading.
+                </span>
               </p>
               <dl className="lp-figures">
                 <Figure value={bpm(rest.maeBpm)} unit="bpm" label="Mean absolute error" />
@@ -60,11 +64,15 @@ export function Accuracy() {
             {rest.recordingsWithSummary > 0 ? (
               <div className="lp-figure-group">
                 <p className="lp-figure-caption">
-                  Per sitting <span>The one heart rate a nurse sees for a sitting, against the sensor&apos;s mean over the same recording</span>
+                  Per sitting{' '}
+                  <span>
+                    The one heart rate a nurse sees for a sitting, against the sensor&apos;s mean over the same recording. {rest.recordingsWithSummary} of
+                    those {rest.withReading} recordings gave a sitting heart rate.
+                  </span>
                 </p>
                 <dl className="lp-figures">
                   <Figure value={bpm(rest.perRecordingMaeBpm)} unit="bpm" label="Mean absolute error" />
-                  <Figure value={percent(rest.perRecordingWithin5)} label="Sittings within 5 bpm" />
+                  <Figure value={percent(rest.perRecordingWithin5)} label="Within 5 bpm, of the sittings that gave a heart rate" />
                   <Figure value={String(rest.recordingsWithSummary)} unit={`of ${rest.recordings}`} label="Recordings that gave a sitting heart rate" />
                 </dl>
               </div>
