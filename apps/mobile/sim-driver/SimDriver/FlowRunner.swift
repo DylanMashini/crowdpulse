@@ -1,6 +1,6 @@
 import XCTest
 
-/// Runs one flow file against the installed Triage Cam development build, by its bundle id.
+/// Runs one flow file against the installed Crowdpulse development build, by its bundle id.
 /// The flow language and the environment variables are described in `apps/mobile/sim-flows/README.md`.
 ///
 /// The test runner is a simulator process and shares the Mac's file system, so the flow is read
@@ -111,7 +111,7 @@ final class FlowRunner: XCTestCase {
     case "home":
       XCUIDevice.shared.press(.home)
     case "open":
-      // A custom-scheme link: iOS asks "Open in Triage Cam?" first, which is answered here.
+      // A custom-scheme link: iOS asks "Open in Crowdpulse?" first, which is answered here.
       guard let url = URL(string: try text()) else { throw FlowError("not a URL") }
       XCUIDevice.shared.system.open(url)
       confirmOpen()
