@@ -192,17 +192,21 @@ def run(dataset, recordings, workers, rescore, only=None):
 # ---------------------------------------------------------------- report
 
 def summarise(results):
-    """Pooled figures for a set of recordings, in the terms of master plan section 9."""
+    """Pooled figures for a set of recordings, in the terms of master plan section 9.
+    Subjects and recordings are the scored ones: a recording that was refused or failed is
+    counted under `failed` and nowhere else. The per-sitting error holds the sitting summary
+    against the mean of the reference over the seconds that had a reading (the seconds the
+    summary is built from), not over the whole recording."""
     scored = [r for r in results if "error" not in r]
     paired = [r for r in scored if r.get("pairedReadings")]
     pairs = sum(r["pairedReadings"] for r in paired)
     weighted = lambda key: sum(r[key] * r["pairedReadings"] for r in paired) / pairs if pairs else None
-    summaries = [abs(r["summaryHeartRateBpm"] - r["referenceMeanBpm"]) for r in scored
-                 if r.get("summaryHeartRateBpm") is not None and r.get("referenceMeanBpm") is not None]
+    summaries = [abs(r["summaryHeartRateBpm"] - r["pairedReferenceMeanBpm"]) for r in scored
+                 if r.get("summaryHeartRateBpm") is not None and r.get("pairedReferenceMeanBpm") is not None]
     firsts = [r["timeToFirstReadingSeconds"] for r in scored if r.get("timeToFirstReadingSeconds") is not None]
     return {
-        "subjects": len({r.get("subject") for r in results}),
-        "recordings": len(results), "failed": len(results) - len(scored), "withReading": len(paired),
+        "subjects": len({r.get("subject") for r in scored}),
+        "recordings": len(scored), "failed": len(results) - len(scored), "withReading": len(paired),
         "pairedReadings": pairs,
         "maeBpm": weighted("meanAbsoluteErrorBpm"), "biasBpm": weighted("biasBpm"),
         "within5": weighted("within5BpmShare"),
@@ -220,7 +224,9 @@ def report():
     recorded = json.loads(split.FILE.read_text())
     method = [f"Generated {datetime.date.today().isoformat()} by `eval/run_eval.py`. Engine: `packages/signal-engine` at its default configuration.", "",
               "Readings are the engine's once-per-second heart rate, paired with the dataset's reference within 1.5 s. "
-              "Coverage is the share of seconds with a reading. Per-recording error compares the sitting summary with the mean reference.", "",
+              "Coverage is the share of seconds with a reading. Subjects and recordings are the ones that were scored; "
+              "a recording that was refused is listed under its set and counted nowhere. "
+              "The sitting-summary error compares each sitting's summary heart rate with the mean of the reference over the seconds that had a reading.", "",
               f"Subjects are split into a tuning set and a held-out set by `eval/split.json` (seed {recorded['seed']}, by subject, "
               "half of every subject in the dataset each). Engine parameters are tuned on the tuning set only."]
     published = write_report(
@@ -241,7 +247,7 @@ def write_report(target, names, recorded, lines):
     number = lambda v, f="{:.1f}": "n/a" if v is None else f.format(v)
     lines = list(lines)
     header = ("| Set | Subjects | Recordings | With a reading | Paired readings | MAE (bpm) | Bias (bpm) | Within 5 bpm | Coverage | "
-              "Per-recording MAE (bpm) | Summaries within 5 bpm | Median time to first (s) |")
+              "Sitting-summary MAE (bpm) | Summaries within 5 bpm | Median time to first (s) |")
     paths = [path for path in (results_folder(name) / f"{name}.json" for name in names) if path.exists()]
     for path in paths:
         results = json.loads(path.read_text())
@@ -250,8 +256,10 @@ def write_report(target, names, recorded, lines):
         sets = recorded["datasets"].get(name, {})
         for key, listed in ((split.HELD_OUT, "heldOut"), (split.TUNING, "tuning")):
             in_set = [r for r in results if r.get("split") == key]
-            evaluated = len({r.get("subject") for r in in_set})
-            lines += [f"### {split.NAMES[key]}: {evaluated} of the dataset's {len(sets.get(listed, []))} {key} subjects", ""]
+            scored = len({r.get("subject") for r in in_set if "error" not in r})
+            refused = len({r.get("subject") for r in in_set if "error" in r} - {r.get("subject") for r in in_set if "error" not in r})
+            lines += [f"### {split.NAMES[key]}: {scored} of the dataset's {len(sets.get(listed, []))} {key} subjects scored"
+                      + (f", {refused} not scored" if refused else ""), ""]
             if not in_set:
                 lines += ["Not evaluated.", ""]
                 continue
@@ -274,7 +282,11 @@ def write_report(target, names, recorded, lines):
                           + ", ".join(f"{check} ({checks.count(check)} recordings)" for check in sorted(set(checks))) + "."]
             failed = [r for r in in_set if "error" in r]
             if failed:
-                lines += ["", f"{len(failed)} recording(s) could not be scored: " + "; ".join(f"{r['id']} ({r['error']})" for r in failed[:5])]
+                reasons = {}
+                for r in failed:
+                    reasons.setdefault(r["error"], []).append(r["id"])
+                lines += ["", f"Not scored and not counted above, {len(failed)} recording(s): "
+                          + "; ".join(f"{', '.join(ids[:10])}{' and others' if len(ids) > 10 else ''} ({reason})" for reason, ids in reasons.items()) + "."]
             lines.append("")
         unmarked = sum(r.get("split") not in (split.HELD_OUT, split.TUNING) for r in results)
         if unmarked:
