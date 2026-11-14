@@ -54,13 +54,7 @@ export function StatusBadge({ severity, label }: Props) {
         <Icon name="clock" size={12} color={look.text} />
       ) : outlined ? null : (
         <View
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: 3,
-            backgroundColor: look.text,
-            boxShadow: severity === 'live' ? theme.shadow.glowLive : undefined,
-          }}
+          style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: look.text }}
         />
       )}
       <Text style={[theme.type.caption, { flexShrink: 1, fontWeight: weight.medium, color: look.text }]}>{label}</Text>

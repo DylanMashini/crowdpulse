@@ -18,7 +18,7 @@ const WORDS: Record<Kind, string> = {
 
 /**
  * Says where a number came from. Outlined, with no dot, so it is never read as a status.
- * `live` is the exception: ice on its soft fill, with the lit dot of a camera that is reading.
+ * `live` is the exception: ice on its soft fill, with the dot of a camera that is reading.
  */
 export function ProvenanceTag({ kind, label }: { kind: Kind; label?: string }) {
   const theme = useScopedTheme();
