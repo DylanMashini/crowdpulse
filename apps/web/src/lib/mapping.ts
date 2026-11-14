@@ -1,4 +1,4 @@
-import type { CaptureSource, FlagRule, TimelineEntry, WorklistItem } from '@triagecam/contracts';
+import { timelineByAlert, type CaptureSource, type FlagRule, type TimelineEntry, type WorklistItem } from '@triagecam/contracts';
 
 import type { Provenance, TimelineItem, WorklistRow } from '@/components/ds';
 
@@ -30,7 +30,10 @@ export function toWorklistRow(item: WorklistItem): WorklistRow & { measured: num
   };
 }
 
-function toTimelineItem(entry: TimelineEntry, rules: Map<string, FlagRule>): TimelineItem {
+/** Trend rules in the order the alert card names them. */
+const RULE_ORDER: FlagRule[] = ['score_rise', 'baseline_shift', 'overdue'];
+
+function toTimelineItem(entry: TimelineEntry, rules: Map<string, FlagRule>, alertRules: Map<string, FlagRule[]>): TimelineItem {
   const time = clockTime(entry.at);
   switch (entry.type) {
     case 'created':
@@ -48,10 +51,13 @@ function toTimelineItem(entry: TimelineEntry, rules: Map<string, FlagRule>): Tim
         sourceLabel: provenance.label,
       };
     }
-    case 'flag_opened':
-      return { time, title: 'Flag opened', state: entry.rule === 'overdue' ? 'overdue' : 'flag', note: ruleText(entry.rule) };
+    case 'flag_opened': {
+      // One row for the alert, naming every rule it tripped, as its card does.
+      const tripped = alertRules.get(entry.alertId) ?? [entry.rule];
+      return { time, title: 'Flag opened', state: entry.rule === 'overdue' ? 'overdue' : 'flag', note: tripped.map(ruleText).join(' · ') };
+    }
     case 'flag_acknowledged': {
-      // Says which alert was acknowledged. One acknowledgement covers both trend flags.
+      // Says which alert was acknowledged. One acknowledgement covers every flag of the alert.
       const rule = rules.get(entry.flagId);
       const which = rule === undefined ? 'Acknowledged' : rule === 'overdue' ? 'Overdue flag acknowledged' : 'Trend flag acknowledged';
       return { time, title: 'Flag acknowledged', note: `${which} by ${entry.by}` };
@@ -67,11 +73,20 @@ function toTimelineItem(entry: TimelineEntry, rules: Map<string, FlagRule>): Tim
   }
 }
 
-/** The server sends the timeline newest first; the timeline component reads oldest first. */
+/**
+ * The server sends the timeline newest first; the timeline component reads oldest first. An
+ * alert opening or closing is one row, however many rules it tripped (`timelineByAlert`).
+ */
 export function toTimelineItems(entries: TimelineEntry[]): TimelineItem[] {
   const rules = new Map<string, FlagRule>();
+  const alertRules = new Map<string, FlagRule[]>();
   for (const entry of entries) {
-    if (entry.type === 'flag_opened') rules.set(entry.flagId, entry.rule);
+    if (entry.type !== 'flag_opened') continue;
+    rules.set(entry.flagId, entry.rule);
+    alertRules.set(entry.alertId, [...(alertRules.get(entry.alertId) ?? []), entry.rule]);
   }
-  return entries.map((entry) => toTimelineItem(entry, rules)).reverse();
+  for (const tripped of alertRules.values()) tripped.sort((a, b) => RULE_ORDER.indexOf(a) - RULE_ORDER.indexOf(b));
+  return timelineByAlert(entries)
+    .map((entry) => toTimelineItem(entry, rules, alertRules))
+    .reverse();
 }
