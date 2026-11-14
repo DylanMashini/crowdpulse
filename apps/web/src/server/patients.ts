@@ -19,6 +19,7 @@ import type { PatientRow } from "./serialize.ts";
 import { hasSummary, iso, toPatient, toPatientRef, toSitting } from "./serialize.ts";
 import { syncPatient, patientHandoff } from "./trend/engine.ts";
 import { partialScore } from "./trend/rules.ts";
+import { distinctAcknowledgements, orderTimeline } from "./trend/timeline.ts";
 import { historyState } from "./worklist.ts";
 
 async function enrolledPatientIds(patientIds: string[]): Promise<Set<string>> {
@@ -186,7 +187,7 @@ export async function patientDetail(number: number): Promise<PatientDetailRespon
     timeline.push({ type: "flag_opened", at: flag.openedAt, flagId: flag.id, rule: flag.rule, handoff: flag.handoff });
     if (flag.closedAt) timeline.push({ type: "flag_closed", at: flag.closedAt, flagId: flag.id, rule: flag.rule });
   }
-  for (const acknowledgement of acknowledgements) {
+  for (const acknowledgement of distinctAcknowledgements(acknowledgements)) {
     timeline.push({
       type: "flag_acknowledged",
       at: iso(acknowledgement.at),
@@ -195,7 +196,6 @@ export async function patientDetail(number: number): Promise<PatientDetailRespon
     });
   }
   if (patient.dischargedAt) timeline.push({ type: "discharged", at: iso(patient.dischargedAt) });
-  timeline.sort((a, b) => b.at.localeCompare(a.at));
 
   const baseline = history.sittings.find((sitting) => sitting.id === snapshot.baseline?.id);
   return {
@@ -204,7 +204,7 @@ export async function patientDetail(number: number): Promise<PatientDetailRespon
     baseline: baseline ? toSitting(baseline, number) : null,
     sittings: history.sittings.map((sitting) => toSitting(sitting, number)),
     flags,
-    timeline,
+    timeline: orderTimeline(timeline),
     handoff: patientHandoff(patient, snapshot),
   };
 }
