@@ -26,7 +26,7 @@ export default function Patients() {
   const theme = useScopedTheme();
   const { colors, space } = theme;
   const router = useRouter();
-  const { worklist, revision, now, refresh } = useNurse();
+  const { worklist, revision, now, refresh, failure: unreachable } = useNurse();
 
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -101,7 +101,8 @@ export default function Patients() {
       />
 
       {!loaded ? (
-        failure ? (
+        // The frame already says so, with the one Try again, when the server cannot be reached.
+        unreachable ? null : failure ? (
           <Notice title="The patients did not load" body={failure}>
             <Button variant="primary" block label="Try again" onPress={() => void load()} />
           </Notice>
@@ -155,7 +156,7 @@ export default function Patients() {
         </View>
       )}
 
-      {loaded && failure ? <Notice title="The list was not updated" body={failure} /> : null}
+      {loaded && failure && !unreachable ? <Notice title="The list was not updated" body={failure} /> : null}
       {loaded?.nextCursor ? (
         <Button
           variant="secondary"

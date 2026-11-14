@@ -24,7 +24,7 @@ export default function You() {
   const theme = useScopedTheme();
   const { colors } = theme;
   const { state } = useSession();
-  const { push, connection, revision } = useNurse();
+  const { push, connection, revision, failure: unreachable } = useNurse();
   const role = state.status === 'signedIn' ? (state.device?.role ?? null) : null;
   const { busy, failure: roleFailure, changeRole, confirmSignOut } = useAccountActions(role);
 
@@ -88,7 +88,8 @@ export default function You() {
           Shared by the whole station: a change here applies to every phone and the dashboard
         </Text>
         {!rules ? (
-          loadFailure ? (
+          // The frame already says so, with the one Try again, when the server cannot be reached.
+          unreachable ? null : loadFailure ? (
             <Notice title="The flag rules did not load" body={loadFailure}>
               <Button variant="secondary" block label="Try again" onPress={() => void load()} />
             </Notice>
