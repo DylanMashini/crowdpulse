@@ -10,7 +10,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { LiveStatus } from '@/components/ui/LiveStatus';
 import { StateMessage } from '@/components/ui/StateMessage';
 import { api, errorMessage } from '@/lib/api';
-import { ageInYears, breathingRate, calendarDate, clockTime, heartRate, minutes, rate, ruleText, years } from '@/lib/format';
+import { ageInYears, calendarDate, clockTime, heartRate, minutes, rate, ruleText, years } from '@/lib/format';
 import { toTimelineItems } from '@/lib/mapping';
 import { useResource } from '@/lib/use-resource';
 
@@ -252,7 +252,7 @@ function flagNumbers(flag: Flag): string {
   const change = (name: string, base: number | null, now: number | null, withUnit: (value: number) => string) =>
     base == null || now == null ? `${name} had no reading` : `${name} ${rate(base)} to ${withUnit(now)}`;
   const score = scoreAtCheckIn != null && scoreNow != null ? `, partial score ${scoreAtCheckIn} to ${scoreNow}` : '';
-  return `${change('Pulse', pulse.base, pulse.now, heartRate)}, ${change('breathing', breathing.base, breathing.now, breathingRate)}${score}, ${minutes(minutesSinceCheckIn)} after check-in`;
+  return `${change('Pulse', pulse.base, pulse.now, heartRate)}, ${change('breathing', breathing.base, breathing.now, (value) => `${rate(value)} breaths per min`)}${score}, ${minutes(minutesSinceCheckIn)} after check-in`;
 }
 
 function FlagItem({ flag, onChanged }: { flag: Flag; onChanged: () => void }) {
