@@ -231,7 +231,7 @@ All routes are under `/api` on the Next.js server. Bodies are JSON (`Content-Typ
 |---|---|---|---|
 | `GET /api/health` | public | none | 200 `HealthResponse` `{ status: 'ok' }` when the server can open a new connection to its database and run a query on it within 3 seconds; 503 `{ status: 'unavailable' }` when it cannot. Never cached. |
 
-This is the load balancer's health check (`docs/DEPLOY.md`). It does not read a session, so it does not start the background jobs of section 6, and it opens its own connection rather than borrowing one from the pool, so it also fails when the database password the process was started with has stopped working.
+This is the load balancer's health check (`docs/DEPLOY.md`). It does not read a session, so it does not start the background jobs of section 6, and it opens its own connection rather than borrowing one from the pool, so it also fails when the database password the process was started with has stopped working. Requests that arrive within five seconds of each other share one check, so the public route cannot be used to open database connections at will; the answer is therefore at most five seconds old.
 
 ### Authentication
 
