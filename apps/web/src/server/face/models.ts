@@ -24,7 +24,7 @@ async function load(): Promise<FaceModels> {
   } catch {
     throw new ApiError(
       "face_unavailable",
-      "Face match is unavailable on this server because its models are not installed. Use the ticket number.",
+      "Face match is unavailable on this server because its models are not installed. Use the patient number.",
     );
   }
   // Severity 3 keeps the runtime's per-model graph warnings out of the server log.

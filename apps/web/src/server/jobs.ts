@@ -1,7 +1,7 @@
 import { lt } from "drizzle-orm";
 
 import { db, schema } from "../db/client.ts";
-import { syncWaitingTickets } from "./trend/engine.ts";
+import { syncWaitingPatients } from "./trend/engine.ts";
 
 const OVERDUE_CHECK_MS = 20_000;
 const CLEANUP_MS = 60 * 60_000;
@@ -19,7 +19,7 @@ async function deleteExpired(): Promise<void> {
 }
 
 /**
- * Starts the timers the server relies on, once per process: the overdue check (a ticket
+ * Starts the timers the server relies on, once per process: the overdue check (a patient
  * goes overdue because time passes, not because a request arrives) and the removal of
  * expired sessions and verification tokens. Called from the session check, so they start
  * with the first signed-in request.
@@ -27,7 +27,7 @@ async function deleteExpired(): Promise<void> {
 export function ensureBackgroundJobs(): void {
   if (globalForJobs.triagecamJobs) return;
   globalForJobs.triagecamJobs = [
-    setInterval(logged("The overdue check", syncWaitingTickets), OVERDUE_CHECK_MS),
+    setInterval(logged("The overdue check", syncWaitingPatients), OVERDUE_CHECK_MS),
     setInterval(logged("Removing expired sessions", deleteExpired), CLEANUP_MS),
   ];
   for (const timer of globalForJobs.triagecamJobs) timer.unref();

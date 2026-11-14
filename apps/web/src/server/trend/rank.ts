@@ -8,7 +8,7 @@ export type StateInput = {
   overdueFlagOpen: boolean;
 };
 
-/** The one state of a waiting ticket: the first that applies. */
+/** The one state of a waiting patient: the first that applies. */
 export function tileState(input: StateInput): TileState {
   if (input.trendFlagOpen) return "flag";
   if (input.latestGaveNoReading) return "no-reading";
@@ -17,23 +17,23 @@ export function tileState(input: StateInput): TileState {
 }
 
 export type Rankable = {
-  ticketNumber: number;
+  patientNumber: number;
   state: TileState;
   score: Score | null;
   /** When the earliest open trend flag opened; only read for state flag. */
   flagOpenedAt: Date | null;
-  /** The last observation, or ticket creation when there has been none. */
+  /** The last observation, or patient creation when there has been none. */
   unobservedSince: Date;
 };
 
 const GROUP: Record<TileState, number> = { flag: 0, overdue: 1, "no-reading": 1, observed: 2 };
 
 /**
- * Who to walk to first. Flagged tickets lead, higher score first and then the flag that
- * opened earliest. Overdue and no-reading tickets follow as one group, then observed
- * tickets, each ordered by the longest time without an observation.
+ * Who to walk to first. Flagged patients lead, higher score first and then the flag that
+ * opened earliest. Overdue and no-reading patients follow as one group, then observed
+ * patients, each ordered by the longest time without an observation.
  */
-export function rankTickets<Item extends Rankable>(items: Item[]): Item[] {
+export function rankPatients<Item extends Rankable>(items: Item[]): Item[] {
   return [...items].sort((a, b) => {
     const group = GROUP[a.state] - GROUP[b.state];
     if (group !== 0) return group;
@@ -43,6 +43,6 @@ export function rankTickets<Item extends Rankable>(items: Item[]): Item[] {
       const opened = (a.flagOpenedAt?.getTime() ?? Infinity) - (b.flagOpenedAt?.getTime() ?? Infinity);
       if (opened !== 0) return opened;
     }
-    return a.unobservedSince.getTime() - b.unobservedSince.getTime() || a.ticketNumber - b.ticketNumber;
+    return a.unobservedSince.getTime() - b.unobservedSince.getTime() || a.patientNumber - b.patientNumber;
   });
 }

@@ -1,50 +1,53 @@
 import type { WorklistItem, WorklistResponse } from "@triagecam/contracts";
 
 import { flagsToWire } from "./flags.ts";
-import { iso, isoOrNull } from "./serialize.ts";
+import { ageInYears, iso, isoOrNull, toPatientRef } from "./serialize.ts";
 import { getSettings } from "./settings.ts";
-import { syncWaitingTickets, ticketHandoff, type TicketHistory } from "./trend/engine.ts";
-import { rankTickets, tileState } from "./trend/rank.ts";
+import { syncWaitingPatients, patientHandoff, type PatientHistory } from "./trend/engine.ts";
+import { rankPatients, tileState } from "./trend/rank.ts";
 
-export const historyState = (history: TicketHistory) =>
+export const historyState = (history: PatientHistory) =>
   tileState({
     trendFlagOpen: history.openFlags.some((flag) => flag.rule !== "overdue"),
     latestGaveNoReading: history.snapshot.latestGaveNoReading,
     overdueFlagOpen: history.openFlags.some((flag) => flag.rule === "overdue"),
   });
 
-/** Every waiting ticket once, in rank order. Brings the overdue flags up to date first. */
+/** Every waiting patient once, in rank order. Brings the overdue flags up to date first. */
 export async function buildWorklist(now = new Date()): Promise<WorklistResponse> {
-  const [histories, settings] = await Promise.all([syncWaitingTickets({ now }), getSettings()]);
+  const [histories, settings] = await Promise.all([syncWaitingPatients({ now }), getSettings()]);
   const flags = await flagsToWire(
-    histories.flatMap((history) => history.openFlags.map((flag) => ({ flag, ticketNumber: history.ticket.number }))),
+    histories.flatMap((history) => history.openFlags.map((flag) => ({ flag, patient: history.patient }))),
   );
 
-  const ranked = rankTickets(
+  const ranked = rankPatients(
     histories.map((history) => {
-      const { ticket, snapshot } = history;
+      const { patient, snapshot } = history;
       const firstTrendFlag = history.openFlags
         .filter((flag) => flag.rule !== "overdue")
         .sort((a, b) => a.openedAt.getTime() - b.openedAt.getTime())[0];
       return {
-        ticketNumber: ticket.number,
+        patientNumber: patient.number,
         state: historyState(history),
         score: snapshot.score,
         flagOpenedAt: firstTrendFlag?.openedAt ?? null,
-        unobservedSince: snapshot.lastObservedAt ?? ticket.createdAt,
+        unobservedSince: snapshot.lastObservedAt ?? patient.createdAt,
         history,
       };
     }),
   );
 
   const items = ranked.map(({ history, state }, index): WorklistItem => {
-    const { ticket, snapshot } = history;
+    const { patient, snapshot } = history;
     const openIds = new Set(history.openFlags.map((flag) => flag.id));
     return {
       rank: index + 1,
-      ticketNumber: ticket.number,
+      patientNumber: patient.number,
+      patient: toPatientRef(patient),
+      reasonForVisit: patient.reasonForVisit,
+      ageYears: ageInYears(patient.dateOfBirth, now),
       state,
-      waitingSince: iso(ticket.createdAt),
+      waitingSince: iso(patient.createdAt),
       lastObservedAt: isoOrNull(snapshot.lastObservedAt),
       minutesSinceObserved: snapshot.minutesSinceObserved,
       pulse: snapshot.pulse,
@@ -54,7 +57,7 @@ export async function buildWorklist(now = new Date()): Promise<WorklistResponse>
       parametersMeasured: snapshot.parametersMeasured,
       source: snapshot.source,
       flags: flags.filter((flag) => openIds.has(flag.id)),
-      handoff: ticketHandoff(ticket.number, snapshot),
+      handoff: patientHandoff(patient, snapshot),
       sittingInProgress: snapshot.sittingInProgress,
     };
   });

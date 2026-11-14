@@ -1,13 +1,14 @@
 import type { Trend } from "@triagecam/contracts";
 
 export type HandoffInput = {
-  ticketNumber: number;
+  /** What to call the patient: their name, or "Patient 14" until one has been entered. */
+  label: string;
   /** Check-in value against the latest observation. */
   pulse: Trend;
   breathing: Trend;
   /** Whole minutes from check-in to the latest observation; null while check-in is the only observation. */
   minutesLater: number | null;
-  /** Null when the ticket has never been observed. */
+  /** Null when the patient has never been observed. */
   minutesSinceObserved: number | null;
   minutesWaiting: number;
   latestGaveNoReading: boolean;
@@ -16,18 +17,18 @@ export type HandoffInput = {
 const rate = (value: number) => String(Math.round(value));
 
 /**
- * The fixed-template sentence a nurse reads, for example "Ticket 14: pulse 82 at check-in,
+ * The fixed-template sentence a nurse reads, for example "Maya Chen: pulse 82 at check-in,
  * 108 now (26 min later); breathing 16 to 24. Last observed 3 min ago." It states measured
  * numbers and nothing else.
  */
 export function handoffSentence(input: HandoffInput): string {
   const noReading = input.latestGaveNoReading ? " The latest sitting gave no reading." : "";
   if (input.minutesSinceObserved === null) {
-    return `Ticket ${input.ticketNumber}: not yet observed, waiting ${input.minutesWaiting} min.${noReading}`;
+    return `${input.label}: not yet observed, waiting ${input.minutesWaiting} min.${noReading}`;
   }
 
   const body = input.minutesLater === null ? atCheckIn(input) : sinceCheckIn(input, input.minutesLater);
-  return `Ticket ${input.ticketNumber}: ${body}. Last observed ${input.minutesSinceObserved} min ago.${noReading}`;
+  return `${input.label}: ${body}. Last observed ${input.minutesSinceObserved} min ago.${noReading}`;
 }
 
 function atCheckIn({ pulse, breathing }: HandoffInput): string {

@@ -1,10 +1,10 @@
-import type { Statistics, TicketStatistics, TileState } from "@triagecam/contracts";
+import type { Statistics, PatientStatistics, TileState } from "@triagecam/contracts";
 import { and, asc, eq, gte, inArray, isNull, lt, ne } from "drizzle-orm";
 
 import { db, schema } from "../db/client.ts";
 import { hasSummary, iso } from "./serialize.ts";
 import { AGREEMENT_BPM, agreement, mean, median, type Pair, pairReadings } from "./stats/agreement.ts";
-import { syncWaitingTickets } from "./trend/engine.ts";
+import { syncWaitingPatients } from "./trend/engine.ts";
 import { historyState } from "./worklist.ts";
 
 const HOUR_MS = 3_600_000;
@@ -24,17 +24,17 @@ export async function statistics(range: { from?: string; to?: string }): Promise
   const to = range.to ? new Date(range.to) : now;
   const from = range.from ? new Date(range.from) : startOfLocalDay(to);
 
-  const [tickets, sittings, flags, openFlags, histories] = await Promise.all([
-    db.select().from(schema.tickets).where(lt(schema.tickets.createdAt, to)),
+  const [patients, sittings, flags, openFlags, histories] = await Promise.all([
+    db.select().from(schema.patients).where(lt(schema.patients.createdAt, to)),
     db
-      .select({ sitting: schema.sittings, ticketNumber: schema.tickets.number })
+      .select({ sitting: schema.sittings, patientNumber: schema.patients.number })
       .from(schema.sittings)
-      .innerJoin(schema.tickets, eq(schema.tickets.id, schema.sittings.ticketId))
+      .innerJoin(schema.patients, eq(schema.patients.id, schema.sittings.patientId))
       .where(and(gte(schema.sittings.startedAt, from), lt(schema.sittings.startedAt, to), ne(schema.sittings.source, "stub")))
       .orderBy(asc(schema.sittings.startedAt)),
     db.select().from(schema.flags).where(and(gte(schema.flags.openedAt, from), lt(schema.flags.openedAt, to))),
     db.$count(schema.flags, isNull(schema.flags.closedAt)),
-    syncWaitingTickets({ now }),
+    syncWaitingPatients({ now }),
   ]);
 
   const sittingIds = sittings.map((row) => row.sitting.id);
@@ -71,22 +71,22 @@ export async function statistics(range: { from?: string; to?: string }): Promise
     );
 
   const allPairs: Pair[] = [];
-  const perTicket = new Map<number, { pairs: Pair[]; sittings: number; coverage: number[] }>();
+  const perPatient = new Map<number, { pairs: Pair[]; sittings: number; coverage: number[] }>();
   const finished = sittings.filter((row) => hasSummary(row.sitting));
   let sittingsWithReference = 0;
   let finishedWithReference = 0;
   let accurate = 0;
 
-  for (const { sitting, ticketNumber } of sittings) {
+  for (const { sitting, patientNumber } of sittings) {
     const reference = samples(references, sitting.id);
     const pairs = pairReadings(samples(readings, sitting.id), reference);
     allPairs.push(...pairs);
 
-    const ticket = perTicket.get(ticketNumber) ?? { pairs: [], sittings: 0, coverage: [] };
-    ticket.pairs.push(...pairs);
-    ticket.sittings += 1;
-    if (hasSummary(sitting)) ticket.coverage.push(sitting.heartRateCoverage ?? 0);
-    perTicket.set(ticketNumber, ticket);
+    const patient = perPatient.get(patientNumber) ?? { pairs: [], sittings: 0, coverage: [] };
+    patient.pairs.push(...pairs);
+    patient.sittings += 1;
+    if (hasSummary(sitting)) patient.coverage.push(sitting.heartRateCoverage ?? 0);
+    perPatient.set(patientNumber, patient);
 
     const referenceMean = mean(reference.map((sample) => sample.heartRate));
     if (referenceMean === null) continue;
@@ -97,9 +97,9 @@ export async function statistics(range: { from?: string; to?: string }): Promise
   }
 
   const personHours =
-    tickets.reduce((sum, ticket) => {
-      const start = Math.max(ticket.createdAt.getTime(), from.getTime());
-      const end = Math.min((ticket.dischargedAt ?? now).getTime(), to.getTime());
+    patients.reduce((sum, patient) => {
+      const start = Math.max(patient.createdAt.getTime(), from.getTime());
+      const end = Math.min((patient.dischargedAt ?? now).getTime(), to.getTime());
       return sum + Math.max(0, end - start);
     }, 0) / HOUR_MS;
 
@@ -122,9 +122,9 @@ export async function statistics(range: { from?: string; to?: string }): Promise
     from: iso(from),
     to: iso(to),
     totals: {
-      ticketsWaiting: tickets.filter((ticket) => !ticket.dischargedAt || ticket.dischargedAt >= to).length,
-      ticketsDischarged: tickets.filter(
-        (ticket) => ticket.dischargedAt && ticket.dischargedAt >= from && ticket.dischargedAt < to,
+      patientsWaiting: patients.filter((patient) => !patient.dischargedAt || patient.dischargedAt >= to).length,
+      patientsDischarged: patients.filter(
+        (patient) => patient.dischargedAt && patient.dischargedAt >= from && patient.dischargedAt < to,
       ).length,
       sittings: sittings.length,
       sittingsWithReference,
@@ -149,14 +149,14 @@ export async function statistics(range: { from?: string; to?: string }): Promise
       acknowledged: minutesToAcknowledge.length,
       medianMinutesToAcknowledge: median(minutesToAcknowledge),
     },
-    perTicket: [...perTicket.entries()]
+    perPatient: [...perPatient.entries()]
       .sort(([a], [b]) => a - b)
       .map(
-        ([ticketNumber, ticket]): TicketStatistics => ({
-          ticketNumber,
-          sittings: ticket.sittings,
-          coverage: mean(ticket.coverage),
-          ...agreement(ticket.pairs),
+        ([patientNumber, patient]): PatientStatistics => ({
+          patientNumber,
+          sittings: patient.sittings,
+          coverage: mean(patient.coverage),
+          ...agreement(patient.pairs),
         }),
       ),
   };
