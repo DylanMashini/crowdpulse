@@ -69,7 +69,7 @@ export function StatisticsScreen() {
     <>
       <PageHeader
         title="Statistics"
-        description={data ? `Pilot results from ${dayTime(data.from)} to ${dayTime(data.to)}. Every number states what it was counted over.` : 'Pilot results: agreement with the chest strap, coverage and flags'}
+        description={data ? `${dayTime(data.from)} to ${dayTime(data.to)}` : 'Agreement with the reference, coverage and flags'}
       >
         <Segmented
           label="Period"
@@ -83,7 +83,7 @@ export function StatisticsScreen() {
         />
       </PageHeader>
 
-      {statistics.loading ? <StateMessage kind="loading" title="Loading the pilot numbers" /> : null}
+      {statistics.loading ? <StateMessage kind="loading" title="Loading statistics" /> : null}
       {statistics.error && !data ? (
         <StateMessage kind="error" title="The statistics could not be loaded" onRetry={statistics.reload}>
           {statistics.error.message}
@@ -224,7 +224,7 @@ function Results({ data }: { data: Statistics }) {
           </table>
         </div>
         <p className="max-w-[720px] type-caption text-ink-muted">
-          A pilot on a small number of volunteers. These numbers describe this sample only and are not evidence of clinical accuracy. Sittings from the stub source are left out.
+          Sittings from the stub source are left out
         </p>
       </section>
     </div>

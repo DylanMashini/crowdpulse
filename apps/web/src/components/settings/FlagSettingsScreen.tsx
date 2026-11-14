@@ -60,7 +60,7 @@ export function FlagSettingsScreen() {
 
   return (
     <>
-      <PageHeader title="Flag settings" description="When a waiting patient is flagged for a person to check. A flag is a prompt to look, not a finding." />
+      <PageHeader title="Flag settings" description="The rules that raise a flag in the waiting room" />
       {settings.loading ? <StateMessage kind="loading" title="Loading the flag rules" /> : null}
       {settings.error && !settings.data ? (
         <StateMessage kind="error" title="The flag rules could not be loaded" onRetry={settings.reload}>

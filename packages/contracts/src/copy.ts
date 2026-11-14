@@ -7,5 +7,5 @@ export const PRIVACY_CAPTURE = 'Video is shown live to staff and is not stored. 
 export const PRIVACY_FACE =
   'One picture of your face is sent to this station to make a set of numbers for matching. The picture is not stored. The numbers are deleted at discharge, and your name always works instead.';
 
-/** Wherever the product describes itself. */
+/** Once per app, quietly: under the sign-in form. Not repeated on working screens. */
 export const PROTOTYPE_NOTICE = 'Research prototype, not validated for clinical use';

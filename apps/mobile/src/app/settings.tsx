@@ -1,4 +1,4 @@
-import { type DeviceRole, PROTOTYPE_NOTICE, type User } from '@triagecam/contracts';
+import type { DeviceRole, User } from '@triagecam/contracts';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { type ReactNode, useEffect, useState } from 'react';
@@ -29,7 +29,6 @@ export default function Settings() {
 }
 
 function SettingsContent({ user, role }: { user: User; role: DeviceRole | null }) {
-  const theme = useScopedTheme();
   const router = useRouter();
   const { chooseRole, signOut } = useSession();
   const [roleAtOpen] = useState(role);
@@ -70,7 +69,6 @@ function SettingsContent({ user, role }: { user: User; role: DeviceRole | null }
         <Detail label="Server" value={api.baseUrl} />
         <Button variant="secondary" label="Sign out" onPress={confirmSignOut} />
       </Section>
-      <Text style={[theme.type.caption, { color: theme.colors.inkMuted }]}>{PROTOTYPE_NOTICE}</Text>
     </Screen>
   );
 }

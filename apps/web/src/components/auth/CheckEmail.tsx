@@ -99,7 +99,7 @@ export function CheckEmail() {
         <div className="rounded-lg border border-dashed border-line-strong p-4">
           <p className="type-subheading">No email was sent</p>
           <p className="mt-1 text-ink-muted">
-            This server has no Resend key, so it handed the link to this page instead. That only happens outside production.
+            This server has no mail key, so the verification link is here instead
           </p>
           <Link href={`/verify-email?token=${encodeURIComponent(pending.devToken)}`} className={`${textLink} mt-2 inline-block`}>
             Open the verification link
