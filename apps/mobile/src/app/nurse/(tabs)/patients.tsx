@@ -15,11 +15,13 @@ import { Touchable } from '@/components/Touchable';
 import { useLoadOn } from '@/hooks/useLoadOn';
 import { api, errorMessage } from '@/lib/api';
 import { useNurse } from '@/lib/nurse/NurseProvider';
-import { type PatientFilter, dayTime, filterPatients } from '@/lib/nurse/nurseFormat';
+import { type PatientFilter, dayTime, filterPatients, patientCountsText } from '@/lib/nurse/nurseFormat';
 import { statusText } from '@/lib/nurse/worklistFormat';
 import { Text } from '@/components/Text';
 
+/** What has been loaded of one status. `nextCursor` is null once it is all of them. */
 type Loaded = { items: Patient[]; nextCursor: string | null };
+type Lists = Partial<Record<PatientFilter, Loaded>>;
 
 /** Everyone who has checked in, waiting or discharged, found by name, reason or visit number. */
 export default function Patients() {
@@ -28,35 +30,37 @@ export default function Patients() {
   const router = useRouter();
   const { worklist, revision, now, refresh, failure: unreachable } = useNurse();
 
-  const [loaded, setLoaded] = useState<Loaded | null>(null);
+  // One list per status, each asked of the server by that status, so Waiting holds every
+  // waiting patient however many have been discharged since.
+  const [lists, setLists] = useState<Lists>({});
   const [failure, setFailure] = useState<string | null>(null);
   const [filter, setFilter] = useState<PatientFilter>('waiting');
   const [query, setQuery] = useState('');
   const [loadingMore, setLoadingMore] = useState(false);
   // Pages beyond the first are kept when the first is refreshed, so the list does not shrink.
-  const pages = useRef(1);
+  const pages = useRef<Record<PatientFilter, number>>({ waiting: 1, discharged: 1, all: 1 });
 
   const load = useCallback(async () => {
     try {
       let items: Patient[] = [];
       let cursor: string | undefined;
       let next: string | null = null;
-      for (let page = 0; page < pages.current; page += 1) {
-        const answer = await api.patients('all', cursor);
+      for (let page = 0; page < pages.current[filter]; page += 1) {
+        const answer = await api.patients(filter, cursor);
         items = items.concat(answer.items);
         next = answer.nextCursor;
         if (!next) break;
         cursor = next;
       }
-      setLoaded({ items, nextCursor: next });
+      setLists((current) => ({ ...current, [filter]: { items, nextCursor: next } }));
       setFailure(null);
     } catch (error) {
       setFailure(errorMessage(error));
     }
-  }, []);
+  }, [filter]);
 
   // A patient created, renamed, photographed or discharged anywhere is announced by the server.
-  useLoadOn(load, revision);
+  useLoadOn(load, `${filter}:${revision}`);
 
   const pull = async () => {
     await Promise.all([load(), refresh()]);
@@ -64,14 +68,22 @@ export default function Patients() {
 
   const more = async () => {
     setLoadingMore(true);
-    pages.current += 1;
+    pages.current[filter] += 1;
     await load();
     setLoadingMore(false);
   };
 
-  const all = loaded?.items ?? [];
-  const shown = filterPatients(all, filter, query);
-  const count = (status: PatientFilter) => filterPatients(all, status, '').length;
+  const loaded = lists[filter] ?? null;
+  const shown = filterPatients(loaded?.items ?? [], filter, query);
+  // A count is printed only when it is known in full: from the worklist, which is everyone
+  // waiting, or from a list with no further page.
+  const whole = (status: 'waiting' | 'discharged'): number | null => {
+    const own = lists[status];
+    if (own && !own.nextCursor) return own.items.length;
+    const all = lists.all;
+    return all && !all.nextCursor ? all.items.filter((patient) => patient.status === status).length : null;
+  };
+  const counts = patientCountsText(worklist ? worklist.items.length : whole('waiting'), whole('discharged'));
   const stateOf = new Map(worklist?.items.map((item) => [item.patientNumber, item]));
 
   const status = (patient: Patient): string => {
@@ -85,7 +97,7 @@ export default function Patients() {
   return (
     <TabScreen
       title="Patients"
-      subtitle={loaded ? `${count('waiting')} waiting, ${count('discharged')} discharged` : 'Waiting and discharged'}
+      subtitle={counts ?? 'Waiting and discharged'}
       onRefresh={pull}
     >
       <SearchField label="Name, reason or visit number" value={query} onChange={setQuery} />
@@ -114,7 +126,9 @@ export default function Patients() {
           title={query.trim() ? `No patient matches "${query.trim()}"` : filter === 'discharged' ? 'No one has been discharged' : 'No patients yet'}
           body={
             query.trim()
-              ? filter === 'all'
+              ? loaded.nextCursor
+                ? `The newest ${loaded.items.length} were searched. Load earlier patients to look further back.`
+                : filter === 'all'
                 ? 'Check the spelling, or search by visit number'
                 : 'Check the spelling, or look under All'
               : filter === 'discharged'

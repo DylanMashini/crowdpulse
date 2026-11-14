@@ -16,6 +16,7 @@ import {
   flagRuleLabel,
   intakeRows,
   minutesSince,
+  patientCountsText,
   sittingRows,
   vitalSeries,
 } from './nurseFormat.ts';
@@ -192,6 +193,13 @@ test('the patient list filters by status, name, reason and visit number', () => 
   assert.deepEqual(numbers(filterPatients(patients, 'all', 'No. 12')), [12]);
   assert.deepEqual(numbers(filterPatients(patients, 'all', '5')), [5]);
   assert.deepEqual(numbers(filterPatients(patients, 'waiting', 'sokolova')), []);
+});
+
+test('the patient counts print only what is known in full', () => {
+  assert.equal(patientCountsText(5, 3), '5 waiting, 3 discharged');
+  assert.equal(patientCountsText(5, null), '5 waiting');
+  assert.equal(patientCountsText(null, 0), '0 discharged');
+  assert.equal(patientCountsText(null, null), null);
 });
 
 test('a vitals line holds only the sittings that read that value, oldest first', () => {

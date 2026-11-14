@@ -134,6 +134,15 @@ export function filterPatients(patients: Patient[], filter: PatientFilter, query
   });
 }
 
+/**
+ * "5 waiting, 3 discharged" under the Patients title. A count that is not known in full is
+ * passed as null and left out, never guessed from a part of the list.
+ */
+export function patientCountsText(waiting: number | null, discharged: number | null): string | null {
+  const parts = [waiting != null ? `${waiting} waiting` : null, discharged != null ? `${discharged} discharged` : null];
+  return parts.filter(Boolean).join(', ') || null;
+}
+
 export type VitalPoint = { at: number; value: number };
 
 /** One line of the vitals history: every sitting that gave this value, oldest first. */
