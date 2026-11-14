@@ -23,6 +23,9 @@ type Props = {
   flipDisabled?: boolean;
 };
 
+/** How long a failed flip stays in place of the framing guidance. */
+const FLIP_ERROR_MS = 6000;
+
 /**
  * The Viewfinder over the live camera picture, fed by the capture module's outline events. It
  * keeps the ten-per-second updates to itself, so the rest of the screen renders once per second.
@@ -38,6 +41,13 @@ export function LiveViewfinder({ state, message, flipDisabled = false }: Props) 
     const subscription = TriageCapture.addListener('onFaceRegions', setRegions);
     return () => subscription.remove();
   }, []);
+
+  // The reason a flip failed is read once; after that the framing guidance matters more.
+  useEffect(() => {
+    if (!flipError) return;
+    const timer = setTimeout(() => setFlipError(null), FLIP_ERROR_MS);
+    return () => clearTimeout(timer);
+  }, [flipError]);
 
   const flip = async () => {
     const next: CameraFacing = camera === 'back' ? 'front' : 'back';
