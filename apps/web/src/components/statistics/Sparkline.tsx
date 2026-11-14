@@ -18,8 +18,8 @@ export function Sparkline({ values }: { values: number[] }) {
 
   return (
     <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} width={WIDTH} height={HEIGHT} aria-hidden className="flex-none">
-      <polyline className="fill-none stroke-line-strong" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" points={points} />
-      <circle className="fill-series-estimate stroke-surface-raised" strokeWidth={2} cx={x(last)} cy={y(values[last] as number)} r={4} />
+      <polyline className="fill-none stroke-ink-faint" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" points={points} />
+      <circle className="fill-ink" cx={x(last)} cy={y(values[last] as number)} r={2.5} />
     </svg>
   );
 }

@@ -1,6 +1,5 @@
 import type { WorklistItem } from '@triagecam/contracts';
 import { useCallback, useEffect, useState } from 'react';
-import { View } from 'react-native';
 
 import { api, errorMessage } from '@/lib/api';
 import { statusText } from '@/lib/nurse/worklistFormat';
@@ -8,9 +7,7 @@ import { statusText } from '@/lib/nurse/worklistFormat';
 import { Button } from './Button';
 import { Notice } from './Notice';
 import { PatientIdentity } from './PatientIdentity';
-import { useScopedTheme } from './ThemeScope';
-import { Touchable } from './Touchable';
-import { Text } from './Text';
+import { Row, RowList } from './RowList';
 
 type Props = {
   /** Called with the waiting patient the operator tapped. */
@@ -21,8 +18,6 @@ const REFRESH_MS = 10_000;
 
 /** Everyone in the waiting room, by face and name, to start a re-check for one of them. */
 export function PatientPicker({ onPick }: Props) {
-  const theme = useScopedTheme();
-  const { colors, space } = theme;
   const [items, setItems] = useState<WorklistItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,43 +43,31 @@ export function PatientPicker({ onPick }: Props) {
         <Button variant="secondary" block label="Try again" onPress={load} />
       </Notice>
     ) : (
-      <Text style={[theme.type.bodyTouch, { color: colors.inkMuted }]}>Loading the waiting room</Text>
+      <Notice title="Loading the waiting room" />
     );
   }
-  if (items.length === 0) {
-    return <Text style={[theme.type.bodyTouch, { color: colors.inkMuted }]}>Nobody is waiting yet</Text>;
-  }
+  if (items.length === 0) return <Notice title="Nobody is waiting yet" />;
 
   // Longest without an observation first: they are the ones a re-check is for.
   const ordered = [...items].sort((a, b) => (b.minutesSinceObserved ?? Infinity) - (a.minutesSinceObserved ?? Infinity));
 
   return (
-    <View style={{ borderWidth: 1, borderColor: colors.line, borderRadius: theme.radius.radiusLg, overflow: 'hidden' }}>
+    <RowList>
       {ordered.map((item, index) => (
-        <Touchable
+        <Row
           key={item.patientNumber}
-          accessibilityRole="button"
+          divided={index > 0}
           accessibilityHint="Starts a re-check for this patient"
           onPress={() => onPick(item)}
-          style={({ pressed }) => ({
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: space.space3,
-            minHeight: theme.size.controlTouch + space.space3,
-            paddingVertical: space.space2,
-            paddingHorizontal: space.space3,
-            borderTopWidth: index === 0 ? 0 : 1,
-            borderTopColor: colors.line,
-            backgroundColor: pressed ? colors.surfaceSunken : colors.surfaceRaised,
-          })}
         >
-          <PatientIdentity patient={item.patient} size="sm" detail={item.reasonForVisit} />
-          <Text style={[theme.type.caption, { color: colors.inkMuted, flexShrink: 0 }]}>
-            {statusText(item.state, item.minutesSinceObserved)}
-          </Text>
-        </Touchable>
+          <PatientIdentity
+            patient={item.patient}
+            size="md"
+            detail={item.reasonForVisit}
+            status={statusText(item.state, item.minutesSinceObserved)}
+          />
+        </Row>
       ))}
-    </View>
+    </RowList>
   );
 }

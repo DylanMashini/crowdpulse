@@ -1,7 +1,7 @@
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
-// The design system's 21 line glyphs, copied from design-system/components/bundle.js:
-// a 24px grid, 1.5 stroke, round caps and joins, drawn in the colour of the text beside them.
+// The design system's line glyphs: a 24px grid, 1.5 stroke, round caps and joins, drawn in the
+// colour of the text beside them.
 
 type Shape =
   | { el: 'path'; d: string; dash?: string; strokeWidth?: number }
@@ -83,8 +83,8 @@ const GLYPHS = {
     { el: 'path', d: 'M9.9 10a3 3 0 0 0 4.2 4.2' },
   ],
   // The glyphs below are not in the design system's set. They are drawn on the same grid with
-  // the same stroke, for things only the phone has: the camera flip, search, and the tab icons'
-  // in-screen twins.
+  // the same stroke, for things only the phone has: the camera flip, search, and the two ends
+  // of a stepper.
   'flip-camera': [
     { el: 'path', d: 'M4.5 10.5A8 8 0 0 1 18 6.5' },
     { el: 'path', d: 'M18.5 3v4h-4' },
@@ -97,13 +97,16 @@ const GLYPHS = {
     { el: 'path', d: 'M16 16l4.5 4.5' },
   ],
   close: [{ el: 'path', d: 'M6 6l12 12M18 6L6 18' }],
+  minus: [{ el: 'path', d: 'M6 12h12' }],
+  plus: [{ el: 'path', d: 'M6 12h12M12 6v12' }],
 } as const satisfies Record<string, readonly Shape[]>;
 
 export type IconName = keyof typeof GLYPHS;
 
 type Props = {
   name: IconName;
-  size?: 16 | 18 | 20;
+  /** 20 beside touch text, 16 beside captions, 12 inside a chip. */
+  size?: 12 | 16 | 18 | 20;
   /** The colour of the text beside it. */
   color: string;
   /** Read out by VoiceOver. Leave out when the icon sits beside its word. */

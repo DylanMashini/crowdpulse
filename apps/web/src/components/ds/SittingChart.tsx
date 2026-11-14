@@ -4,6 +4,7 @@ import { useState, type MouseEvent } from 'react';
 
 import { cx } from '@/lib/cx';
 
+import { Button } from './Button';
 import { tableCell, tableHeadCell } from './TableFrame';
 
 export interface SittingChartProps {
@@ -17,7 +18,7 @@ export interface SittingChartProps {
   className?: string;
 }
 
-const MARGIN = { top: 16, right: 64, bottom: 28, left: 40 };
+const MARGIN = { top: 16, right: 64, bottom: 28, left: 32 };
 
 function lastValue(values: Array<number | null>): { index: number; value: number } | null {
   for (let index = values.length - 1; index >= 0; index--) {
@@ -78,36 +79,29 @@ export function SittingChart({ values, title = 'Heart rate over the sitting', wi
   const hoverValue = hover != null ? values[hover] : null;
 
   return (
-    <figure className={cx('w-full rounded-lg border border-line bg-surface-raised p-4', className)}>
-      <figcaption className="mb-3 flex flex-wrap justify-between gap-4">
+    <figure className={cx('w-full', className)}>
+      <figcaption className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div>
-          <div className="font-semibold">{title}</div>
-          <div className="type-caption text-ink-muted tabular-nums">
+          <div className="type-subheading text-ink">{title}</div>
+          <div className="type-caption text-ink-faint tabular-nums">
             {present.length ? `${present.length} of ${count} seconds gave a reading` : 'Waiting for the first reading'}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-4 text-[13px]">
-          <button
-            type="button"
-            aria-pressed={asTable}
-            onClick={() => setAsTable(!asTable)}
-            className="cursor-pointer text-[13px] font-medium text-signal underline underline-offset-[3px]"
-          >
-            {asTable ? 'Show chart' : 'Show table'}
-          </button>
-        </div>
+        <Button variant="quiet" aria-pressed={asTable} onClick={() => setAsTable(!asTable)}>
+          {asTable ? 'Show chart' : 'Show table'}
+        </Button>
       </figcaption>
 
       {present.length === 0 ? (
-        <p className="rounded-md border border-dashed border-line-strong px-4 py-6 type-caption text-ink-muted">
+        <p className="border-t border-line py-4 type-dense text-ink-muted">
           No readings in this sitting yet. The line starts with the first heart rate from the camera.
         </p>
       ) : asTable ? (
-        <div className="max-h-[260px] overflow-auto rounded-md border border-line">
-          <table className="w-full border-collapse text-[15px] tabular-nums">
+        <div className="max-h-[264px] overflow-auto border-t border-line">
+          <table className="w-full border-collapse tabular-nums">
             <thead>
               <tr>
-                <th scope="col" className={tableHeadCell}>
+                <th scope="col" className={cx(tableHeadCell, 'first:pl-[10px]')}>
                   Second
                 </th>
                 <th scope="col" className={tableHeadCell}>
@@ -118,8 +112,8 @@ export function SittingChart({ values, title = 'Heart rate over the sitting', wi
             <tbody>
               {tableSeconds.map((second) => (
                 <tr key={second}>
-                  <td className={cx(tableCell, 'py-2')}>{second} s</td>
-                  <td className={cx(tableCell, 'py-2')}>{values[second] == null ? 'No reading' : `${values[second]} bpm`}</td>
+                  <td className={cx(tableCell, 'h-control-md first:pl-[10px]')}>{second} s</td>
+                  <td className={cx(tableCell, 'h-control-md')}>{values[second] == null ? 'No reading' : `${values[second]} bpm`}</td>
                 </tr>
               ))}
             </tbody>
@@ -138,21 +132,21 @@ export function SittingChart({ values, title = 'Heart rate over the sitting', wi
             {yTicks.map((tick) => (
               <g key={tick}>
                 <line className="stroke-line" strokeWidth={1} x1={MARGIN.left} x2={width - MARGIN.right} y1={y(tick)} y2={y(tick)} />
-                <text className="fill-ink-muted font-sans text-[12px] tabular-nums" x={MARGIN.left - 8} y={y(tick) + 4} textAnchor="end">
+                <text className="fill-ink-faint font-sans text-[11px] tabular-nums" x={MARGIN.left - 8} y={y(tick) + 4} textAnchor="end">
                   {tick}
                 </text>
               </g>
             ))}
             {xTicks.map((second) => (
-              <text key={second} className="fill-ink-muted font-sans text-[12px] tabular-nums" x={x(second)} y={height - 8} textAnchor="middle">
+              <text key={second} className="fill-ink-faint font-sans text-[11px] tabular-nums" x={x(second)} y={height - 8} textAnchor="middle">
                 {second} s
               </text>
             ))}
-            <path className="fill-none stroke-series-estimate" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" d={path} />
+            <path className="fill-none stroke-series-estimate" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" d={path} />
             {last ? (
               <>
-                <circle className="fill-series-estimate stroke-surface-raised" strokeWidth={2} cx={x(last.index)} cy={y(last.value)} r={4} />
-                <text className="fill-ink font-sans text-[12px] font-medium tabular-nums" x={x(last.index) + 10} y={y(last.value) + 4}>
+                <circle className="fill-series-estimate stroke-surface-1" strokeWidth={2} cx={x(last.index)} cy={y(last.value)} r={4} />
+                <text className="fill-ink font-mono text-[12px] tabular-nums" x={x(last.index) + 10} y={y(last.value) + 4}>
                   {last.value} bpm
                 </text>
               </>
@@ -161,7 +155,7 @@ export function SittingChart({ values, title = 'Heart rate over the sitting', wi
               <g>
                 <line className="stroke-line-strong" strokeWidth={1} x1={x(hover)} x2={x(hover)} y1={MARGIN.top} y2={height - MARGIN.bottom} />
                 {hoverValue != null ? (
-                  <circle className="fill-series-estimate stroke-surface-raised" strokeWidth={2} cx={x(hover)} cy={y(hoverValue)} r={4} />
+                  <circle className="fill-series-estimate stroke-surface-1" strokeWidth={2} cx={x(hover)} cy={y(hoverValue)} r={4} />
                 ) : null}
               </g>
             ) : null}
@@ -169,13 +163,13 @@ export function SittingChart({ values, title = 'Heart rate over the sitting', wi
           {hover != null ? (
             <div
               className={cx(
-                'pointer-events-none absolute top-[4px] rounded-md border border-line bg-surface-raised px-3 py-2 text-[13px] leading-[20px] whitespace-nowrap shadow-overlay',
+                'pointer-events-none absolute top-1 rounded-md border border-line-strong bg-surface-3 px-3 py-2 type-dense whitespace-nowrap shadow-overlay',
                 x(hover) > width * 0.6 ? 'translate-x-[calc(-100%-12px)]' : 'translate-x-[12px]',
               )}
               style={{ left: `${(x(hover) / width) * 100}%` }}
             >
-              <div className="text-ink-muted">{hover} s</div>
-              <div>{hoverValue == null ? 'No reading' : <b className="font-mono font-semibold">{hoverValue} bpm</b>}</div>
+              <div className="type-caption text-ink-muted tabular-nums">{hover} s</div>
+              <div>{hoverValue == null ? 'No reading' : <span className="type-readout-sm text-ink">{hoverValue} bpm</span>}</div>
             </div>
           ) : null}
         </div>

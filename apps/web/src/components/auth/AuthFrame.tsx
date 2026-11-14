@@ -1,7 +1,8 @@
 import { PROTOTYPE_NOTICE } from '@triagecam/contracts';
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 
-import { BrandLockup } from '@/components/ds';
+import { BrandLockup, textLink } from '@/components/ds';
 
 export interface AuthFrameProps {
   title: string;
@@ -12,19 +13,24 @@ export interface AuthFrameProps {
   notice?: boolean;
 }
 
-/** The frame around every account page: the brand, one title and the form. */
+/**
+ * The frame around every account page: the brand, one title and the form, in a single narrow
+ * column set a little above the middle of the window.
+ */
 export function AuthFrame({ title, lead, children, notice = false }: AuthFrameProps) {
   return (
-    <div className="flex min-h-screen flex-col px-4 py-6 md:px-6">
-      <BrandLockup />
-      <main className="mx-auto flex w-full max-w-[400px] flex-1 flex-col justify-center gap-5 py-7">
+    <div className="flex min-h-screen flex-col px-5 py-5">
+      <Link href="/" className="self-start rounded-md">
+        <BrandLockup />
+      </Link>
+      <main className="mx-auto flex w-full max-w-[360px] flex-1 flex-col justify-center gap-6 pt-8 pb-16">
         <div className="flex flex-col gap-2">
-          <h1 className="type-title">{title}</h1>
+          <h1 className="type-title text-ink">{title}</h1>
           {lead ? <p className="text-ink-muted">{lead}</p> : null}
         </div>
         {children}
       </main>
-      {notice ? <p className="type-caption text-ink-muted">{PROTOTYPE_NOTICE}</p> : null}
+      {notice ? <p className="mx-auto max-w-[560px] text-center type-caption text-ink-faint">{PROTOTYPE_NOTICE}</p> : null}
     </div>
   );
 }
@@ -32,7 +38,7 @@ export function AuthFrame({ title, lead, children, notice = false }: AuthFramePr
 /** A failure of the whole form, as opposed to one field. */
 export function FormError({ children }: { children: ReactNode }) {
   return (
-    <p role="alert" className="rounded-md border border-critical bg-critical-soft px-3 py-2 font-medium text-ink">
+    <p role="alert" className="rounded-md border border-urgent-line bg-urgent-soft px-3 py-2 type-dense text-ink">
       {children}
     </p>
   );
@@ -41,10 +47,10 @@ export function FormError({ children }: { children: ReactNode }) {
 /** Why the person is looking at this form, when it is not an error of theirs. */
 export function FormNotice({ children }: { children: ReactNode }) {
   return (
-    <p role="status" className="rounded-md border border-line-strong bg-surface-sunken px-3 py-2 font-medium text-ink">
+    <p role="status" className="rounded-md border border-line bg-surface-2 px-3 py-2 type-dense text-ink">
       {children}
     </p>
   );
 }
 
-export const textLink = 'font-medium text-signal underline underline-offset-[3px]';
+export { textLink };

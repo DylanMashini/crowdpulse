@@ -4,7 +4,7 @@ import Svg, { Ellipse, Path, Polygon, Rect, Text as SvgText } from 'react-native
 import type { FaceRegionsEvent, Point, ViewfinderState } from 'triage-capture';
 
 import { coverFrame, placePoint, placeRect } from '@/lib/capture/viewfinderGeometry';
-import { fonts } from '@/theme';
+import { hairline, weight } from '@/theme';
 
 import { Icon } from './Icon';
 import { useScopedTheme } from './ThemeScope';
@@ -74,11 +74,14 @@ export function Viewfinder({ state, regions, message, picture, mirrored = false,
       style={{
         flex: 1,
         borderRadius: theme.radius.radiusLg,
+        borderWidth: hairline,
+        // The outline turns ice while the camera is measuring, and at no other time.
+        borderColor: state === 'measuring' ? colors.signalLine : colors.line,
         overflow: 'hidden',
-        backgroundColor: colors.surfaceSunken,
+        backgroundColor: colors.surface1,
       }}
     >
-      <View style={{ flex: 1, overflow: 'hidden' }} onLayout={(event) => setBox(event.nativeEvent.layout)}>
+      <View style={{ flex: 1, overflow: 'hidden', backgroundColor: colors.surface0 }} onLayout={(event) => setBox(event.nativeEvent.layout)}>
         {hasPicture ? (
           <View pointerEvents="none" style={StyleSheet.absoluteFill}>
             {picture}
@@ -89,8 +92,10 @@ export function Viewfinder({ state, regions, message, picture, mirrored = false,
             <Path
               d={cornerPath(box.width, box.height)}
               fill="none"
-              stroke={lost ? colors.flag : colors.ink}
-              strokeWidth={2}
+              stroke={lost ? colors.watch : colors.ink}
+              strokeWidth={1.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
               strokeDasharray={lost ? '6 6' : undefined}
             />
             {tracking ? (
@@ -103,13 +108,13 @@ export function Viewfinder({ state, regions, message, picture, mirrored = false,
                       // Over the picture the skin stays visible; on the dark field the regions are filled.
                       fill={hasPicture ? 'none' : colors.signalSoft}
                       stroke={colors.signal}
-                      strokeWidth={2}
+                      strokeWidth={1.5}
                       strokeLinejoin="round"
                     />
                   ) : null,
                 )}
                 {chest ? (
-                  <Rect {...chest} rx={6} fill="none" stroke={colors.signal} strokeWidth={2} strokeDasharray="6 4" />
+                  <Rect {...chest} rx={theme.radius.radiusMd} fill="none" stroke={colors.signal} strokeWidth={1.5} strokeDasharray="6 4" />
                 ) : null}
                 {foreheadLabel ? <Label {...foreheadLabel} text="Forehead" halo={hasPicture} /> : null}
                 {cheekLabel ? <Label {...cheekLabel} text="Cheeks" halo={hasPicture} /> : null}
@@ -131,8 +136,8 @@ export function Viewfinder({ state, regions, message, picture, mirrored = false,
                 rx={Math.min(box.width, box.height) * 0.2}
                 ry={Math.min(box.width, box.height) * 0.26}
                 fill="none"
-                stroke={hasPicture ? colors.ink : colors.lineStrong}
-                strokeWidth={2}
+                stroke={hasPicture ? colors.ink : colors.lineHover}
+                strokeWidth={1.5}
                 strokeDasharray="6 6"
               />
             )}
@@ -142,19 +147,24 @@ export function Viewfinder({ state, regions, message, picture, mirrored = false,
         {control ? <View style={{ position: 'absolute', top: INSET + 6, right: INSET + 6 }}>{control}</View> : null}
       </View>
       {/* The words sit under the picture, not on it: nothing covers the chest region. */}
-      <View style={{ gap: space.space1, paddingHorizontal: space.space4, paddingTop: space.space2, paddingBottom: space.space3 }}>
+      <View
+        style={{
+          gap: space.space1,
+          paddingHorizontal: space.space4,
+          paddingVertical: space.space3,
+          borderTopWidth: hairline,
+          borderTopColor: colors.line,
+        }}
+      >
         <Text
           accessibilityLiveRegion="polite"
-          style={[
-            theme.type.bodyTouch,
-            { textAlign: 'center', fontFamily: fonts.sans[600], color: lost ? colors.flag : colors.ink },
-          ]}
+          style={[theme.type.bodyTouch, { textAlign: 'center', fontWeight: weight.medium, color: lost ? colors.watch : colors.ink }]}
         >
           {message ?? MESSAGES[state]}
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space.space2 }}>
-          <Icon name={hasPicture ? 'video' : 'eye-off'} size={16} color={colors.inkMuted} />
-          <Text style={[theme.type.caption, { flexShrink: 1, color: colors.inkMuted }]}>
+          <Icon name={hasPicture ? 'video' : 'eye-off'} size={16} color={colors.inkFaint} />
+          <Text style={[theme.type.caption, { flexShrink: 1, color: colors.inkFaint }]}>
             {hasPicture ? 'Live picture. Video is not stored.' : 'Outlines only. This screen shows no picture.'}
           </Text>
         </View>
@@ -167,12 +177,12 @@ type LabelProps = { x: number; y: number; text: string; anchor?: 'start' | 'midd
 
 /** A region's name. Over the picture it is drawn twice, the first time as a dark edge to read against. */
 function Label({ x, y, text, anchor = 'start', halo }: LabelProps) {
-  const { colors } = useScopedTheme();
-  const common = { x, y, textAnchor: anchor, fontSize: 13, fontFamily: fonts.sans[halo ? 600 : 400] };
+  const { colors, type } = useScopedTheme();
+  const common = { x, y, textAnchor: anchor, fontSize: type.caption.fontSize, fontWeight: halo ? weight.medium : weight.normal };
   return (
     <>
       {halo ? (
-        <SvgText {...common} fill="none" stroke={colors.surfaceSunken} strokeWidth={3} strokeLinejoin="round">
+        <SvgText {...common} fill="none" stroke={colors.surface0} strokeWidth={3} strokeLinejoin="round">
           {text}
         </SvgText>
       ) : null}

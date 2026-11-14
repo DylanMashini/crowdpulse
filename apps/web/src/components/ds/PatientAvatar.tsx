@@ -13,12 +13,12 @@ export type AvatarSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 const BOX: Record<AvatarSize, string> = {
   xs: 'size-[24px] text-[10px]',
   sm: 'size-[32px] text-[12px]',
-  md: 'size-[40px] text-[14px]',
-  lg: 'size-[64px] text-[22px]',
-  xl: 'size-[112px] text-[36px]',
+  md: 'size-[40px] text-[13px]',
+  lg: 'size-[64px] text-[20px]',
+  xl: 'size-[96px] text-[28px]',
 };
 
-const ICON: Record<AvatarSize, string> = { xs: 'size-[14px]', sm: 'size-[18px]', md: 'size-[20px]', lg: 'size-[30px]', xl: 'size-[48px]' };
+const ICON: Record<AvatarSize, string> = { xs: 'size-[14px]', sm: 'size-[16px]', md: 'size-[20px]', lg: 'size-[28px]', xl: 'size-[40px]' };
 
 /** "Maya Chen" gives MC, "Okafor" gives O. Null when there is no name to take letters from. */
 export function initialsOf(name: string | null): string | null {
@@ -51,7 +51,7 @@ export function PatientAvatar({ patient, size = 'md', className }: PatientAvatar
       role="img"
       aria-label={showPhoto ? `Photo of ${patientLabel(patient)}` : patientLabel(patient)}
       className={cx(
-        'relative inline-flex flex-none items-center justify-center overflow-hidden rounded-full border border-line bg-surface-sunken font-semibold tracking-[0.02em] text-ink-muted select-none',
+        'relative inline-flex flex-none items-center justify-center overflow-hidden rounded-pill border border-line-strong bg-surface-4 font-medium text-ink-muted select-none',
         BOX[size],
         className,
       )}
@@ -59,13 +59,7 @@ export function PatientAvatar({ patient, size = 'md', className }: PatientAvatar
       {showPhoto ? (
         // The photo is a private, authenticated route of this server; next/image cannot fetch it.
         // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={url}
-          alt=""
-          draggable={false}
-          onError={() => setFailed(url)}
-          className="absolute inset-0 size-full object-cover"
-        />
+        <img src={url} alt="" draggable={false} onError={() => setFailed(url)} className="absolute inset-0 size-full object-cover" />
       ) : initials ? (
         <span aria-hidden>{initials}</span>
       ) : (

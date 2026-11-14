@@ -11,6 +11,7 @@ import type {
 } from '@triagecam/contracts';
 
 import { ageText, clockTime, wholeNumber } from '../format.ts';
+import { type Severity, ruleSeverity } from './severity.ts';
 
 /** The words inside a StatusBadge. */
 export function statusText(state: TileState, minutes: number | null): string {
@@ -86,17 +87,20 @@ export type TimelineRow = {
   time: string;
   title: string;
   state: TileState;
+  /** How the row's mark and chip are drawn. A flag row takes it from every rule its alert tripped. */
+  severity: Severity;
   /** Set for sittings: null inside means "No reading" for that parameter. */
   vitals: { pulse: string | null; breathing: string | null; score: Score | null } | null;
   sourceLabel: string | null;
   note: string | null;
 };
 
-function timelineRow(entry: TimelineEntry, index: number): TimelineRow {
+function timelineRow(entry: TimelineEntry, index: number, alertRules: ReadonlyMap<string, FlagRule[]>): TimelineRow {
   const base = {
     key: `${entry.type}-${entry.at}-${index}`,
     time: clockTime(entry.at),
     state: 'observed' as TileState,
+    severity: 'stable' as Severity,
     vitals: null,
     sourceLabel: null,
     note: null,
@@ -110,6 +114,7 @@ function timelineRow(entry: TimelineEntry, index: number): TimelineRow {
         ...base,
         title: entry.kind === 'check_in' ? 'Check-in sitting' : 'Re-check',
         state: measured ? 'observed' : 'no-reading',
+        severity: measured ? 'stable' : 'none',
         vitals: measured
           ? {
               pulse: entry.heartRate != null ? wholeNumber(entry.heartRate) : null,
@@ -123,8 +128,14 @@ function timelineRow(entry: TimelineEntry, index: number): TimelineRow {
     }
     case 'flag_opened':
       return entry.rule === 'overdue'
-        ? { ...base, title: 'Re-check overdue', state: 'overdue', note: entry.handoff }
-        : { ...base, title: 'Flag opened', state: 'flag', note: entry.handoff };
+        ? { ...base, title: 'Re-check overdue', state: 'overdue', severity: 'overdue', note: entry.handoff }
+        : {
+            ...base,
+            title: 'Flag opened',
+            state: 'flag',
+            severity: ruleSeverity(alertRules.get(entry.alertId) ?? [entry.rule]),
+            note: entry.handoff,
+          };
     case 'flag_acknowledged':
       return { ...base, title: 'Flag acknowledged' };
     case 'flag_closed':
@@ -139,5 +150,12 @@ function timelineRow(entry: TimelineEntry, index: number): TimelineRow {
  * that tripped both trend rules opened once, so it is one "Flag opened" row, not two alike.
  */
 export function timelineRows(timeline: PatientDetailResponse['timeline']): TimelineRow[] {
-  return timelineByAlert(timeline).reverse().map(timelineRow);
+  // The rules of an alert are read before its entries are merged into one row.
+  const alertRules = new Map<string, FlagRule[]>();
+  for (const entry of timeline) {
+    if (entry.type === 'flag_opened') alertRules.set(entry.alertId, [...(alertRules.get(entry.alertId) ?? []), entry.rule]);
+  }
+  return timelineByAlert(timeline)
+    .reverse()
+    .map((entry, index) => timelineRow(entry, index, alertRules));
 }

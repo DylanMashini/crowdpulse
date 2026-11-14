@@ -1,27 +1,21 @@
-import { View } from 'react-native';
+import type { Severity } from '@/lib/nurse/severity';
 
-import { fonts } from '@/theme';
-
+import { Card } from './Card';
 import { useScopedTheme } from './ThemeScope';
 import { Text } from './Text';
 
 /**
  * The sentence a nurse reads before walking over. It comes from the server's fixed template
- * and is shown as it is. This pass has no draft underneath it.
+ * and is shown as it is. For an urgent patient the note is the tinted card; otherwise it is a
+ * plain one. A flat fill either way.
  */
-export function HandoffNote({ sentence }: { sentence: string }) {
+export function HandoffNote({ sentence, severity = 'stable' }: { sentence: string; severity?: Severity }) {
   const theme = useScopedTheme();
   return (
-    <View
-      style={{
-        padding: theme.space.space4,
-        borderWidth: 1,
-        borderColor: theme.colors.line,
-        borderRadius: theme.radius.radiusLg,
-        backgroundColor: theme.colors.surfaceRaised,
-      }}
-    >
-      <Text style={[theme.type.bodyTouch, { fontFamily: fonts.sans[500], color: theme.colors.ink }]}>{sentence}</Text>
-    </View>
+    <Card tone={severity === 'urgent' ? 'urgent' : 'plain'}>
+      <Text selectable style={[theme.type.bodyTouch, { color: theme.colors.ink }]}>
+        {sentence}
+      </Text>
+    </Card>
   );
 }

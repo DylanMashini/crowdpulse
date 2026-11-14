@@ -1,8 +1,10 @@
 import type { Settings, SettingsResponse, UpdateSettingsRequest } from '@triagecam/contracts';
-import { type ReactNode, useCallback, useRef, useState } from 'react';
-import { Linking, View } from 'react-native';
+import { useCallback, useRef, useState } from 'react';
+import { Linking } from 'react-native';
 
 import { Button } from '@/components/Button';
+import { Card, Divider } from '@/components/Card';
+import { Detail } from '@/components/Detail';
 import { Notice } from '@/components/Notice';
 import { RolePicker } from '@/components/RolePicker';
 import { Stepper } from '@/components/Stepper';
@@ -16,7 +18,6 @@ import { useNurse } from '@/lib/nurse/NurseProvider';
 import { connectionText } from '@/lib/nurse/nurseFormat';
 import { useSession } from '@/lib/session/SessionProvider';
 import { useAccountActions } from '@/lib/session/useAccountActions';
-import { fonts } from '@/theme';
 import { Text } from '@/components/Text';
 
 /** The account, how flags reach this phone, the station's flag rules, and the phone's role. */
@@ -88,7 +89,7 @@ export default function You() {
   return (
     <TabScreen title="You" subtitle={state.user.email} onRefresh={load}>
       <Section heading="Notifications">
-        <Panel>
+        <Card>
           <Detail
             label="Push to this phone"
             value={push == null ? 'Checking' : push.available ? 'On' : 'Off'}
@@ -101,14 +102,14 @@ export default function You() {
             }
           />
           {push && !push.available && push.fixInSettings ? (
-            <Button variant="secondary" label="Open the Settings app" onPress={() => void Linking.openSettings()} />
+            <Button variant="secondary" raised label="Open the Settings app" onPress={() => void Linking.openSettings()} />
           ) : null}
           <Detail label="Updates while the app is open" value={connectionText(connection)} />
-        </Panel>
+        </Card>
       </Section>
 
       <Section heading="Flag rules">
-        <Text style={[theme.type.body, { color: colors.inkMuted }]}>
+        <Text style={[theme.type.dense, { color: colors.inkMuted }]}>
           Shared by the whole station: a change here applies to every phone and the dashboard
         </Text>
         {!rules ? (
@@ -121,7 +122,7 @@ export default function You() {
             <Notice title="Loading the flag rules" />
           )
         ) : (
-          <Panel>
+          <Card>
             <Stepper
               label="Re-check interval"
               hint="A patient is overdue after this long without an observation"
@@ -132,7 +133,7 @@ export default function You() {
               step={5}
               onChange={(next) => void change({ recheckIntervalMin: next })}
             />
-            <Rule />
+            <Divider />
             <Stepper
               label="Quiet time per patient"
               hint="The shortest gap between two notifications about one patient"
@@ -143,7 +144,7 @@ export default function You() {
               step={5}
               onChange={(next) => void change({ notifyCooldownMin: next })}
             />
-            <Rule />
+            <Divider />
             <Stepper
               label="Pulse change"
               hint="Flags a pulse this far from the check-in value"
@@ -154,7 +155,7 @@ export default function You() {
               step={5}
               onChange={(next) => void change({ pulseDeltaBpm: next })}
             />
-            <Rule />
+            <Divider />
             <Stepper
               label="Breathing change"
               hint="Flags a breathing rate this far from the check-in value"
@@ -165,7 +166,7 @@ export default function You() {
               step={1}
               onChange={(next) => void change({ breathingDeltaPerMin: next })}
             />
-            <Rule />
+            <Divider />
             <Switch
               label="Flag a change from check-in"
               hint="Pulse or breathing outside the changes above, on two sittings in a row"
@@ -186,11 +187,11 @@ export default function You() {
             />
             {saveFailure ? <Notice title="The change was not saved" body={saveFailure} /> : null}
             {settings ? (
-              <Text style={[theme.type.caption, { color: colors.inkMuted }]}>
+              <Text style={[theme.type.caption, { color: colors.inkFaint, fontVariant: ['tabular-nums'] }]}>
                 Last changed {clockTime(settings.updatedAt)}
               </Text>
             ) : null}
-          </Panel>
+          </Card>
         )}
       </Section>
 
@@ -200,50 +201,12 @@ export default function You() {
       </Section>
 
       <Section heading="Account">
-        <Panel>
+        <Card>
           <Detail label="Signed in as" value={state.user.email} />
           <Detail label="Server" value={api.baseUrl} />
-        </Panel>
+        </Card>
         <Button variant="secondary" block label="Sign out" onPress={confirmSignOut} />
       </Section>
     </TabScreen>
-  );
-
-}
-
-function Panel({ children }: { children: ReactNode }) {
-  const theme = useScopedTheme();
-  return (
-    <View
-      style={{
-        padding: theme.space.space4,
-        gap: theme.space.space4,
-        borderWidth: 1,
-        borderColor: theme.colors.line,
-        borderRadius: theme.radius.radiusXl,
-        backgroundColor: theme.colors.surfaceRaised,
-      }}
-    >
-      {children}
-    </View>
-  );
-}
-
-function Rule() {
-  const theme = useScopedTheme();
-  return <View style={{ height: 1, backgroundColor: theme.colors.line }} />;
-}
-
-function Detail({ label, value, note }: { label: string; value: string; note?: string }) {
-  const theme = useScopedTheme();
-  const { colors } = theme;
-  return (
-    <View style={{ gap: 2 }}>
-      <Text style={[theme.type.caption, { color: colors.inkMuted }]}>{label}</Text>
-      <Text selectable style={[theme.type.bodyTouch, { fontFamily: fonts.sans[600], color: colors.ink }]}>
-        {value}
-      </Text>
-      {note ? <Text style={[theme.type.caption, { color: colors.inkMuted }]}>{note}</Text> : null}
-    </View>
   );
 }

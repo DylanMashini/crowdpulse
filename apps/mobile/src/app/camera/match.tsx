@@ -11,6 +11,7 @@ import { Screen } from '@/components/Screen';
 import { useScopedTheme } from '@/components/ThemeScope';
 import { PatientIdentity } from '@/components/PatientIdentity';
 import { PatientPicker } from '@/components/PatientPicker';
+import { PrivacyNote } from '@/components/PrivacyNote';
 import { api, errorMessage, isApiError } from '@/lib/api';
 import { sentences } from '@/lib/format';
 import { captureErrorCode, captureErrorMessage } from '@/lib/capture/captureErrors';
@@ -117,9 +118,7 @@ export default function FaceMatch() {
               flipDisabled={match.step === 'matching'}
             />
           </View>
-          <Text style={[theme.type.caption, { color: theme.colors.inkMuted }]}>
-            One picture of the face is sent to the station and is not stored
-          </Text>
+          <PrivacyNote icon="scan">One picture of the face is sent to the station and is not stored</PrivacyNote>
           <Button
             variant="secondary"
             block
@@ -135,17 +134,19 @@ export default function FaceMatch() {
 
       {match.step === 'matched' ? (
         <>
-          <View style={{ gap: theme.space.space2 }}>
+          <View style={{ gap: theme.space.space3 }}>
             <Text style={[theme.type.bodyTouch, { color: theme.colors.inkMuted }]}>Is this you?</Text>
             <PatientIdentity patient={match.patient} size="xl" />
           </View>
-          <Button variant="primary" block label="Start re-check" onPress={() => recheck(match.patient.number, false)} />
-          <Button
-            variant="secondary"
-            block
-            label="This is someone else"
-            onPress={() => setMatch({ step: 'fallback', reason: 'The matched patient was not used' })}
-          />
+          <View style={{ gap: theme.space.space2 }}>
+            <Button variant="primary" block label="Start re-check" onPress={() => recheck(match.patient.number, false)} />
+            <Button
+              variant="secondary"
+              block
+              label="This is someone else"
+              onPress={() => setMatch({ step: 'fallback', reason: 'The matched patient was not used' })}
+            />
+          </View>
         </>
       ) : null}
 

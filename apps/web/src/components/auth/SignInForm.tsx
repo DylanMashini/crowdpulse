@@ -67,6 +67,7 @@ export function SignInForm({ next, reason }: { next?: string; reason?: string })
       ) : null}
       <Field
         block
+        size="lg"
         label="Email"
         type="email"
         name="email"
@@ -77,6 +78,7 @@ export function SignInForm({ next, reason }: { next?: string; reason?: string })
       />
       <Field
         block
+        size="lg"
         label="Password"
         type="password"
         name="password"
@@ -85,10 +87,10 @@ export function SignInForm({ next, reason }: { next?: string; reason?: string })
         onChange={(event) => setPassword(event.target.value)}
         error={passwordError ?? undefined}
       />
-      <Button type="submit" variant="primary" block disabled={busy}>
+      <Button type="submit" variant="primary" size="lg" block disabled={busy}>
         {busy ? 'Signing in' : 'Sign in'}
       </Button>
-      <p className="text-ink-muted">
+      <p className="type-dense text-ink-muted">
         No account yet?{' '}
         <Link href="/sign-up" className={textLink}>
           Create a staff account

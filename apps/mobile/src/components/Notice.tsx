@@ -3,6 +3,7 @@ import { View } from 'react-native';
 
 import { tidy } from '@/lib/format';
 
+import { Card } from './Card';
 import { useScopedTheme } from './ThemeScope';
 import { Text } from './Text';
 
@@ -15,24 +16,29 @@ type Props = {
   children?: ReactNode;
 };
 
-/** An outlined panel for loading, empty and error states. It says what happened and what to do next. */
+/**
+ * Loading, empty and error states. It says what happened and what to do next. A title on its
+ * own (something is loading) is one quiet line, not a card.
+ */
 export function Notice({ title, body, children }: Props) {
   const theme = useScopedTheme();
+  const { colors } = theme;
+  if (!body && !children) {
+    return (
+      <Text accessibilityLiveRegion="polite" style={[theme.type.body, { color: colors.inkMuted }]}>
+        {title}
+      </Text>
+    );
+  }
   return (
-    <View
-      accessibilityLiveRegion="polite"
-      style={{
-        padding: theme.space.space4,
-        gap: theme.space.space2,
-        borderWidth: 1,
-        borderColor: theme.colors.line,
-        borderRadius: theme.radius.radiusLg,
-        backgroundColor: theme.colors.surfaceRaised,
-      }}
-    >
-      <Text style={[theme.type.subheading, { color: theme.colors.ink }]}>{title}</Text>
-      {body ? <Text style={[theme.type.bodyTouch, { color: theme.colors.inkMuted }]}>{tidy(body)}</Text> : null}
-      {children ? <View style={{ marginTop: theme.space.space2, gap: theme.space.space2 }}>{children}</View> : null}
+    <View accessibilityLiveRegion="polite">
+      <Card>
+        <View style={{ gap: theme.space.space1 }}>
+          <Text style={[theme.type.subheading, { color: colors.ink }]}>{title}</Text>
+          {body ? <Text style={[theme.type.body, { color: colors.inkMuted }]}>{tidy(body)}</Text> : null}
+        </View>
+        {children ? <View style={{ gap: theme.space.space2 }}>{children}</View> : null}
+      </Card>
     </View>
   );
 }

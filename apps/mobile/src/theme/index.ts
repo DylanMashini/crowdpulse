@@ -1,8 +1,11 @@
-import { useColorScheme } from 'react-native';
+import { StyleSheet } from 'react-native';
 
 import { type ThemeName, colors, radius, shadow, size, space, type } from './tokens';
 
 export * from './tokens';
+
+/** The width of every divider and outline: one device pixel, in the `line` colours. */
+export const hairline = StyleSheet.hairlineWidth;
 
 export type Theme = {
   name: ThemeName;
@@ -19,10 +22,9 @@ export function themeFor(name: ThemeName): Theme {
 }
 
 /**
- * The theme for a screen. The nurse role follows the device setting; the camera role passes
- * 'dark', because it is always dark.
+ * The theme for a screen. Night Shift is dark only, so both device appearances get the same
+ * theme. The argument is kept so the camera role's `useTheme('dark')` still compiles.
  */
 export function useTheme(forced?: ThemeName): Theme {
-  const scheme = useColorScheme();
-  return themeFor(forced ?? (scheme === 'dark' ? 'dark' : 'light'));
+  return themeFor(forced ?? 'dark');
 }

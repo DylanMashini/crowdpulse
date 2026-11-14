@@ -30,7 +30,7 @@ apps/mobile                   Expo SDK 58, expo-router (routes in src/app), deve
   src/config.ts               apiUrl from EXPO_PUBLIC_API_URL
 packages/contracts            zod schemas and types for every wire payload, plus route paths and shared copy
 packages/signal-engine        Swift package SignalEngine (Accelerate only) + engine-cli
-design-system                 The user's design system. Read-only.
+design-system                 The design system (Night Shift). Changed only by a design-system task.
 scripts/build-tokens.mjs      tokens.json -> web CSS and mobile TypeScript
 ```
 
@@ -592,21 +592,24 @@ All times are `timestamptz` on the server clock. No table stores video. The only
 
 `pnpm tokens` runs `scripts/build-tokens.mjs`, which reads `design-system/tokens.json` and writes both outputs. Neither is edited by hand.
 
+The system is Night Shift: one dark theme. `design-system/README.md` describes it and `design-system/MIGRATION.md` lists every token that was renamed or changed value when it replaced the first system.
+
 **Web** (`apps/web/src/styles/tokens.css`, imported by `globals.css`):
 
-- Both Atkinson Hyperlegible fonts are served from `design-system/fonts` by `@font-face`.
-- The design system's own variable names are defined on `:root` (`--surface`, `--ink`, `--space-4`, `--radius-md`, `--control-md`, `--shadow-overlay`, `--font-sans`, …), so `design-system/components/bundle.css` works as written. Dark values apply under `prefers-color-scheme: dark` and under any `data-theme="dark"` ancestor; `data-theme="light"` forces light.
-- Tailwind's default palette, spacing scale, radii, shadows and font sizes are removed. What exists:
+- Geist and Geist Mono are served from `design-system/fonts` by `@font-face`.
+- The design system's own variable names are defined once on `:root` (`--surface-0`, `--ink`, `--space-4`, `--control-md`, `--shadow-overlay`, `--duration-fast`, `--font-sans`, `--radius-md`, …), so `design-system/components/bundle.css` works as written. There is no light theme; `data-theme` and `prefers-color-scheme` do nothing.
+- Tailwind's default palette, spacing scale, radii, shadows, font sizes, easings and animations are removed. What exists:
 
 | Kind | Classes |
 |---|---|
-| Colour | Every colour token by name: `bg-surface`, `bg-surface-raised`, `text-ink`, `text-ink-muted`, `border-line`, `border-line-strong`, `bg-signal`, `text-on-signal`, `bg-flag-soft`, `text-flag`, `bg-overdue`, `text-on-overdue`, `bg-score-2`, `outline-focus`, `bg-scrim`, … |
-| Spacing | Steps 0 to 8 are the design system's: `p-4` is `space-4` (16px), `gap-5` is 24px, `p-6` is 32px, `mt-7` is 48px, `p-8` is 64px. There is no `p-10` or `p-12`. Sizes: `h-control-md` (36px), `h-control-touch` (48px), `w-nav` (216px), `max-w-phone` (390px). |
-| Radius | `rounded-sm` 4px, `rounded-md` 6px, `rounded-lg` 10px, `rounded-xl` 16px, `rounded-pill` |
-| Shadow | `shadow-overlay` only |
-| Type | One class per type style, setting family, size, line height, weight and tracking together: `type-title`, `type-heading`, `type-subheading`, `type-body`, `type-body-touch`, `type-body-strong`, `type-label`, `type-caption`, `type-readout-xl`, `type-readout-lg`, `type-readout-md`. Also `font-sans`, `font-mono`, `font-normal`, `font-medium`, `font-semibold`. |
+| Colour | Every colour token by name: `bg-surface-0` to `bg-surface-4`, `text-ink`, `text-ink-muted`, `text-ink-faint`, `border-line`, `border-line-strong`, `text-signal`, `bg-signal-strong`, `text-on-signal`, `bg-watch-soft`, `text-watch`, `bg-urgent`, `text-on-urgent`, `bg-overdue`, `text-on-overdue`, `bg-score-2`, `text-on-score-2`, `outline-focus`, `bg-scrim`, … The old names (`surface`, `surface-raised`, `surface-sunken`, `flag`, `critical`, …) still resolve and are deprecated. |
+| Spacing | `space-N` is N × 4px: steps 0, 1, 2, 3, 4, 5 (20px), 6 (24px), 8 (32px), 12 (48px), 16 (64px). `p-7` is a deprecated 48px. There is no `p-9`, `p-10` or `p-11`. Sizes: `h-control-md` (32px), `h-control-lg` (40px), `h-control-touch` (48px), `h-row` (44px), `h-nav-row` (30px), `size-icon` (16px), `w-nav` (200px), `w-detail` (292px), `max-w-phone` (390px). |
+| Radius | `rounded-sm` 4px, `rounded-md` 6px, `rounded-lg` 10px, `rounded-xl` 14px, `rounded-pill` |
+| Shadow | `shadow-overlay`, and the two glows `glow-live` and `glow-urgent` |
+| Motion | `duration-fast` (120ms), `duration-state` (200ms), `duration-tick` (240ms), `duration-enter` (360ms), `ease-out` (the one curve), `animate-tick`. Transition utilities default to 120ms on that curve. |
+| Type | One class per type style, setting family, size, line height, weight and tracking together: `type-display`, `type-title`, `type-heading`, `type-subheading`, `type-body`, `type-body-strong`, `type-body-touch`, `type-dense`, `type-label`, `type-caption`, `type-readout-xl`, `type-readout-lg`, `type-readout-md`, `type-readout-sm`. Also `font-sans`, `font-mono`, `font-normal`, `font-medium`, `font-semibold`. |
 
-**Mobile** (`apps/mobile/src/theme`): `const theme = useTheme()` for the nurse role, `useTheme('dark')` for the camera role. `theme.colors.inkMuted`, `theme.space.space4`, `theme.radius.radiusLg`, `theme.size.controlTouch`, `theme.shadow.shadowOverlay` (a `boxShadow` string, for sheets and the push banner only), and `theme.type.readoutXl` and the other type styles, which are spread into a `Text` style and already carry the right font file for their weight. The six static TTFs are in `apps/mobile/assets/fonts` and are embedded by the `expo-font` config plugin, so there is nothing to load at runtime. Screens take `Text` from `@/components/Text`, not from `react-native`: it follows the system text size up to 1.6 times (`MAX_TEXT_SCALE`), the point up to which every layout holds.
+**Mobile** (`apps/mobile/src/theme`): `const theme = useTheme()`. There is one theme, so both device appearances get it and `useTheme('dark')` returns the same thing. `theme.colors.inkMuted`, `theme.space.space4`, `theme.radius.radiusLg`, `theme.size.controlTouch`, `theme.shadow.shadowOverlay` (a `boxShadow` string, for sheets and the push banner only), and `theme.type.readoutXl` and the other type styles, which are spread into a `Text` style and carry `fontFamily` and `fontWeight`. Text is the system face and vitals the system monospace, so no font file is loaded and a restyle needs no new development build; set a weight with the `weight` export, not with `fonts.sans[600]`. `motion` has the durations in milliseconds and the easing curve. The six Atkinson TTFs in `apps/mobile/assets/fonts` are still embedded by the `expo-font` config plugin and are no longer used.
 
 The design-system README's line "No surface shows a face or a video frame" is overridden in two places: the dashboard's live view, and the camera phone's viewfinder, which shows the live picture under the framing template and the outlines (section 3, Preview view). Neither stores video.
 
@@ -617,9 +620,11 @@ The design-system README's line "No surface shows a face or a video frame" is ov
 | Web QA | 3100 | `NEXT_DIST_DIR=.next-3100 PORT=3100 pnpm dev:web` |
 | API | 3101 | `NEXT_DIST_DIR=.next-3101 PORT=3101 pnpm dev:web` |
 | Dashboard | 3102 | `NEXT_DIST_DIR=.next-3102 PORT=3102 pnpm dev:web` |
+| Redesign, web development | 3210 | `NEXT_DIST_DIR=.next-3210 PORT=3210 pnpm dev:web` |
+| Redesign, web QA | 3220 | `NEXT_DIST_DIR=.next-3220 PORT=3220 pnpm dev:web` |
 | Mobile QA | 3200 | In the simulators: `apps/mobile/scripts/sim-qa.sh`, which starts this server itself on its own database `triagecam_simqa` (see `apps/mobile/sim-flows/README.md`). On a real phone: `NEXT_DIST_DIR=.next-3200 PORT=3200 pnpm dev:web`, then `ngrok http 3200` and put the https URL in `apps/mobile/.env.local` as `EXPO_PUBLIC_API_URL` |
 
-- Always set `NEXT_DIST_DIR` with `PORT`: two dev servers sharing a dist dir corrupt each other. `apps/web/tsconfig.json` already lists these four dist dirs, so Next does not rewrite it. Delete your `.next-<port>` directory when you are done; disk space is short.
+- Always set `NEXT_DIST_DIR` with `PORT`: two dev servers sharing a dist dir corrupt each other. `apps/web/tsconfig.json` already lists these six dist dirs, so Next does not rewrite it. Delete your `.next-<port>` directory when you are done; disk space is short.
 - `APP_URL` defaults to `http://localhost:3100`. Set it to your own origin when you test verification links.
 - All dev servers share the one `triagecam` database unless `DATABASE_URL` says otherwise.
 - `pnpm typecheck` (all packages), `pnpm test` (contracts tests and `swift test`), `swift build` and `swift test` in `packages/signal-engine`.

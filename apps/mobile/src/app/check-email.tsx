@@ -1,5 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
+import { View } from 'react-native';
 
 import { Button } from '@/components/Button';
 import { Notice } from '@/components/Notice';
@@ -50,7 +51,7 @@ export default function CheckEmail() {
 
   return (
     <Screen title="Check your email" onBack={() => router.back()}>
-      <Text style={[theme.type.bodyTouch, { color: theme.colors.ink }]}>
+      <Text style={[theme.type.bodyTouch, { color: theme.colors.inkMuted }]}>
         A verification link was sent to {email || 'your address'}. Open it on any device, then sign in here. The link
         works for 24 hours.
       </Text>
@@ -58,14 +59,16 @@ export default function CheckEmail() {
         <Notice title={`Sent again at ${clockTime(progress.at)}`} body="Look in the spam folder if it does not arrive" />
       ) : null}
       {progress.step === 'failed' ? <Notice title={progress.title} body={progress.message} /> : null}
-      <Button variant="primary" block label="I have verified, sign in" onPress={toSignIn} />
-      <Button
-        variant="secondary"
-        block
-        label={progress.step === 'sending' ? 'Sending' : 'Send the email again'}
-        disabled={busy || email === ''}
-        onPress={() => void resend()}
-      />
+      <View style={{ gap: theme.space.space2 }}>
+        <Button variant="primary" block label="I have verified, sign in" onPress={toSignIn} />
+        <Button
+          variant="secondary"
+          block
+          label={progress.step === 'sending' ? 'Sending' : 'Send the email again'}
+          disabled={busy || email === ''}
+          onPress={() => void resend()}
+        />
+      </View>
       {devToken ? (
         <Notice
           title="Development server"

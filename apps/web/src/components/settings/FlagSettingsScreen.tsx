@@ -111,31 +111,33 @@ function SettingsForm({ saved, savedAt, onSaved }: { saved: Settings; savedAt: s
   };
 
   const field = (key: NumberKey) => (
-    <div className="w-[340px] max-w-full">
-      <Field
-        block
-        label={NUMBERS[key].label}
-        unit={NUMBERS[key].unit}
-        hint={NUMBERS[key].hint}
-        error={errors[key] ?? undefined}
-        inputMode="numeric"
-        name={key}
-        value={numbers[key]}
-        onChange={(event) => setNumbers((previous) => ({ ...previous, [key]: event.target.value }))}
-      />
-    </div>
+    <Field
+      block
+      label={NUMBERS[key].label}
+      unit={NUMBERS[key].unit}
+      hint={NUMBERS[key].hint}
+      error={errors[key] ?? undefined}
+      inputMode="numeric"
+      name={key}
+      value={numbers[key]}
+      onChange={(event) => setNumbers((previous) => ({ ...previous, [key]: event.target.value }))}
+    />
   );
   const toggle = (key: SwitchKey, label: string, hint: string) => (
-    <Switch label={label} hint={hint} checked={switches[key]} onChange={(next) => setSwitches((previous) => ({ ...previous, [key]: next }))} />
+    <div className="px-4 py-3">
+      <Switch label={label} hint={hint} checked={switches[key]} onChange={(next) => setSwitches((previous) => ({ ...previous, [key]: next }))} />
+    </div>
   );
+  const fields = 'grid gap-x-4 gap-y-4 px-4 py-4 sm:grid-cols-2';
 
+  // One card per group of rules; inside it the rows are ruled apart, not boxed again.
   return (
-    <form onSubmit={onSubmit} noValidate className="flex max-w-[760px] flex-col gap-5">
+    <form onSubmit={onSubmit} noValidate className="flex max-w-[720px] flex-col gap-5 p-5">
       <Panel heading="Trend rules">
-        <div className="flex flex-col gap-4">
+        <div className="divide-y divide-line">
           {toggle('scoreRiseEnabled', 'Flag a rise in partial score', 'The two latest observations both score higher than check-in')}
           {toggle('baselineShiftEnabled', 'Flag a move from the check-in baseline', 'Pulse or breathing differs from check-in by more than the amounts below')}
-          <div className="flex flex-wrap gap-x-5 gap-y-4 border-t border-line pt-4">
+          <div className={fields}>
             {field('pulseDeltaBpm')}
             {field('breathingDeltaPerMin')}
           </div>
@@ -143,9 +145,9 @@ function SettingsForm({ saved, savedAt, onSaved }: { saved: Settings; savedAt: s
       </Panel>
 
       <Panel heading="Re-checks">
-        <div className="flex flex-col gap-4">
+        <div className="divide-y divide-line">
           {toggle('overdueEnabled', 'Flag overdue patients', 'A waiting patient has gone too long without an observation')}
-          <div className="flex flex-wrap gap-x-5 gap-y-4 border-t border-line pt-4">
+          <div className={fields}>
             {field('recheckIntervalMin')}
             {field('notifyCooldownMin')}
           </div>
@@ -157,11 +159,11 @@ function SettingsForm({ saved, savedAt, onSaved }: { saved: Settings; savedAt: s
           {status.busy ? 'Saving rules' : 'Save rules'}
         </Button>
         {status.error ? (
-          <p role="alert" className="font-medium text-critical">
+          <p role="alert" className="type-caption text-urgent">
             The rules were not saved: {status.error}
           </p>
         ) : (
-          <p role="status" className="type-caption text-ink-muted">
+          <p role="status" className="type-caption text-ink-faint tabular-nums">
             {invalid ? 'Correct the marked fields to save' : dirty ? 'Changes are not saved yet' : `Saved at ${clockTime(savedAt)}. They apply from the next sitting and the next overdue check.`}
           </p>
         )}

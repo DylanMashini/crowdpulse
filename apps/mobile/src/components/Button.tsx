@@ -1,6 +1,6 @@
 import { View } from 'react-native';
 
-import { fonts } from '@/theme';
+import { hairline } from '@/theme';
 
 import { Icon, type IconName } from './Icon';
 import { useScopedTheme } from './ThemeScope';
@@ -11,34 +11,34 @@ type Props = {
   /** A verb phrase in sentence case. */
   label: string;
   onPress: () => void;
-  /** One `primary` per screen. `danger` only deletes data. */
+  /** One `primary` per screen or card. `danger` only deletes data. */
   variant?: 'primary' | 'secondary' | 'quiet' | 'danger';
   icon?: IconName;
   /** Fills the width of its container. */
   block?: boolean;
+  /** On a sheet or a banner, which already sit on the secondary button's own surface. */
+  raised?: boolean;
   disabled?: boolean;
   accessibilityHint?: string;
 };
 
-/** The design system's Button at its `touch` size, the only size allowed on a phone. */
-export function Button({ label, onPress, variant = 'secondary', icon, block, disabled, accessibilityHint }: Props) {
+/**
+ * The design system's Button at its touch size, the only size on a phone. The primary is
+ * ice-white with dark text, so no button ever competes with a severity colour.
+ */
+export function Button({ label, onPress, variant = 'secondary', icon, block, raised, disabled, accessibilityHint }: Props) {
   const theme = useScopedTheme();
   const { colors } = theme;
   const look = {
-    primary: { background: colors.signal, border: colors.signal, text: colors.onSignal, pressed: colors.signal },
+    primary: { fill: colors.signalStrong, pressed: colors.inkBright, border: 'transparent', text: colors.onSignal },
     secondary: {
-      background: colors.surfaceRaised,
+      fill: raised ? colors.surface4 : colors.surface3,
+      pressed: raised ? colors.lineHover : colors.surface4,
       border: colors.lineStrong,
       text: colors.ink,
-      pressed: colors.surfaceSunken,
     },
-    quiet: { background: 'transparent', border: 'transparent', text: colors.signal, pressed: colors.surfaceSunken },
-    danger: {
-      background: colors.surfaceRaised,
-      border: colors.critical,
-      text: colors.critical,
-      pressed: colors.criticalSoft,
-    },
+    quiet: { fill: 'transparent', pressed: colors.surface3, border: 'transparent', text: colors.signal },
+    danger: { fill: 'transparent', pressed: colors.urgentSoft, border: colors.urgentLineStrong, text: colors.urgent },
   }[variant];
 
   return (
@@ -49,36 +49,26 @@ export function Button({ label, onPress, variant = 'secondary', icon, block, dis
       accessibilityLabel={label}
       accessibilityHint={accessibilityHint}
       accessibilityState={{ disabled: Boolean(disabled) }}
-      style={({ pressed }) => [
-        {
-          height: theme.size.controlTouch,
-          paddingHorizontal: theme.space.space5,
-          borderRadius: theme.radius.radiusMd,
-          borderWidth: 1,
-          borderColor: look.border,
-          backgroundColor: pressed ? look.pressed : look.background,
-          alignSelf: block ? 'stretch' : 'flex-start',
-          opacity: disabled ? 0.45 : pressed && variant === 'primary' ? 0.92 : 1,
-          transform: [{ translateY: pressed ? 1 : 0 }],
-        },
-      ]}
+      style={({ pressed }) => ({
+        height: theme.size.controlTouch,
+        paddingHorizontal: theme.space.space4,
+        borderRadius: theme.radius.radiusLg,
+        borderWidth: hairline,
+        borderColor: look.border,
+        backgroundColor: pressed ? look.pressed : look.fill,
+        alignSelf: block ? 'stretch' : 'flex-start',
+        opacity: disabled ? 0.4 : 1,
+        transform: [{ scale: pressed ? 0.98 : 1 }],
+      })}
     >
-      <View
-        style={{
-          flex: 1,
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: theme.space.space2,
-        }}
-      >
+      <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: theme.space.space2 }}>
         {icon ? <Icon name={icon} size={20} color={look.text} /> : null}
         {/* The control is 48 points tall: the label grows with the text size up to what fits in it. */}
         <Text
           numberOfLines={1}
           adjustsFontSizeToFit
           minimumFontScale={0.7}
-          style={[theme.type.bodyTouch, { flexShrink: 1, fontFamily: fonts.sans[600], color: look.text }]}
+          style={[theme.type.subheading, { flexShrink: 1, color: look.text }]}
         >
           {label}
         </Text>

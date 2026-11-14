@@ -1,12 +1,13 @@
 import { PROTOTYPE_NOTICE } from '@triagecam/contracts';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
-import { type TextInputInstance } from 'react-native';
+import { type TextInputInstance, View } from 'react-native';
 
 import { Button } from '@/components/Button';
 import { Field } from '@/components/Field';
 import { Notice } from '@/components/Notice';
 import { Screen } from '@/components/Screen';
+import { Wordmark } from '@/components/Wordmark';
 import { errorMessage, isApiError } from '@/lib/api';
 import { useSession } from '@/lib/session/SessionProvider';
 import { emailError } from '@/lib/session/validation';
@@ -48,7 +49,8 @@ export default function SignIn() {
   };
 
   return (
-    <Screen title="Sign in" subtitle="Triage Cam staff account">
+    <Screen title="Sign in" subtitle="Triage Cam staff account" lead={<Wordmark />}>
+      <View style={{ gap: theme.space.space4 }}>
       <Field
         label="Email"
         value={email}
@@ -75,10 +77,13 @@ export default function SignIn() {
         returnKeyType="go"
         onSubmitEditing={() => void submit()}
       />
+      </View>
       {failure ? <Notice title="Not signed in" body={failure} /> : null}
-      <Button variant="primary" block label={busy ? 'Signing in' : 'Sign in'} disabled={busy} onPress={() => void submit()} />
-      <Button variant="quiet" block label="Create an account" onPress={() => router.push('/sign-up')} />
-      <Text style={[theme.type.caption, { color: theme.colors.inkMuted }]}>{PROTOTYPE_NOTICE}</Text>
+      <View style={{ gap: theme.space.space2 }}>
+        <Button variant="primary" block label={busy ? 'Signing in' : 'Sign in'} disabled={busy} onPress={() => void submit()} />
+        <Button variant="quiet" block label="Create an account" onPress={() => router.push('/sign-up')} />
+      </View>
+      <Text style={[theme.type.caption, { textAlign: 'center', color: theme.colors.inkFaint }]}>{PROTOTYPE_NOTICE}</Text>
     </Screen>
   );
 }

@@ -2,11 +2,12 @@ import { cx } from '@/lib/cx';
 
 import type { ScoreValue } from './types';
 
+// Only 3 is a solid fill.
 const FILLS: Record<ScoreValue, string> = {
-  0: 'bg-score-0 text-ink shadow-[inset_0_0_0_1px_var(--line-strong)]',
-  1: 'bg-score-1 text-ink',
+  0: 'bg-score-0 text-on-score-0',
+  1: 'bg-score-1 text-on-score-1',
   2: 'bg-score-2 text-on-score-2',
-  3: 'bg-score-3 text-on-critical',
+  3: 'bg-score-3 text-on-score-3',
 };
 
 export interface ScoreChipProps {
@@ -20,13 +21,10 @@ export interface ScoreChipProps {
 export function ScoreChip({ score, measured = 2, caption = true }: ScoreChipProps) {
   return (
     <span className="inline-flex items-center gap-2">
-      <span
-        aria-label={`Partial score ${score}`}
-        className={cx('inline-grid size-[28px] place-items-center rounded-sm font-mono text-[15px] font-semibold', FILLS[score])}
-      >
+      <span aria-label={`Partial score ${score}`} className={cx('inline-grid size-[22px] place-items-center rounded-sm type-caption font-medium tabular-nums', FILLS[score])}>
         {score}
       </span>
-      {caption ? <span className="text-[13px] text-ink-muted">{measured} of 7 parameters</span> : null}
+      {caption ? <span className="type-caption text-ink-faint">{measured} of 7 parameters</span> : null}
     </span>
   );
 }
