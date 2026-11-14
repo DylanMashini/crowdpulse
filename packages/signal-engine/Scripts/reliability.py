@@ -4,6 +4,7 @@
     python3 packages/signal-engine/Scripts/reliability.py controls --sittings <dir> --set tuning --work <dir>
     python3 packages/signal-engine/Scripts/reliability.py accepts  --work <dir> --set tuning
     python3 packages/signal-engine/Scripts/reliability.py degrade  --sittings <dir> --set tuning --work <dir>
+    python3 packages/signal-engine/Scripts/reliability.py adversarial --work <dir> [--weak]
 
 `--sittings` is a folder of sitting files with a `<name>.reference.jsonl` beside each, as the
 evaluation harness leaves them in its output directory (`<out>/ubfc`). `--set` is `tuning` or
@@ -23,6 +24,11 @@ controls  writes negative controls, sittings with no pulse in them, to <work>/co
 accepts   runs the controls and counts the seconds and the sittings that gave a heart rate.
 degrade   adds white noise of 0 to 3 counts to every colour of the real sittings and scores
           them: does a sitting with a weaker signal still end with the right rate, or a wrong one.
+adversarial  writes and runs the synthetic controls of QA round 1 (Scripts/adversarial.py lists the
+          families): noise, flicker, lighting, a moving and a bobbing head, splices, short sittings,
+          dropouts, periodic jumps, harmonics and a covered face. For sittings with no pulse it counts
+          those that end with a heart rate; for sittings with one, those that end right, at double
+          the rate, or otherwise wrong. `--weak` adds 648 faint pulses.
 
 Controls and degraded sittings are derived from recordings of real people: keep `--work`
 outside the repository. Needs numpy for `controls` and `degrade`.
@@ -255,9 +261,53 @@ def degrade(arguments):
         score_rows(f"noise {sigma} counts", files, run_all(arguments.engine, files, arguments.config), lambda name: True)
 
 
+def adversarial(arguments):
+    import numpy
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    import adversarial as controls_module
+    listed = controls_module.generate(pathlib.Path(arguments.work) / "adversarial", numpy, arguments.weak)
+    results = run_all(arguments.engine, [path for _, path, _ in listed], arguments.config)
+    rows = collections.defaultdict(collections.Counter)
+    notes = []
+    lingering = collections.defaultdict(list)
+    for (family, path, truth), (ticks, summary) in zip(listed, results):
+        valid = [tick for tick in ticks if tick["state"] == "valid"]
+        value = summary["heartRate"].get("value")
+        if family == "cover":
+            after = [tick["elapsed"] - 30 for tick in valid if tick["elapsed"] > 30.5]
+            lingering[path.stem.split("_")[1]].append(round(max(after)) if after else 0)
+            continue
+        key = family if family in ("splice", "harmonics", "weak") else f"{family}, {'no pulse' if truth is None else 'with a pulse'}"
+        row = rows[key]
+        row.update(sittings=1, seconds=len(ticks), valid=len(valid), ended=value is not None,
+                   whole=source_of(summary) == "whole_sitting", low=summary.get("heartRateConfidence") == "low")
+        if value is None:
+            continue
+        rates = [] if truth is None else list(truth) if isinstance(truth, tuple) else [truth]
+        if any(abs(value - rate) <= WITHIN_BPM for rate in rates):
+            row.update(right=1)
+        else:
+            double = any(abs(value - 2 * rate) <= 6 for rate in rates)
+            row.update(double=double, wrong=not double)
+            notes.append(f"{path.stem}: {value:.1f} bpm from {source_of(summary)}, {len(valid)} valid seconds"
+                         + (f", truth {truth}" if truth is not None else ""))
+    print("| Family | Sittings | Valid seconds | End with a heart rate | Right | Double the rate | Otherwise wrong | From the whole-sitting estimate | Lower confidence |")
+    print("|---|---|---|---|---|---|---|---|---|")
+    for key, row in rows.items():
+        pulse = "no pulse" not in key
+        print(f"| {key} | {row['sittings']} | {row['valid']} of {row['seconds']} | {row['ended']} "
+              f"| {row['right'] if pulse else ''} | {row['double'] if pulse else ''} | {row['wrong']} | {row['whole']} | {row['low']} |")
+    print()
+    print("Seconds a rate stays after the face is covered at 30 s (one figure per sitting):")
+    for step, seconds in lingering.items():
+        print(f"  {step}: {sorted(seconds)}")
+    print()
+    print("\n".join(notes))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("command", choices=["score", "controls", "accepts", "degrade"])
+    parser.add_argument("command", choices=["score", "controls", "accepts", "degrade", "adversarial"])
     parser.add_argument("--sittings")
     parser.add_argument("--set", choices=["tuning", "heldOut"], default="tuning")
     parser.add_argument("--split", default=str(REPO / "eval" / "split.json"))
@@ -267,8 +317,9 @@ def main():
     parser.add_argument("--extra", action="append", default=[])
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--weak", action="store_true")
     arguments = parser.parse_args()
-    if arguments.command != "accepts" and not arguments.sittings:
+    if arguments.command not in ("accepts", "adversarial") and not arguments.sittings:
         sys.exit("--sittings is needed")
     if arguments.command != "score" and not arguments.work:
         sys.exit("--work is needed, and belongs outside the repository")
@@ -276,7 +327,7 @@ def main():
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as file:
             file.write(arguments.config)
         arguments.config = file.name
-    {"score": score, "controls": controls, "accepts": accepts, "degrade": degrade}[arguments.command](arguments)
+    {"score": score, "controls": controls, "accepts": accepts, "degrade": degrade, "adversarial": adversarial}[arguments.command](arguments)
 
 
 if __name__ == "__main__":
