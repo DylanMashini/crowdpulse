@@ -29,6 +29,13 @@
       "when": 1794645677892,
       "tag": "0003_photo_removed_at",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794684475137,
+      "tag": "0004_heart_rate_confidence",
+      "breakpoints": true
     }
   ]
 }

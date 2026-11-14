@@ -15,6 +15,8 @@ export interface SittingChartProps {
   height?: number;
   /** The x axis covers at least this many seconds, so a running sitting draws left to right instead of rescaling. */
   minSeconds?: number;
+  /** The sitting is over: with no reading in it, the caption says so instead of waiting for one. */
+  ended?: boolean;
   className?: string;
 }
 
@@ -32,7 +34,7 @@ function lastValue(values: Array<number | null>): { index: number; value: number
  * The camera's heart rate over one sitting, second by second. Gaps stay gaps: nothing is
  * drawn across a second without a reading.
  */
-export function SittingChart({ values, title = 'Heart rate over the sitting', width = 640, height = 240, minSeconds = 0, className }: SittingChartProps) {
+export function SittingChart({ values, title = 'Heart rate over the sitting', width = 640, height = 240, minSeconds = 0, ended = false, className }: SittingChartProps) {
   const [hover, setHover] = useState<number | null>(null);
   const [asTable, setAsTable] = useState(false);
 
@@ -84,7 +86,7 @@ export function SittingChart({ values, title = 'Heart rate over the sitting', wi
         <div>
           <div className="type-subheading text-ink">{title}</div>
           <div className="type-caption text-ink-faint tabular-nums">
-            {present.length ? `${present.length} of ${count} seconds gave a reading` : 'Waiting for the first reading'}
+            {present.length ? `${present.length} of ${count} seconds gave a reading` : ended ? 'No second gave a live reading' : 'Waiting for the first reading'}
           </div>
         </div>
         <Button variant="quiet" aria-pressed={asTable} onClick={() => setAsTable(!asTable)}>
@@ -94,7 +96,9 @@ export function SittingChart({ values, title = 'Heart rate over the sitting', wi
 
       {present.length === 0 ? (
         <p className="border-t border-line py-4 type-dense text-ink-muted">
-          No readings in this sitting yet. The line starts with the first heart rate from the camera.
+          {ended
+            ? 'This sitting gave no live heart rate, so there is no line to draw.'
+            : 'No readings in this sitting yet. The line starts with the first heart rate from the camera.'}
         </p>
       ) : asTable ? (
         <div className="max-h-[264px] overflow-auto border-t border-line">

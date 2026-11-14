@@ -82,6 +82,12 @@ export const Statistics = z.object({
   waitingNow: z.object({
     patients: count,
     byState: z.record(TileState, count),
+    /**
+     * Of `byState['no-reading']`, the patients whose latest sitting gave a lower-confidence
+     * pulse: they have a reading, tagged, and are shown apart from those with none. Added
+     * after the first servers, so optional.
+     */
+    lowConfidence: count.optional(),
     medianMinutesWaiting: measure,
     longestMinutesWaiting: measure,
     /** Since the last observation, or since arrival for a patient not yet observed. */

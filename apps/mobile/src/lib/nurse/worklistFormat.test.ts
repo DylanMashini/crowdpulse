@@ -32,6 +32,10 @@ test('each state has its own words, and none of them is "normal"', () => {
   assert.equal(statusText('overdue', 42), 'Overdue, last seen 42 min ago');
   assert.equal(statusText('overdue', null), 'Overdue');
   assert.equal(statusText('no-reading', 5), 'No reading');
+  // The latest sitting gave a lower-confidence pulse: it did read something, and the words say so.
+  assert.equal(statusText('no-reading', null, true), 'Lower confidence, repeat');
+  assert.equal(statusText('observed', 3, true), 'Observed 3 min ago');
+  assert.equal(statusText('flag', 12, true), 'Trend flag');
 });
 
 test('a trend prints the value against the check-in baseline with a signed change', () => {
@@ -44,6 +48,16 @@ test('a trend prints the value against the check-in baseline with a signed chang
 test('a missing value is "none", never the baseline or a zero', () => {
   assert.deepEqual(trendText({ base: 82, now: null }), { kind: 'none' });
   assert.deepEqual(trendText({ base: null, now: null }), { kind: 'none' });
+});
+
+test('a lower-confidence pulse is tagged and compared with nothing; a re-check baseline says it is one', () => {
+  assert.deepEqual(trendText({ base: null, now: null, lowConfidence: 101.5 }), { kind: 'lowConfidence', now: '102', tag: 'Lower confidence' });
+  // Never "+40 from 72": the baseline is left out altogether.
+  assert.deepEqual(trendText({ base: 72, now: null, lowConfidence: 112 }), { kind: 'lowConfidence', now: '112', tag: 'Lower confidence' });
+  assert.deepEqual(trendText({ base: 72, now: null, lowConfidence: null }), { kind: 'none' });
+  const baseAt = new Date(2026, 10, 14, 10, 42).toISOString();
+  assert.deepEqual(trendText({ base: 55, now: 86, baseAt }), { kind: 'value', now: '86', base: 'from 55 (+31)', baseFrom: '10:42 re-check' });
+  assert.deepEqual(trendText({ base: 55, now: 86, baseAt: null }), { kind: 'value', now: '86', base: 'from 55 (+31)' });
 });
 
 test('the last-observed line covers never observed and a running sitting', () => {
@@ -134,6 +148,14 @@ test('the timeline is oldest first and keeps the sitting that failed', () => {
   // One parameter measured: the other is null, which the timeline prints as "No reading".
   assert.deepEqual(rows[3]!.vitals, { pulse: '108', breathing: null, score: 1 });
   assert.equal(rows[3]!.sourceLabel, 'Simulated');
+
+  // A lower-confidence pulse keeps its number and carries the tag; without the field there is none.
+  const weak = timelineRows([
+    { type: 'sitting', at: at(40), sittingId: id, kind: 'recheck', source: 'camera', heartRate: 101.5, heartRateConfidence: 'low', breathingRate: null, score: null },
+    { type: 'sitting', at: at(35), sittingId: id, kind: 'recheck', source: 'camera', heartRate: 84, heartRateConfidence: 'normal', breathingRate: null, score: 0 },
+  ]);
+  assert.deepEqual(weak[1]!.vitals, { pulse: '102', pulseNote: 'Lower confidence', breathing: null, score: null });
+  assert.deepEqual(weak[0]!.vitals, { pulse: '84', breathing: null, score: 0 });
 
   assert.equal(rows[4]!.state, 'flag');
   assert.equal(rows[4]!.note, 'Patient 14: pulse 82 at check-in, 108 now.');

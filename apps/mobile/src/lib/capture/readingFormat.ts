@@ -1,5 +1,14 @@
-import type { CaptureSource, Estimate, EstimateReason } from '@triagecam/contracts';
-import type { CaptureSittingSummary, VariabilityReason } from 'triage-capture';
+import {
+  EXPOSURE_STUCK,
+  EXPOSURE_STUCK_AFTER_SECONDS,
+  isLowConfidence,
+  LOWER_CONFIDENCE,
+  LOWER_CONFIDENCE_DETAIL,
+  type CaptureSource,
+  type Estimate,
+  type EstimateReason,
+} from '@triagecam/contracts';
+import type { CaptureSittingSummary, VariabilityReason, ViewfinderState } from 'triage-capture';
 
 import { wholeNumber } from '../format.ts';
 
@@ -11,8 +20,8 @@ const REASONS: Record<EstimateReason, string> = {
   no_face: 'Face not in view',
   face_changed: 'A different face came into view, starting again',
   exposure_adjusting: 'Exposure is still adjusting',
-  low_quality: 'Signal quality too low',
-  motion: 'Too much movement',
+  low_quality: 'Signal too weak. Keep still, more light',
+  motion: 'Too much movement. Keep still',
   gaps: 'Too many frames were dropped',
   band_edge: 'At the edge of the range the camera can measure',
   no_chest: 'Chest not in view',
@@ -21,6 +30,16 @@ const REASONS: Record<EstimateReason, string> = {
 
 export function reasonText(reason: EstimateReason | null): string {
   return reason ? REASONS[reason] : REASONS.low_quality;
+}
+
+/**
+ * What the viewfinder says in place of its usual sentence, when something else is called for.
+ * The camera locks its exposure on a face within a second or two. When it has been trying for
+ * `EXPOSURE_STUCK_AFTER_SECONDS` the face is too bright, too dark, or its red channel clips,
+ * and it will go on trying until the light changes: the operator is told to change it.
+ */
+export function viewfinderHint(state: ViewfinderState, secondsInState: number): string | undefined {
+  return state === 'locking' && secondsInState >= EXPOSURE_STUCK_AFTER_SECONDS ? `${EXPOSURE_STUCK}.` : undefined;
 }
 
 /** Where a live number comes from, for the line under it. */
@@ -111,6 +130,8 @@ export type SummaryItem = {
   value: string | null;
   unit: string;
   reason: string | null;
+  /** Says what kind of value this is when it is not the median of the sitting's readings. */
+  note?: string;
   coverage: number;
   experimental: boolean;
 };
@@ -141,6 +162,11 @@ function variabilityReason(reason: VariabilityReason | null | undefined): string
   return (reason && VARIABILITY_REASONS[reason]) ?? 'The engine did not report beat-to-beat values';
 }
 
+/** The sitting gave a heart rate, and it is one the station will not use as a baseline or for a flag. */
+export function hasLowConfidencePulse(summary: Pick<CaptureSittingSummary, 'heartRate' | 'heartRateConfidence'>): boolean {
+  return summary.heartRate.value != null && isLowConfidence(summary.heartRateConfidence);
+}
+
 /** The four measurements of a finished sitting, in the order SittingSummary shows them. */
 export function summaryItems(
   summary: CaptureSittingSummary,
@@ -155,6 +181,7 @@ export function summaryItems(
       value: value(summary.heartRate.value),
       unit: 'bpm',
       reason: summary.heartRate.value == null ? summaryReason(mainReasons.heartRate) : null,
+      note: hasLowConfidencePulse(summary) ? `${LOWER_CONFIDENCE}. ${LOWER_CONFIDENCE_DETAIL}` : undefined,
       coverage: summary.heartRate.coverage,
       experimental: false,
     },

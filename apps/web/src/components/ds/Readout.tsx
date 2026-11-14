@@ -36,6 +36,8 @@ export interface ReadoutProps {
   tag?: Provenance;
   /** Words for the tag when the kind's own word is not exact enough. */
   tagLabel?: ReactNode;
+  /** A second tag that qualifies the value itself, beside where it came from: "Lower confidence". */
+  qualifier?: ReactNode;
   /** A camera is reading this value now: the numerals take the accent and tick when they change. */
   live?: boolean;
   /** Drawn under the value: the live trace. */
@@ -46,7 +48,7 @@ export interface ReadoutProps {
  * One measured value with its unit, source and age. Without a value it prints "No reading" or
  * "Settling" in words with the reason: never a dash, a zero or the last good number.
  */
-export function Readout({ label, value, unit, size = 'lg', state = 'valid', icon, age, reason, tag, tagLabel, live, children }: ReadoutProps) {
+export function Readout({ label, value, unit, size = 'lg', state = 'valid', icon, age, reason, tag, tagLabel, qualifier, live, children }: ReadoutProps) {
   const foot =
     state === 'stale'
       ? `Stale, ${age ?? 'no recent reading'}`
@@ -87,6 +89,12 @@ export function Readout({ label, value, unit, size = 'lg', state = 'valid', icon
               {value}
             </span>
             {unit ? <span className={cx('text-ink-muted', size === 'md' ? 'type-caption' : 'type-dense')}>{unit}</span> : null}
+            {/* Beside the number it qualifies, so the header keeps its one line. */}
+            {qualifier ? (
+              <ProvenanceTag kind="experimental" className="ml-2 self-center">
+                {qualifier}
+              </ProvenanceTag>
+            ) : null}
           </>
         )}
       </div>

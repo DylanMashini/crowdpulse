@@ -26,6 +26,16 @@ public final class SignalEngine {
   private var frameCount = 0
   private var droppedFrames = 0
 
+  /// Set before the first frame to keep a `PulseDiagnostic` for every one-second heart-rate
+  /// reading. For tuning and field debugging: readings and the summary are the same with it
+  /// on or off, and it costs one more analysis for each window a check refuses early.
+  public var collectsDiagnostics = false {
+    didSet { pulse.collectsDiagnostics = collectsDiagnostics }
+  }
+  /// One entry per whole second since the first frame, in time order. Empty unless
+  /// `collectsDiagnostics` is set.
+  public private(set) var diagnostics: [PulseDiagnostic] = []
+
   public init(configuration: EngineConfiguration = .default) {
     self.configuration = configuration
     pulse = PulseTracker(configuration: configuration, fourier: fourier)
@@ -56,6 +66,14 @@ public final class SignalEngine {
         breathing.missedTick()
         let silent = TickEstimate.withheld(.stale, .noFrames)
         ticks.append(Tick(time: time, heart: silent, breathing: silent))
+      }
+      if collectsDiagnostics, var diagnostic = pulse.lastDiagnostic, let heart = ticks.last?.heart {
+        diagnostic.elapsed = time - first
+        diagnostic.state = heart.state
+        diagnostic.reason = heart.reason
+        diagnostic.value = heart.value
+        diagnostic.quality = heart.quality
+        diagnostics.append(diagnostic)
       }
     }
   }
@@ -127,11 +145,40 @@ public final class SignalEngine {
     func positive(_ value: Double?) -> Double? {
       value.flatMap { $0 > 0 ? $0 : nil }
     }
-    return SittingSummary(
+    // The sitting's heart rate is the median of its valid readings. When there are too few
+    // of those, the whole sitting is asked instead.
+    var heartRate = summary(\.heart)
+    var source: HeartRateSource? = heartRate.value == nil ? nil : .readings
+    var confidence: HeartRateConfidence? = heartRate.value == nil ? nil : .normal
+    let whole = WholeSittingAnalyzer(configuration: configuration).estimate(pulse.evidence, origin: first)
+    let valid = ticks.compactMap(\.heart.value)
+    func near(_ bpm: Double, _ other: Double) -> Bool {
+      abs(bpm - other) <= configuration.agreementToleranceBpm
+    }
+    if let median = heartRate.value {
+      // A handful of readings is what noise produces now and then. They stand for the
+      // sitting only if the sitting as a whole says the same, and then with less confidence.
+      if valid.count < configuration.minimumUncorroboratedReadings {
+        if whole.corroborates, let bpm = whole.heartRate, near(bpm, median) {
+          confidence = .low
+        } else {
+          heartRate = SummaryValue(
+            value: nil, coverage: heartRate.coverage, reason: SummaryReason.tooFewReadings.rawValue)
+          source = nil
+          confidence = nil
+        }
+      }
+    } else if whole.accepted, let bpm = whole.heartRate, valid.allSatisfy({ near(bpm, $0) }) {
+      // No readings to speak of, and the one or two there were do not say otherwise.
+      heartRate = SummaryValue(value: bpm, coverage: heartRate.coverage)
+      source = .wholeSitting
+      confidence = .low
+    }
+    var summary = SittingSummary(
       durationSeconds: duration,
       frameCount: frameCount,
       droppedFrames: droppedFrames,
-      heartRate: summary(\.heart),
+      heartRate: heartRate,
       breathingRate: summary(\.breathing),
       rmssd: SummaryValue(value: positive(beats.rmssd), coverage: beats.coverage, reason: beats.withheld?.rawValue),
       sdnn: SummaryValue(value: positive(beats.sdnn), coverage: beats.coverage, reason: beats.withheld?.rawValue),
@@ -139,6 +186,10 @@ public final class SignalEngine {
       timeToFirstReadingSeconds: firstValid.map { ticks[$0].time - first },
       longestDropoutSeconds: firstValid == nil ? duration : Double(longestDropout)
     )
+    summary.heartRateSource = source
+    summary.heartRateConfidence = confidence
+    summary.wholeSitting = whole.windows > 0 ? whole : nil
+    return summary
   }
 
   /// Median of the valid one-second readings, or the commonest reason there were too few.
@@ -161,8 +212,10 @@ public final class SignalEngine {
   /// Discards all history, as if newly created.
   public func reset() {
     pulse = PulseTracker(configuration: configuration, fourier: fourier)
+    pulse.collectsDiagnostics = collectsDiagnostics
     breathing = BreathingTracker(configuration: configuration, fourier: fourier)
     ticks.removeAll()
+    diagnostics.removeAll()
     firstFrameTime = nil
     lastFrameTime = nil
     frameCount = 0

@@ -6,7 +6,7 @@ import { publish, worklistChanged } from "../events.ts";
 import { flagToWire } from "../flags.ts";
 import { notifyFlagOpened } from "../push.ts";
 import type { FlagRow, SittingRow, PatientRow } from "../serialize.ts";
-import { hasSummary } from "../serialize.ts";
+import { hasSummary, trustedHeartRate } from "../serialize.ts";
 import { getSettings } from "../settings.ts";
 import { applyRules, type RuleState, type RuleStore } from "./apply.ts";
 import { handoffSentence } from "./handoff.ts";
@@ -26,10 +26,12 @@ export type SyncOptions = { now?: Date; notify?: boolean };
 export const sittingFacts = (row: SittingRow): SittingFacts => ({
   id: row.id,
   source: row.source,
+  kind: row.kind,
   startedAt: row.startedAt,
   endedAt: row.endedAt,
   finished: hasSummary(row),
-  heartRate: row.heartRate,
+  heartRate: trustedHeartRate(row),
+  lowConfidenceHeartRate: trustedHeartRate(row) === null ? row.heartRate : null,
   breathingRate: row.breathingRate,
 });
 
@@ -39,10 +41,13 @@ export const patientHandoff = (patient: Pick<PatientRow, "number" | "name">, sna
     label: patientLabel(patient),
     pulse: snapshot.flagDetail.pulse,
     breathing: snapshot.flagDetail.breathing,
+    pulseFrom: snapshot.pulseFrom,
+    breathingFrom: snapshot.breathingFrom,
     minutesLater: snapshot.minutesToLatestObservation,
     minutesSinceObserved: snapshot.minutesSinceObserved,
     minutesWaiting: snapshot.minutesWaiting,
     latestGaveNoReading: snapshot.latestGaveNoReading,
+    latestLowConfidencePulse: snapshot.latestLowConfidencePulse,
   });
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];

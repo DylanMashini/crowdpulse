@@ -11,10 +11,24 @@ export type TileState = z.infer<typeof TileState>;
 export const Score = z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]);
 export type Score = z.infer<typeof Score>;
 
-/** A value against the patient's own check-in baseline. `now: null` means no reading. */
+/**
+ * A value against the patient's own baseline for that parameter: the first sitting that gave a
+ * value that counts, which is normally the check-in. `now: null` means no reading that counts.
+ */
 export const Trend = z.object({
   base: z.number().nullable(),
   now: z.number().nullable(),
+  /**
+   * Set only when `base` is not from the check-in sitting (the check-in gave no value for this
+   * parameter, or a lower-confidence one): when the re-check it is from ended. Screens then say
+   * where the baseline came from ("from 55, 10:42 re-check") and never "at check-in".
+   */
+  baseAt: Timestamp.nullable().optional(),
+  /**
+   * Pulse only: the bpm the latest sitting gave with lower confidence. `now` is then null. It is
+   * shown tagged "Lower confidence" and is never compared with `base`, scored or flagged.
+   */
+  lowConfidence: z.number().nullable().optional(),
 });
 export type Trend = z.infer<typeof Trend>;
 
@@ -43,6 +57,13 @@ export const FlagDetail = z.object({
   minutesSinceObserved: z.number().nonnegative().nullable(),
 });
 export type FlagDetail = z.infer<typeof FlagDetail>;
+
+/**
+ * A baseline the flag was measured against is a re-check's, not the check-in's. Its label then
+ * says "baseline", never "check-in".
+ */
+export const hasReCheckBaseline = (detail: Pick<FlagDetail, 'pulse' | 'breathing'>): boolean =>
+  detail.pulse.baseAt != null || detail.breathing.baseAt != null;
 
 export const Flag = z.object({
   id: z.uuid(),

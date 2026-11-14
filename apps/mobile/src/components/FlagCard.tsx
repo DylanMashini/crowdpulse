@@ -1,4 +1,4 @@
-import { byFlagRule, type FlagAlert } from '@triagecam/contracts';
+import { byFlagRule, type FlagAlert, type FlagRule, hasReCheckBaseline } from '@triagecam/contracts';
 import { useState } from 'react';
 import { View } from 'react-native';
 
@@ -56,6 +56,12 @@ export function FlagCard({ alert, hidePatient, onOpen, sentence = 'show' }: Prop
   const rules = [...new Set(alert.flags.map((each) => each.rule))].sort(byFlagRule);
   const leadRule = rules[0] ?? flag.rule;
   const otherRules = rules.slice(1);
+  // A rule whose flag moved from a re-check's baseline does not say "check-in".
+  const ruleLabel = (rule: FlagRule) =>
+    flagRuleLabel(
+      rule,
+      alert.flags.some((each) => each.rule === rule && hasReCheckBaseline(each.detail)),
+    );
   const tinted = waiting && !hidePatient && alertSeverity(alert) === 'urgent';
 
   const press = async () => {
@@ -106,10 +112,10 @@ export function FlagCard({ alert, hidePatient, onOpen, sentence = 'show' }: Prop
         </View>
       )}
       <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: space.space2, rowGap: space.space2 }}>
-        <StatusBadge severity={closed ? 'stable' : alertSeverity(alert)} label={flagRuleLabel(leadRule)} />
+        <StatusBadge severity={closed ? 'stable' : alertSeverity(alert)} label={ruleLabel(leadRule)} />
         {otherRules.map((rule) => (
           <Text key={rule} style={[theme.type.caption, { color: colors.inkMuted }]}>
-            {flagRuleLabel(rule)}
+            {ruleLabel(rule)}
           </Text>
         ))}
         <Text style={[theme.type.caption, { color: tinted ? colors.inkMuted : colors.inkFaint, fontVariant: ['tabular-nums'] }]}>

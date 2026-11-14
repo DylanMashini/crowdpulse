@@ -1,12 +1,23 @@
 'use client';
 
-import type { Estimate, PatientRef, Sitting, StoredReading, SummaryValue } from '@triagecam/contracts';
+import {
+  EXPOSURE_STUCK,
+  EXPOSURE_STUCK_AFTER_SECONDS,
+  isLowConfidence,
+  LOWER_CONFIDENCE,
+  LOWER_CONFIDENCE_DETAIL,
+  type Estimate,
+  type PatientRef,
+  type Sitting,
+  type StoredReading,
+  type SummaryValue,
+} from '@triagecam/contracts';
 import Link from 'next/link';
 import { useMemo } from 'react';
 
 import { LiveTrace, PatientIdentity, QualityMeter, Readout, SittingChart, buttonClass, type IconName, type ReadoutState } from '@/components/ds';
 import { Section } from '@/components/ui/Panel';
-import { clockTime, rate, reasonText, seconds, secondsAgo } from '@/lib/format';
+import { clockTime, exposureIsStuck, rate, reasonText, seconds, secondsAgo } from '@/lib/format';
 import { provenanceOf } from '@/lib/mapping';
 
 /** No reading from the phone for this long: the last value is struck through as stale. */
@@ -61,17 +72,20 @@ function liveContent(readings: StoredReading[], pick: (reading: StoredReading) =
     return { state: 'valid', value: rate(estimate.value), age: secondsAgo(at, serverNow), coverage: estimate.coverage };
   }
   // The engine's own stale state arrives without a value, so there is nothing to strike through.
+  // Exposure that has not settled for seconds on end will not: say what to do about it.
+  const stuck = exposureIsStuck(readings.slice(-EXPOSURE_STUCK_AFTER_SECONDS).map((reading) => pick(reading).reason));
   return {
     state: estimate.state === 'settling' ? 'settling' : 'none',
-    reason: reasonText(estimate.reason),
+    reason: stuck ? EXPOSURE_STUCK : reasonText(estimate.reason),
     coverage: estimate.coverage,
   };
 }
 
-function summaryContent(value: SummaryValue, endedAt: string): ReadoutContent {
-  return value.value == null
-    ? { state: 'none', reason: 'No reading was accepted in this sitting', coverage: value.coverage }
-    : { state: 'valid', value: rate(value.value), age: `Median of the sitting that ended at ${clockTime(endedAt)}`, coverage: value.coverage };
+function summaryContent(value: SummaryValue, endedAt: string, lowConfidence = false): ReadoutContent {
+  if (value.value == null) return { state: 'none', reason: 'No reading was accepted in this sitting', coverage: value.coverage };
+  // A lower-confidence rate is not the median of anything much: say what it is instead.
+  const age = lowConfidence ? LOWER_CONFIDENCE_DETAIL : `Median of the sitting that ended at ${clockTime(endedAt)}`;
+  return { state: 'valid', value: rate(value.value), age, coverage: value.coverage };
 }
 
 interface VitalProps {
@@ -83,9 +97,11 @@ interface VitalProps {
   tag: ReturnType<typeof provenanceOf>;
   /** The sitting is running: the numerals take the accent and the trace draws at the reading's rate. */
   live: boolean;
+  /** Qualifies the value itself: "Lower confidence". */
+  qualifier?: string;
 }
 
-function Vital({ label, icon, unit, kind, content, tag, live }: VitalProps) {
+function Vital({ label, icon, unit, kind, content, tag, live, qualifier }: VitalProps) {
   const reading = live && content.state === 'valid' && content.value !== undefined;
   return (
     <div className="flex min-w-0 flex-col gap-3 p-4">
@@ -100,6 +116,7 @@ function Vital({ label, icon, unit, kind, content, tag, live }: VitalProps) {
         reason={content.reason}
         tag={tag.kind}
         tagLabel={tag.label}
+        qualifier={qualifier}
         live={live}
       >
         {live ? <LiveTrace kind={kind} rate={reading ? Number(content.value) : null} className="mt-3" /> : null}
@@ -128,7 +145,11 @@ export function SittingView({ sitting, patient, readings, serverNow }: SittingVi
   const provenance = provenanceOf(sitting.source);
   const tag = running && sitting.source === 'camera' ? { kind: 'live' as const, label: 'Live' } : provenance;
 
-  const heart = sitting.summary && sitting.endedAt ? summaryContent(sitting.summary.heartRate, sitting.endedAt) : liveContent(readings, (r) => r.heartRate, serverNow);
+  const lowConfidence = sitting.summary?.heartRate.value != null && isLowConfidence(sitting.summary.heartRateConfidence);
+  const heart =
+    sitting.summary && sitting.endedAt
+      ? summaryContent(sitting.summary.heartRate, sitting.endedAt, lowConfidence)
+      : liveContent(readings, (r) => r.heartRate, serverNow);
   const breathing =
     sitting.summary && sitting.endedAt ? summaryContent(sitting.summary.breathingRate, sitting.endedAt) : liveContent(readings, (r) => r.breathingRate, serverNow);
 
@@ -164,7 +185,7 @@ export function SittingView({ sitting, patient, readings, serverNow }: SittingVi
 
         {/* The two readings share one well, ruled down the middle: an instrument, not two cards. */}
         <div className="grid rounded-lg border border-line bg-surface-0 max-sm:divide-y sm:grid-cols-2 sm:divide-x divide-line">
-          <Vital label="Heart rate" icon="pulse" unit="bpm" kind="pulse" content={heart} tag={tag} live={running} />
+          <Vital label="Heart rate" icon="pulse" unit="bpm" kind="pulse" content={heart} tag={tag} live={running} qualifier={lowConfidence ? LOWER_CONFIDENCE : undefined} />
           <Vital label="Breathing rate" icon="breath" unit="breaths per min" kind="breath" content={breathing} tag={tag} live={running} />
         </div>
         {running ? <p className="mt-2 type-caption text-ink-faint">Each trace is drawn at the rate being read, not from the camera&apos;s raw signal.</p> : null}
@@ -179,7 +200,7 @@ export function SittingView({ sitting, patient, readings, serverNow }: SittingVi
               unit="s"
               value={summary.timeToFirstReadingSeconds == null ? undefined : rate(summary.timeToFirstReadingSeconds)}
               state={summary.timeToFirstReadingSeconds == null ? 'none' : 'valid'}
-              reason="No heart rate was accepted"
+              reason="No live heart rate"
             />
             <Readout size="md" label="Longest dropout" unit="s" value={rate(summary.longestDropoutSeconds)} />
           </div>
@@ -187,7 +208,7 @@ export function SittingView({ sitting, patient, readings, serverNow }: SittingVi
       </Section>
 
       <Section>
-        <SittingChart values={heartRates} minSeconds={60} />
+        <SittingChart values={heartRates} minSeconds={60} ended={summary != null} />
       </Section>
     </>
   );

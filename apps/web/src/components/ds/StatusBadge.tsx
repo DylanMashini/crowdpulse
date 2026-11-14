@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
 
+import { LOWER_CONFIDENCE_REPEAT } from '@triagecam/contracts';
+
 import { cx } from '@/lib/cx';
 import { minutesAgo } from '@/lib/format';
 
@@ -40,17 +42,23 @@ export interface StatusBadgeProps {
   minutes?: number | null;
   /** Leaves out how long ago, for a table row that has its own column for it. */
   brief?: boolean;
+  /**
+   * The latest sitting gave a pulse with lower confidence. A patient whose state is "no reading"
+   * for that reason reads "Lower confidence, repeat": the sitting did read something.
+   */
+  lowConfidence?: boolean;
   children?: ReactNode;
   className?: string;
 }
 
 /** The state of a waiting patient: a 22px chip with a dot and the words, in the severity colours. */
-export function StatusBadge({ state, severity, minutes, brief, children, className }: StatusBadgeProps) {
+export function StatusBadge({ state, severity, minutes, brief, lowConfidence, children, className }: StatusBadgeProps) {
   const look: Look = state === 'flag' ? (severity ?? 'watch') : state === 'observed' ? 'stable' : state === 'overdue' ? 'overdue' : 'none';
+  const words = state === 'no-reading' && lowConfidence ? LOWER_CONFIDENCE_REPEAT : brief ? BRIEF[state](minutes) : TEXT[state](minutes);
   return (
     <span className={cx('inline-flex h-[22px] items-center gap-[6px] rounded-sm pr-2 pl-[7px] type-caption font-medium whitespace-nowrap', LOOKS[look], className)}>
       {look === 'overdue' ? <Icon name="clock" size={12} /> : look === 'none' ? null : <span aria-hidden className="size-[6px] flex-none rounded-pill bg-current" />}
-      <span>{children ?? (brief ? BRIEF[state](minutes) : TEXT[state](minutes))}</span>
+      <span>{children ?? words}</span>
     </span>
   );
 }

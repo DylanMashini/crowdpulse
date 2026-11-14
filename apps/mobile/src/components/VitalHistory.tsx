@@ -2,10 +2,13 @@ import { useState } from 'react';
 import { View } from 'react-native';
 import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 
+import { LOWER_CONFIDENCE } from '@triagecam/contracts';
+
 import { wholeNumber } from '@/lib/format';
 import type { VitalPoint } from '@/lib/nurse/nurseFormat';
 
 import { Icon, type IconName } from './Icon';
+import { ProvenanceTag } from './ProvenanceTag';
 import { useScopedTheme } from './ThemeScope';
 import { Text } from './Text';
 
@@ -13,9 +16,13 @@ type Props = {
   label: string;
   icon: IconName;
   unit: string;
-  /** Every sitting that read this value, oldest first. */
+  /** Every sitting that read this value and counts, oldest first. The first is the baseline. */
   points: VitalPoint[];
-  /** The patient's severity while a trend flag is open. A value that has moved from check-in takes its colour. */
+  /** Where the baseline is from: "at check-in", or "at the 10:42 re-check". */
+  baseFrom?: string;
+  /** A pulse the newest sitting gave with lower confidence. Printed tagged; never a point on the line. */
+  lowConfidence?: number | null;
+  /** The patient's severity while a trend flag is open. A value that has moved from its baseline takes its colour. */
   severity?: 'watch' | 'urgent';
 };
 
@@ -26,28 +33,47 @@ const MIN_SPAN = 12;
 
 /**
  * One vital across the patient's sittings: the latest value in words, and a line from the
- * check-in value (the dashed rule) to now. The words carry the numbers; the line carries the shape.
+ * baseline (the dashed rule) to now. The words carry the numbers; the line carries the shape.
+ * A lower-confidence pulse is said beside them, tagged, and changes neither.
  */
-export function VitalHistory({ label, icon, unit, points, severity }: Props) {
+export function VitalHistory({ label, icon, unit, points, baseFrom = 'at check-in', lowConfidence = null, severity }: Props) {
   const theme = useScopedTheme();
   const { colors, space } = theme;
   const [width, setWidth] = useState(0);
   const first = points[0];
   const last = points[points.length - 1];
 
+  const weak =
+    lowConfidence != null ? (
+      <View
+        accessible
+        accessibilityLabel={`Latest sitting: ${wholeNumber(lowConfidence)} ${unit}, ${LOWER_CONFIDENCE.toLowerCase()}. Not used for trends. Repeat the sitting.`}
+        style={{ gap: space.space1 }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: space.space2, rowGap: space.space1 }}>
+          <Text style={[theme.type.caption, { color: colors.inkMuted, fontVariant: ['tabular-nums'] }]}>
+            {`Latest sitting: ${wholeNumber(lowConfidence)} ${unit}`}
+          </Text>
+          <ProvenanceTag kind="experimental" label={LOWER_CONFIDENCE} />
+        </View>
+        <Text style={[theme.type.caption, { color: colors.inkMuted }]}>Not used for trends. Repeat the sitting.</Text>
+      </View>
+    ) : null;
+
   if (!first || !last) {
     return (
       <View style={{ gap: space.space2 }}>
         <Heading label={label} icon={icon} />
         <View style={{ minHeight: theme.type.readoutLg.lineHeight, justifyContent: 'center' }}>
-          <Text style={[theme.type.heading, { color: colors.inkMuted }]}>No reading yet</Text>
+          <Text style={[theme.type.heading, { color: colors.inkMuted }]}>{weak ? 'No reading that counts yet' : 'No reading yet'}</Text>
         </View>
+        {weak}
       </View>
     );
   }
 
   const delta = Math.round(last.value) - Math.round(first.value);
-  const change = points.length < 2 ? 'One reading so far' : delta === 0 ? `Unchanged from ${wholeNumber(first.value)} at check-in` : `${delta > 0 ? '+' : '−'}${Math.abs(delta)} from ${wholeNumber(first.value)} at check-in`;
+  const change = points.length < 2 ? 'One reading so far' : delta === 0 ? `Unchanged from ${wholeNumber(first.value)} ${baseFrom}` : `${delta > 0 ? '+' : '−'}${Math.abs(delta)} from ${wholeNumber(first.value)} ${baseFrom}`;
 
   // Only a value that moved: a flagged patient's steady reading stays white.
   const moved = points.length > 1 && delta !== 0 && severity != null;
@@ -63,58 +89,61 @@ export function VitalHistory({ label, icon, unit, points, severity }: Props) {
   const y = (value: number) => HEIGHT - PAD - ((value - low) / span) * (HEIGHT - 2 * PAD);
 
   return (
-    <View
-      accessible
-      accessibilityLabel={`${label}: ${wholeNumber(last.value)} ${unit}. ${change}. ${points.length} readings.`}
-      style={{ gap: space.space2 }}
-    >
-      <Heading label={label} icon={icon} />
-      <View>
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', columnGap: 6 }}>
-          <Text style={[theme.type.readoutLg, { color: tone ?? colors.ink }]}>{wholeNumber(last.value)}</Text>
-          <Text style={[theme.type.dense, { color: colors.inkMuted }]}>{unit}</Text>
+    <View style={{ gap: space.space2 }}>
+      <View
+        accessible
+        accessibilityLabel={`${label}: ${wholeNumber(last.value)} ${unit}. ${change}. ${points.length} readings.`}
+        style={{ gap: space.space2 }}
+      >
+        <Heading label={label} icon={icon} />
+        <View>
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', columnGap: 6 }}>
+            <Text style={[theme.type.readoutLg, { color: tone ?? colors.ink }]}>{wholeNumber(last.value)}</Text>
+            <Text style={[theme.type.dense, { color: colors.inkMuted }]}>{unit}</Text>
+          </View>
+          <Text style={[theme.type.caption, { color: tone ?? colors.inkFaint, fontVariant: ['tabular-nums'] }]}>{change}</Text>
         </View>
-        <Text style={[theme.type.caption, { color: tone ?? colors.inkFaint, fontVariant: ['tabular-nums'] }]}>{change}</Text>
+        {points.length > 1 ? (
+          <View style={{ height: HEIGHT }} onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
+            {width > 0 ? (
+              <Svg width={width} height={HEIGHT}>
+                <Line
+                  x1={PAD}
+                  x2={width - PAD}
+                  y1={y(first.value)}
+                  y2={y(first.value)}
+                  stroke={colors.lineHover}
+                  strokeWidth={1}
+                  strokeDasharray="2 4"
+                />
+                <Polyline
+                  points={points.map((point) => `${x(point)},${y(point.value)}`).join(' ')}
+                  fill="none"
+                  stroke={colors.seriesEstimate}
+                  strokeWidth={1.5}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                />
+                {points.map((point, index) => {
+                  const newest = index === points.length - 1;
+                  return (
+                    <Circle
+                      key={index}
+                      cx={x(point)}
+                      cy={y(point.value)}
+                      r={newest ? 3 : 2}
+                      fill={newest ? colors.seriesEstimate : colors.surface2}
+                      stroke={colors.seriesEstimate}
+                      strokeWidth={1.5}
+                    />
+                  );
+                })}
+              </Svg>
+            ) : null}
+          </View>
+        ) : null}
       </View>
-      {points.length > 1 ? (
-        <View style={{ height: HEIGHT }} onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
-          {width > 0 ? (
-            <Svg width={width} height={HEIGHT}>
-              <Line
-                x1={PAD}
-                x2={width - PAD}
-                y1={y(first.value)}
-                y2={y(first.value)}
-                stroke={colors.lineHover}
-                strokeWidth={1}
-                strokeDasharray="2 4"
-              />
-              <Polyline
-                points={points.map((point) => `${x(point)},${y(point.value)}`).join(' ')}
-                fill="none"
-                stroke={colors.seriesEstimate}
-                strokeWidth={1.5}
-                strokeLinejoin="round"
-                strokeLinecap="round"
-              />
-              {points.map((point, index) => {
-                const newest = index === points.length - 1;
-                return (
-                  <Circle
-                    key={index}
-                    cx={x(point)}
-                    cy={y(point.value)}
-                    r={newest ? 3 : 2}
-                    fill={newest ? colors.seriesEstimate : colors.surface2}
-                    stroke={colors.seriesEstimate}
-                    strokeWidth={1.5}
-                  />
-                );
-              })}
-            </Svg>
-          ) : null}
-        </View>
-      ) : null}
+      {weak}
     </View>
   );
 }

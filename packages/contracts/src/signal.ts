@@ -15,6 +15,10 @@ export type RegionColor = z.infer<typeof RegionColor>;
 export const ExposureState = z.enum(['adjusting', 'locked']);
 export type ExposureState = z.infer<typeof ExposureState>;
 
+/** The face box in the upright frame, as fractions of its width and height. */
+export const FaceBox = z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() });
+export type FaceBox = z.infer<typeof FaceBox>;
+
 /** One line of a sitting file after the header. A missing key and null mean the same. */
 export const FrameRecord = z.object({
   t: z.number(),
@@ -26,6 +30,10 @@ export const FrameRecord = z.object({
   exposure: ExposureState,
   droppedFrames: z.int().nonnegative(),
   faceTrackId: z.int().nullish(),
+  /** Recorded for replay only; the engine does not read these three. */
+  face: FaceBox.nullish(),
+  iso: z.number().nullish(),
+  exposureMs: z.number().nullish(),
 });
 export type FrameRecord = z.infer<typeof FrameRecord>;
 
@@ -95,6 +103,14 @@ export const BeatInterval = z.object({
 });
 export type BeatInterval = z.infer<typeof BeatInterval>;
 
+/**
+ * How much of a sitting stands behind its heart rate. `normal`: at least ten valid one-second
+ * readings. `low`: fewer, or none; the rate rests on the engine's whole-sitting estimate. A
+ * `low` rate is shown as such and is not used as a baseline, for a score or for a flag.
+ */
+export const HeartRateConfidence = z.enum(['normal', 'low']);
+export type HeartRateConfidence = z.infer<typeof HeartRateConfidence>;
+
 /** What SignalEngine.finish() returns, unchanged. */
 export const SittingSummary = z.object({
   durationSeconds: z.number().nonnegative(),
@@ -107,5 +123,39 @@ export const SittingSummary = z.object({
   beatIntervals: z.array(BeatInterval).max(600),
   timeToFirstReadingSeconds: z.number().nonnegative().nullable(),
   longestDropoutSeconds: z.number().nonnegative(),
+  /**
+   * Null when there is no heart rate. Left out by builds from before it existed: the server
+   * then works it out from `heartRate.coverage` and the duration (`summaryHeartRateConfidence`).
+   */
+  heartRateConfidence: HeartRateConfidence.nullable().optional(),
 });
 export type SittingSummary = z.infer<typeof SittingSummary>;
+
+/** Whether a heart rate with this confidence is one to show as lower confidence and leave out of trends. */
+export const isLowConfidence = (confidence: HeartRateConfidence | null | undefined): boolean => confidence === 'low';
+
+/** A sitting's heart rate is `normal` only with this many valid one-second readings (the engine's `minimumUncorroboratedReadings`). */
+export const MIN_READINGS_FOR_NORMAL_CONFIDENCE = 10;
+
+/**
+ * The confidence of a summary's heart rate, whether or not the phone sent one: the lower of
+ * what the phone states and what the engine's own rule makes of the numbers the summary
+ * carries. The engine makes one reading a second, so `coverage` times the whole seconds of the
+ * sitting is how many readings were valid, and fewer than ten is `low`.
+ *
+ * A build of the capture module from before the field leaves it out, and the rule alone
+ * decides. A stated `low` stands whatever the numbers are: the engine knows why. A stated
+ * `normal` on fewer than ten valid readings is not believed, because the engine never says
+ * that, and a rate taken for `normal` becomes the baseline every later sitting is compared
+ * with. Null when there is no heart rate.
+ */
+export function summaryHeartRateConfidence(
+  summary: Pick<SittingSummary, 'durationSeconds' | 'heartRate' | 'heartRateConfidence'>,
+): HeartRateConfidence | null {
+  if (summary.heartRate.value === null) return null;
+  if (summary.heartRateConfidence === 'low') return 'low';
+  // 59.98 s of frames is 59 one-second readings; the small allowance is for a duration that lost digits on the way.
+  const readings = Math.floor(summary.durationSeconds + 1e-6);
+  const valid = Math.round(summary.heartRate.coverage * readings);
+  return valid < MIN_READINGS_FOR_NORMAL_CONFIDENCE ? 'low' : 'normal';
+}

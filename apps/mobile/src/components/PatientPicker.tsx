@@ -64,7 +64,7 @@ export function PatientPicker({ onPick }: Props) {
             patient={item.patient}
             size="md"
             detail={item.reasonForVisit}
-            status={statusText(item.state, item.minutesSinceObserved)}
+            status={statusText(item.state, item.minutesSinceObserved, item.pulse.lowConfidence != null)}
           />
         </Row>
       ))}

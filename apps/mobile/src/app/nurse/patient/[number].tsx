@@ -1,4 +1,4 @@
-import { type PatientDetailResponse, flagAlerts, patientLabel } from '@triagecam/contracts';
+import { LOWER_CONFIDENCE, type PatientDetailResponse, flagAlerts, patientLabel } from '@triagecam/contracts';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, RefreshControl, ScrollView, View, useWindowDimensions } from 'react-native';
@@ -24,7 +24,7 @@ import { useScreenFocused } from '@/hooks/useScreenFocused';
 import { api, errorMessage, isApiError } from '@/lib/api';
 import { sentences } from '@/lib/format';
 import { useNurse } from '@/lib/nurse/NurseProvider';
-import { dayTime, demographics, intakeRows, minutesSince, sittingRows, vitalSeries } from '@/lib/nurse/nurseFormat';
+import { dayTime, demographics, intakeRows, lastObservedMinutes, sittingRows, vitalTrend } from '@/lib/nurse/nurseFormat';
 import { patientSeverity } from '@/lib/nurse/severity';
 import { statusText, timelineRows } from '@/lib/nurse/worklistFormat';
 import { hairline, weight } from '@/theme';
@@ -103,6 +103,9 @@ export default function PatientScreen() {
   const closedFlags = flagAlerts(detail?.flags.filter((flag) => flag.closedAt != null) ?? []);
   const intake = patient ? intakeRows(patient, now) : [];
   const sittings = detail ? sittingRows(detail.sittings, now) : [];
+  // As the station counts them: a lower-confidence pulse is in no line and no baseline.
+  const pulse = vitalTrend(detail?.sittings ?? [], 'heartRate');
+  const breathing = vitalTrend(detail?.sittings ?? [], 'breathingRate');
   // Drawn from the state and the open flags the server sent for this patient.
   const severity = detail?.state
     ? patientSeverity({ state: detail.state, score: item?.score ?? null, flags: detail.flags })
@@ -154,7 +157,11 @@ export default function PatientScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: space.space3, rowGap: space.space1 }}>
               <StatusBadge
                 severity={severity}
-                label={statusText(detail.state, item?.minutesSinceObserved ?? lastObservedMinutes(detail, now))}
+                label={statusText(
+                  detail.state,
+                  item?.minutesSinceObserved ?? lastObservedMinutes(detail.sittings, now),
+                  pulse.lowConfidence != null,
+                )}
               />
               {item?.sittingInProgress ? <ProvenanceTag kind="live" label="Sitting in progress" /> : null}
               {item?.score != null ? <ScoreChip score={item.score} measured={item.parametersMeasured} /> : null}
@@ -198,7 +205,7 @@ export default function PatientScreen() {
               {/* One instrument panel: two cells with a hairline between them, side by side until the text is too large. */}
               <Card flush style={{ flexDirection: stacked ? 'column' : 'row' }}>
                 <View style={{ flex: stacked ? undefined : 1, padding: space.space4 }}>
-                  <VitalHistory label="Pulse" icon="pulse" unit="bpm" points={vitalSeries(detail.sittings, 'heartRate')} severity={vitalSeverity} />
+                  <VitalHistory label="Pulse" icon="pulse" unit="bpm" {...pulse} severity={vitalSeverity} />
                 </View>
                 <View
                   style={[
@@ -206,18 +213,14 @@ export default function PatientScreen() {
                     stacked ? { borderTopWidth: hairline } : { borderLeftWidth: hairline },
                   ]}
                 >
-                  <VitalHistory
-                    label="Breathing"
-                    icon="breath"
-                    unit="per min"
-                    points={vitalSeries(detail.sittings, 'breathingRate')}
-                    severity={vitalSeverity}
-                  />
+                  <VitalHistory label="Breathing" icon="breath" unit="per min" {...breathing} severity={vitalSeverity} />
                 </View>
               </Card>
               <Text style={[theme.type.caption, { color: colors.inkFaint }]}>
-                {detail.sittings.filter((sitting) => sitting.summary?.heartRate.value != null).length > 1
-                  ? 'Camera estimates, one per sitting. The dashed line is the check-in value.'
+                {pulse.points.length > 1 || breathing.points.length > 1
+                  ? pulse.baseFrom === 'at check-in' && breathing.baseFrom === 'at check-in'
+                    ? 'Camera estimates, one per sitting. The dashed line is the check-in value.'
+                    : 'Camera estimates, one per sitting. The dashed line is the baseline.'
                   : 'Camera estimates, one per sitting'}
               </Text>
             </Section>
@@ -258,6 +261,7 @@ export default function PatientScreen() {
                         <Text style={[theme.type.bodyStrong, { color: colors.ink }]}>{row.title}</Text>
                         <Text style={[theme.type.caption, { color: colors.inkFaint, fontVariant: ['tabular-nums'] }]}>{row.time}</Text>
                         {row.running ? <ProvenanceTag kind="live" label="Running" /> : null}
+                        {row.pulseLowConfidence ? <ProvenanceTag kind="experimental" label={LOWER_CONFIDENCE} /> : null}
                         {row.sourceLabel ? <ProvenanceTag kind="recording" label={row.sourceLabel} /> : null}
                       </View>
                       {row.running ? null : (
@@ -311,14 +315,6 @@ export default function PatientScreen() {
       </ScrollView>
     </SafeAreaView>
   );
-}
-
-/** Whole minutes since the last sitting that gave a pulse or a breathing rate, or null. */
-function lastObservedMinutes(detail: PatientDetailResponse, now: number): number | null {
-  const observed = detail.sittings.filter(
-    (sitting) => sitting.endedAt && (sitting.summary?.heartRate.value != null || sitting.summary?.breathingRate.value != null),
-  );
-  return minutesSince(observed[observed.length - 1]?.endedAt, now);
 }
 
 function Reading({ name, value, unit }: { name: string; value: string | null; unit: string }) {

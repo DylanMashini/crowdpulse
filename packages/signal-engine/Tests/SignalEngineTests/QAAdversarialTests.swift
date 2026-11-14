@@ -241,13 +241,14 @@ func qaScene(_ change: (inout QAScene) -> Void) -> QAScene {
 }
 
 @Suite struct QAMotionAndLight {
-  @Test func shortMotionBurstRejectsTheWholeWindow() {
-    // 0.7 s is 7% of a 10 s window, over the 5% motion share.
+  @Test func shortMotionBurstIsCutOutAndNeverReadAsPulse() {
+    // 0.7 s of movement used to refuse every window it was in, ten seconds of them. Now
+    // those frames are cut and the window is read around them.
     let s = qa(qaScene { $0.moving = { $0 >= 30 && $0 < 30.7 } })
     print(s.line("motion 30-30.7", truth: { _ in 72 }))
     // Window up to 10 s: seconds 31..39 contain the burst.
     let inside = s.result.readings.filter { $0.elapsed >= 31 && $0.elapsed <= 39 }
-    #expect(inside.allSatisfy { $0.heartRate.value == nil })
+    #expect(inside.contains { $0.heartRate.value != nil })
     #expect(s.hr.allSatisfy { abs($0.1 - 72) <= 3 })
   }
 
@@ -592,17 +593,46 @@ func qaScene(_ change: (inout QAScene) -> Void) -> QAScene {
   @Test func faceCoveredButTrackerStillReportsFace() {
     // Hand over the face: tracker keeps a face but region colours become hand skin with no pulse
     // and a large step. The engine must not show a number from the hand for long.
-    let base = qaScene { $0.seconds = 60 }.frames()
-    let frames = recolour(base) { t, _, c in
-      if t - 5000 >= 30 && t - 5000 < 45 {
-        // Replace with a static colour plus noise: no pulse.
-        c = RegionColor(r: 200 + (c.r - 180) * 0.0, g: 150, b: 130)
+    for seed in [7, 8, 9, 10, 11, 12] as [UInt64] {
+      let base = qaScene { $0.seconds = 60; $0.seed = seed }.frames()
+      // The hand has the sensor's noise like everything else. A perfectly constant colour
+      // (what this test used before) is the easiest case there is: nothing in it can pass
+      // for a rhythm.
+      var noise = SplitMix64(state: seed &+ 500)
+      let frames = recolour(base) { t, _, c in
+        if t - 5000 >= 30 && t - 5000 < 45 {
+          c = RegionColor(
+            r: 200 + 0.25 * noise.nextGaussian(), g: 150 + 0.25 * noise.nextGaussian(),
+            b: 130 + 0.25 * noise.nextGaussian())
+        }
       }
+      let r = QAStats(result: SittingReplay.run(frames))
+      print(r.line("hand cover 30-45 with face reported, seed \(seed)", truth: { _ in 72 }))
+      // A window reaches ten seconds back, so the face's rate outlives the face until the
+      // newest four seconds stop holding it: they must score at the rate themselves
+      // (`minimumRecentQuality`) and be as large there as the window is
+      // (`minimumRecentAmplitudeShare`). Two seconds, as it was when a step in brightness
+      // was refused as motion; four while only the first of those two checks existed.
+      let during = r.result.readings.filter { $0.elapsed >= 33 && $0.elapsed < 45 }
+      #expect(during.allSatisfy { $0.heartRate.value == nil }, "seed \(seed)")
+      // In those two seconds the rate may drift a little as the pulse runs out of the
+      // window: 2.7 bpm at worst over these seeds. (2 bpm held only for the constant hand.)
+      #expect(r.hr.allSatisfy { abs($0.1 - 72) <= 3 }, "seed \(seed)")
     }
-    let r = QAStats(result: SittingReplay.run(frames))
-    print(r.line("hand cover 30-45 with face reported", truth: { _ in 72 }))
-    let during = r.result.readings.filter { $0.elapsed >= 32 && $0.elapsed < 45 }
-    #expect(during.allSatisfy { $0.heartRate.value == nil })
+  }
+
+  @Test func thePulseLeavesThePictureWithoutAnyStep() {
+    // The same skin colour and brightness, the pulse simply gone: nothing for a motion or
+    // brightness check to see. The newest seconds of each window have to hold the rhythm.
+    for seed in [7, 8, 9, 10, 11, 12] as [UInt64] {
+      let person = qaScene { $0.seed = seed }.frames()
+      let empty = qaScene { $0.seed = seed; $0.pulseAmp = 0 }.frames()
+      let frames = zip(person, empty).map { $0.t - 5000 < 30 ? $0 : $1 }
+      let r = QAStats(result: SittingReplay.run(frames))
+      print(r.line("pulse gone at 30, no step, seed \(seed)", truth: { _ in 72 }))
+      #expect(r.result.readings.filter { $0.elapsed >= 33 }.allSatisfy { $0.heartRate.value == nil }, "seed \(seed)")
+      #expect(r.hr.allSatisfy { abs($0.1 - 72) <= 2 })
+    }
   }
 }
 

@@ -6,6 +6,11 @@ struct PowerSpectrum {
   var power: [Double]
   var binHz: Double
 
+  init(power: [Double], binHz: Double) {
+    self.power = power
+    self.binHz = binHz
+  }
+
   init(_ spectrum: Fourier.Spectrum) {
     let half = spectrum.real.count / 2
     power = (0...half).map { spectrum.real[$0] * spectrum.real[$0] + spectrum.imaginary[$0] * spectrum.imaginary[$0] }
@@ -34,6 +39,14 @@ struct PeakSearch {
   var tieRatio: Double
   /// Half-width of the interval the quality score integrates around the peak.
   var qualityHalfWidthHz: Double
+}
+
+/// The strongest peak of a spectrum before anything has judged it.
+struct PeakCandidate: Equatable {
+  var hz: Double
+  var quality: Double
+  /// The peak is at the edge of the search range, so the true peak is probably outside it.
+  var atEdge: Bool
 }
 
 enum PeakOutcome: Equatable {
@@ -65,12 +78,20 @@ extension PowerSpectrum {
   /// score; it only decides between two peaks that are tied in power, where the lower one
   /// (the fundamental) wins.
   func strongestPeak(_ search: PeakSearch) -> PeakOutcome {
+    guard let candidate = strongestCandidate(search) else { return .flat }
+    return candidate.atEdge
+      ? .bandEdge(quality: candidate.quality) : .peak(hz: candidate.hz, quality: candidate.quality)
+  }
+
+  /// The peak `strongestPeak` judges, with its frequency kept even when it sits at the edge
+  /// of the search range. Nil when the range holds no power.
+  func strongestCandidate(_ search: PeakSearch) -> PeakCandidate? {
     let low = max(1, Int((search.rangeHz.lowerBound / binHz).rounded(.up)))
     let high = min(power.count - 2, Int((search.rangeHz.upperBound / binHz).rounded(.down)))
-    guard low < high else { return .flat }
+    guard low < high else { return nil }
     var best = low
     for bin in low...high where power[bin] > power[best] { best = bin }
-    guard power[best] > 0 else { return .flat }
+    guard power[best] > 0 else { return nil }
 
     var chosen = best
     let tieFloor = power[best] * search.tieRatio
@@ -88,7 +109,7 @@ extension PowerSpectrum {
       chosen == low || chosen == high
       || frequency < search.rangeHz.lowerBound + search.edgeMarginHz
       || frequency > search.rangeHz.upperBound - search.edgeMarginHz
-    return atEdge ? .bandEdge(quality: quality) : .peak(hz: frequency, quality: quality)
+    return PeakCandidate(hz: frequency, quality: quality, atEdge: atEdge)
   }
 
   /// Whether the spectrum has a peak of its own within `toleranceHz` of half of `frequency`.

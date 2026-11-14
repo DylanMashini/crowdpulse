@@ -88,7 +88,7 @@ export function WorklistTable({ rows, selected, onSelect }: WorklistTableProps) 
                   />
                 </td>
                 <td className={tableCell}>
-                  <StatusBadge state={row.state} severity={row.severity} minutes={row.minutes} brief />
+                  <StatusBadge state={row.state} severity={row.severity} minutes={row.minutes} lowConfidence={row.pulse?.lowConfidence != null} brief />
                 </td>
                 <td className={tableCell}>{row.score != null ? <ScoreChip score={row.score} caption={false} /> : <span className={faint}>Not scored</span>}</td>
                 <td className={cx(tableCell, 'text-right')}>

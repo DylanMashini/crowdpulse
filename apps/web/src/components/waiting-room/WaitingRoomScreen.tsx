@@ -11,6 +11,7 @@ import { LiveStatus } from '@/components/ui/LiveStatus';
 import { PageHeader, StaleNotice } from '@/components/ui/Panel';
 import { Segmented } from '@/components/ui/Segmented';
 import { StateMessage } from '@/components/ui/StateMessage';
+import { waitingCounts } from '@/lib/format';
 import { rowSeverity, toWorklistRow } from '@/lib/mapping';
 
 type View = 'list' | 'wall';
@@ -21,8 +22,8 @@ function Count({ value, className }: { value: number; className?: string }) {
 
 /** What the room holds, in one sentence, so the counts do not have to be read off the rows. */
 function summarise(items: WorklistItem[]): ReactNode {
-  const count = (state: WorklistItem['state']) => items.filter((item) => item.state === state).length;
-  const flags = count('flag');
+  // A lower-confidence pulse is a reading, tagged: counted as that, not as "without a reading".
+  const { flags, overdue, noReading, lowConfidence } = waitingCounts(items);
   // The flag count takes the colour of the worst flag in the room, as its rows do.
   const flagTone = items.some((item) => item.state === 'flag' && rowSeverity(item) === 'urgent') ? 'text-urgent' : 'text-watch';
   const parts: ReactNode[] = [];
@@ -33,17 +34,24 @@ function summarise(items: WorklistItem[]): ReactNode {
       </span>,
     );
   }
-  if (count('overdue')) {
+  if (overdue) {
     parts.push(
       <span key="overdue">
-        <Count value={count('overdue')} /> overdue
+        <Count value={overdue} /> overdue
       </span>,
     );
   }
-  if (count('no-reading')) {
+  if (noReading) {
     parts.push(
       <span key="no-reading">
-        <Count value={count('no-reading')} /> without a reading
+        <Count value={noReading} /> without a reading
+      </span>,
+    );
+  }
+  if (lowConfidence) {
+    parts.push(
+      <span key="lower-confidence">
+        <Count value={lowConfidence} /> lower confidence
       </span>,
     );
   }

@@ -20,14 +20,14 @@ const NUMBERS: Record<NumberKey, { label: string; unit: string; min: number; max
     unit: 'bpm',
     min: 1,
     max: 100,
-    hint: 'From check-in, on two observations in a row. 1 to 100.',
+    hint: 'From baseline, on two observations in a row. 1 to 100.',
   },
   breathingDeltaPerMin: {
     label: 'Breathing change',
     unit: 'breaths per min',
     min: 1,
     max: 30,
-    hint: 'From check-in, on two observations in a row. 1 to 30.',
+    hint: 'From baseline, on two observations in a row. 1 to 30.',
   },
   recheckIntervalMin: {
     label: 'Re-check interval',
@@ -135,8 +135,8 @@ function SettingsForm({ saved, savedAt, onSaved }: { saved: Settings; savedAt: s
     <form onSubmit={onSubmit} noValidate className="flex max-w-[720px] flex-col gap-5 p-5">
       <Panel heading="Trend rules">
         <div className="divide-y divide-line">
-          {toggle('scoreRiseEnabled', 'Flag a rise in partial score', 'The two latest observations both score higher than check-in')}
-          {toggle('baselineShiftEnabled', 'Flag a move from the check-in baseline', 'Pulse or breathing differs from check-in by more than the amounts below')}
+          {toggle('scoreRiseEnabled', 'Flag a rise in partial score', 'The two latest observations both score higher than baseline')}
+          {toggle('baselineShiftEnabled', 'Flag a move from baseline', 'Pulse or breathing differs from baseline by more than the amounts below. Baseline is check-in, or the first re-check with a reading')}
           <div className={fields}>
             {field('pulseDeltaBpm')}
             {field('breathingDeltaPerMin')}

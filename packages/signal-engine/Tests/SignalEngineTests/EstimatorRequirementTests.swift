@@ -65,7 +65,10 @@ private let search = PulseAnalyzer(configuration: .default, fourier: Fourier()).
     #expect(strict.heartReasons(in: 12...59).isSubset(of: [.lowQuality, .awaitingAgreement]))
     #expect(strict.summary.heartRate.reason == EstimateReason.lowQuality.rawValue)
 
-    let loose = replay(faint) { $0.qualityThreshold = 0.2 }
+    let loose = replay(faint) {
+      $0.qualityThreshold = 0.2
+      $0.minimumRecentQuality = 0
+    }
     #expect(loose.heartRates.count >= 10)
   }
 
@@ -87,21 +90,67 @@ private let search = PulseAnalyzer(configuration: .default, fourier: Fourier()).
     #expect(one.summary.timeToFirstReadingSeconds == three.summary.timeToFirstReadingSeconds.map { $0 - 2 })
   }
 
-  @Test func windowsMustAgreeAndBeConsecutive() {
-    var gate = AgreementGate(required: 3, tolerance: 5)
+  @Test func threeOfTheNewestFiveWindowsMustAgreeAndTheNewestIsOneOfThem() {
+    var gate = AgreementGate(required: 3, span: 5, tolerance: 5)
     gate.push(70)
     gate.push(72)
     #expect(!gate.agreed)
     gate.push(74)
     #expect(gate.agreed)
+    #expect(gate.spread == 4)
+    // A rate that agrees with nothing is not shown, whatever came before it.
     gate.push(80)
     #expect(!gate.agreed)
+    // Nor is a window that was refused.
+    gate.push(nil)
+    #expect(!gate.agreed)
+    // One refused window and one stray rate do not cost the reading after them: 72, 74
+    // and 73 are three of the newest five.
+    gate.push(73)
+    #expect(gate.agreed)
+    // Five windows on, the old rates are gone.
+    for _ in 0..<3 { gate.push(nil) }
+    gate.push(73)
+    #expect(!gate.agreed)
+  }
+
+  @Test func ratesThatSpanMoreThanTheToleranceDoNotAgree() {
+    // 70 and 78 are each within 5 of 74, but not of each other.
+    var gate = AgreementGate(required: 3, span: 5, tolerance: 5)
+    gate.push(70)
+    gate.push(78)
+    gate.push(74)
+    #expect(!gate.agreed)
+    #expect(gate.spread == nil)
+    gate.push(75)
+    #expect(gate.agreed)
+    #expect((gate.spread ?? 9) <= 5)
+  }
+
+  @Test func aSpanOfThreeIsThreeInARow() {
+    var gate = AgreementGate(required: 3, span: 3, tolerance: 5)
+    gate.push(70)
+    gate.push(72)
+    gate.push(74)
+    #expect(gate.agreed)
     gate.push(nil)
     gate.push(80)
     gate.push(81)
     #expect(!gate.agreed)
     gate.push(82)
     #expect(gate.agreed)
+  }
+
+  /// 45 bpm at 30 frames per second: one early window lands within the margin of the
+  /// search edge and is refused. Three in a row then starts counting again.
+  @Test func oneRefusedWindowDoesNotRestartTheCount() {
+    let slow = sitting { $0.heartRateBpm = 45; $0.frameRate = 30; $0.seed = 45 }
+    let fiveWide = replay(slow)
+    let inARow = replay(slow) { $0.agreementSpanWindows = 3 }
+    #expect(fiveWide.heartRates.count > inARow.heartRates.count)
+    #expect(fiveWide.heartRates.allSatisfy { abs($0.bpm - 45) <= 2 })
+    let diagnostics = SittingReplay.run(slow.frames(), diagnostics: true).diagnostics
+    #expect(diagnostics.filter { $0.state == .valid }.allSatisfy { ($0.passingWindows ?? 0) >= 3 })
   }
 }
 
@@ -299,18 +348,44 @@ private let search = PulseAnalyzer(configuration: .default, fourier: Fourier()).
 @Suite struct Requirement9MotionOverTheWholeWindow {
   private let moved = sitting { $0.motionBursts = [.init(start: 20, end: 21.5)] }
 
-  @Test func motionEarlierInTheWindowStillRejectsIt() {
-    let result = replay(moved)
+  @Test func motionEarlierInTheWindowIsCutOutForAsLongAsItIsInside() {
+    let result = SittingReplay.run(moved.frames(), diagnostics: true)
     #expect(result.heartRate(at: 19).state == .valid)
-    // The movement stopped at 21.5 s. Seconds later it is still inside the window.
-    #expect(result.heartReasons(in: 22...28) == [.motion])
-    #expect(result.heartRates.contains { $0.elapsed > 33 && abs($0.bpm - 72) <= 2 })
+    // The movement stopped at 21.5 s. Seconds later it is still inside the window, and it
+    // is still kept out of the analysis: the window is read around it.
+    for second in 23...30 {
+      #expect((result.diagnostics[second - 1].motionShare ?? 0) >= 0.14, "second \(second)")
+    }
+    #expect(result.diagnostics[33].motionShare == 0)
+    #expect(result.heartRates.filter { $0.elapsed > 22.5 && $0.elapsed < 31.5 }.count >= 2)
+    #expect(result.heartRates.allSatisfy { abs($0.bpm - 72) <= 2 })
+  }
+
+  @Test func aWindowThatIsMostlyMovementIsRejected() {
+    let result = replay(sitting { $0.motionBursts = [.init(start: 20, end: 26)] })
+    // More than `maximumDisturbedShare` of every window from here to there is movement.
+    #expect(result.heartReasons(in: 24...32) == [.motion])
+    #expect(result.heartRates.contains { $0.elapsed > 36 && abs($0.bpm - 72) <= 2 })
+    #expect(result.heartRates.allSatisfy { abs($0.bpm - 72) <= 2 })
+  }
+
+  /// The check this replaced compared brightness with a running average, so a lamp
+  /// dimming on a still face was "motion". Brightness common to the channels is not.
+  @Test func brightnessAloneIsNotMotion() {
+    let still = sitting()
+    let dimmed = recolour(still.frames()) { t, _, colour in
+      guard t - still.startTime >= 25 else { return }
+      colour = RegionColor(r: colour.r * 0.9, g: colour.g * 0.9, b: colour.b * 0.9)
+    }
+    let result = replay(dimmed)
+    #expect(!result.heartReasons(in: 20...40).contains(.motion))
     #expect(result.heartRates.allSatisfy { abs($0.bpm - 72) <= 2 })
   }
 
   @Test func theMotionLimitsAreParameters() {
     let blind = replay(moved) {
-      $0.motionColourDeviation = 10
+      $0.colourJumpDeviation = 10
+      $0.colourJumpCeiling = 10
       $0.motionChestSpeed = 10
     }
     #expect(!blind.heartReasons(in: 20...40).contains(.motion))
@@ -375,7 +450,7 @@ private let search = PulseAnalyzer(configuration: .default, fourier: Fourier()).
     let analyzer = PulseAnalyzer(configuration: .default, fourier: Fourier())
     var history = PulseHistory()
     for frame in oneBadRegion where frame.facePresent && frame.t < 1020 {
-      history.append(time: frame.t, frame: frame, motion: false)
+      history.append(time: frame.t, frame: frame, colourChange: 0, chestMotion: false)
     }
     let range = history.index(atOrAfter: 1010)..<history.times.count
     let regions = history.regions(in: range, rate: 60).map(\.series)
@@ -391,7 +466,7 @@ private let search = PulseAnalyzer(configuration: .default, fourier: Fourier()).
   }
 
   @Test func theReadingSurvivesOnePoorRegion() {
-    let result = replay(oneBadRegion) { $0.motionColourDeviation = 1 }
+    let result = replay(oneBadRegion) { $0.colourJumpDeviation = 10; $0.colourJumpCeiling = 10 }
     #expect(result.heartRates.count >= 40)
     #expect(result.heartRates.allSatisfy { abs($0.bpm - 72) <= 2 })
   }

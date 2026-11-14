@@ -6,12 +6,17 @@ public enum SittingReplay {
   public struct Result: Sendable, Equatable {
     public var readings: [Reading]
     public var summary: SittingSummary
+    /// One per whole second of the sitting. Empty unless `run` was asked for diagnostics.
+    public var diagnostics: [PulseDiagnostic] = []
   }
 
+  /// - Parameter diagnostics: also collect a `PulseDiagnostic` per second. The readings and
+  ///   the summary are the same either way.
   public static func run(
-    _ frames: [FrameRecord], configuration: EngineConfiguration = .default
+    _ frames: [FrameRecord], configuration: EngineConfiguration = .default, diagnostics: Bool = false
   ) -> Result {
     let engine = SignalEngine(configuration: configuration)
+    engine.collectsDiagnostics = diagnostics
     var readings: [Reading] = []
     guard let first = frames.first else {
       return Result(readings: [], summary: engine.finish())
@@ -24,7 +29,7 @@ public enum SittingReplay {
         nextReadingTime += 1
       }
     }
-    return Result(readings: readings, summary: engine.finish())
+    return Result(readings: readings, summary: engine.finish(), diagnostics: engine.diagnostics)
   }
 }
 
@@ -126,18 +131,24 @@ public struct ReferenceComparison: Codable, Sendable, Equatable {
   /// A reading pairs with the nearest reference sample no further away than this, in seconds.
   public static let pairingSeconds = 1.5
 
+  /// The reference heart rate nearest to `elapsed`, or nil when none is within `pairingSeconds`.
+  public static func reference(at elapsed: Double, in reference: [ReferenceSample]) -> Double? {
+    guard
+      let nearest = reference.min(by: { abs($0.elapsed - elapsed) < abs($1.elapsed - elapsed) }),
+      abs(nearest.elapsed - elapsed) <= pairingSeconds
+    else { return nil }
+    return nearest.heartRate
+  }
+
   public init(replay: SittingReplay.Result, reference: [ReferenceSample]) {
     var errors: [Double] = []
     var pairedReference = 0.0
     for reading in replay.readings {
       guard let estimate = reading.heartRate.value,
-        let nearest = reference.min(by: {
-          abs($0.elapsed - reading.elapsed) < abs($1.elapsed - reading.elapsed)
-        }),
-        abs(nearest.elapsed - reading.elapsed) <= ReferenceComparison.pairingSeconds
+        let paired = ReferenceComparison.reference(at: reading.elapsed, in: reference)
       else { continue }
-      errors.append(estimate - nearest.heartRate)
-      pairedReference += nearest.heartRate
+      errors.append(estimate - paired)
+      pairedReference += paired
     }
     let pairs = Double(errors.count)
     pairedReadings = errors.count

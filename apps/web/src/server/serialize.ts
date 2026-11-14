@@ -1,4 +1,15 @@
-import type { Device, Estimate, EstimateReason, Patient, PatientRef, Sitting, StoredReading, User } from "@triagecam/contracts";
+import {
+  type Device,
+  type Estimate,
+  type EstimateReason,
+  type HeartRateConfidence,
+  isLowConfidence,
+  type Patient,
+  type PatientRef,
+  type Sitting,
+  type StoredReading,
+  type User,
+} from "@triagecam/contracts";
 
 import type { schema } from "../db/client.ts";
 
@@ -64,6 +75,18 @@ export function ageInYears(dateOfBirth: string | null, now = new Date()): number
   return age < 0 ? null : age;
 }
 
+/** The stored confidence of a sitting's heart rate. Sittings from before the column existed count as normal. */
+export const heartRateConfidence = (row: Pick<SittingRow, "heartRate" | "heartRateConfidence">): HeartRateConfidence | null =>
+  row.heartRate === null ? null : row.heartRateConfidence === "low" ? "low" : "normal";
+
+/**
+ * The heart rate that baselines, scores, flags and statistics may use: null when the sitting
+ * gave none, and when it gave one with lower confidence. That one is shown with the sitting and
+ * nowhere else: a baseline that is wrong raises or hides a flag for the rest of the visit.
+ */
+export const trustedHeartRate = (row: Pick<SittingRow, "heartRate" | "heartRateConfidence">): number | null =>
+  isLowConfidence(heartRateConfidence(row)) ? null : row.heartRate;
+
 /** A sitting has a summary once it was finished by the phone; one that was abandoned has none. */
 export const hasSummary = (row: SittingRow): boolean => row.durationSeconds !== null;
 
@@ -87,6 +110,7 @@ export const toSitting = (row: SittingRow, patientNumber: number): Sitting => ({
         longestDropoutSeconds: row.longestDropoutSeconds ?? 0,
         frameCount: row.frameCount ?? 0,
         droppedFrames: row.droppedFrames ?? 0,
+        heartRateConfidence: heartRateConfidence(row),
       }
     : null,
 });

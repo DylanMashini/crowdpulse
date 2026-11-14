@@ -1,6 +1,6 @@
 'use client';
 
-import { flagAlerts, patientLabel, type Flag, type FlagAlert, type Patient, type PatientDetailResponse } from '@triagecam/contracts';
+import { flagAlerts, hasReCheckBaseline, isLowConfidence, patientLabel, type Flag, type FlagAlert, type Patient, type PatientDetailResponse } from '@triagecam/contracts';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
@@ -74,7 +74,7 @@ function PatientView({ detail, updatedAt, refreshError, onChanged }: PatientView
   const row = worklist.data?.worklist.items.find((item) => item.patientNumber === patient.number);
   const [confirming, setConfirming] = useState(false);
   const [discharge, setDischarge] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
-  const timeline = useMemo(() => toTimelineItems(detail.timeline), [detail.timeline]);
+  const timeline = useMemo(() => toTimelineItems(detail.timeline, detail.flags), [detail.timeline, detail.flags]);
   const openFlags = detail.flags.filter((flag) => flag.closedAt === null);
   const severity = severityOf(
     detail.state,
@@ -134,7 +134,7 @@ function PatientView({ detail, updatedAt, refreshError, onChanged }: PatientView
       <div className="flex flex-wrap items-center gap-x-5 gap-y-3 border-b border-line p-5">
         <PatientIdentity patient={patient} size="lg" heading detail={summary || undefined} />
         {detail.state ? (
-          <StatusBadge state={detail.state} severity={severity} minutes={row?.minutesSinceObserved}>
+          <StatusBadge state={detail.state} severity={severity} minutes={row?.minutesSinceObserved} lowConfidence={latestPulseIsLowConfidence(detail)}>
             {detail.state === 'observed' && !row ? 'Observed' : undefined}
           </StatusBadge>
         ) : (
@@ -183,6 +183,7 @@ function PatientView({ detail, updatedAt, refreshError, onChanged }: PatientView
               <dt className="text-ink-muted">Sittings</dt>
               <dd className="text-ink tabular-nums">
                 {detail.sittings.length === 0 ? 'None yet' : `${detail.sittings.length}, baseline ${detail.baseline ? `from ${clockTime(detail.baseline.startedAt)}` : 'not set yet'}`}
+                {row?.pulse.baseAt ? `, pulse baseline from the ${clockTime(row.pulse.baseAt)} re-check` : ''}
               </dd>
               <dt className="text-ink-muted">Face match</dt>
               <dd className="text-ink">
@@ -232,6 +233,12 @@ function Missing() {
   return <span className="text-ink-faint">Not recorded</span>;
 }
 
+/** The newest finished sitting gave a pulse with lower confidence: the "no reading" state is then worded as that. */
+function latestPulseIsLowConfidence(detail: PatientDetailResponse): boolean {
+  const latest = detail.sittings.filter((sitting) => sitting.summary !== null).at(-1)?.summary;
+  return latest != null && latest.heartRate.value !== null && isLowConfidence(latest.heartRateConfidence);
+}
+
 /** The numbers the flag was raised on, frozen when it opened. */
 function flagNumbers(flag: Flag): string {
   const { pulse, breathing, scoreAtCheckIn, scoreNow, minutesSinceCheckIn, minutesSinceObserved } = flag.detail;
@@ -241,7 +248,7 @@ function flagNumbers(flag: Flag): string {
   const change = (name: string, base: number | null, now: number | null, withUnit: (value: number) => string) =>
     base == null || now == null ? `${name} had no reading` : `${name} ${rate(base)} to ${withUnit(now)}`;
   const score = scoreAtCheckIn != null && scoreNow != null ? `, partial score ${scoreAtCheckIn} to ${scoreNow}` : '';
-  return `${change('Pulse', pulse.base, pulse.now, heartRate)}, ${change('breathing', breathing.base, breathing.now, breathsPerMin)}${score}, ${minutes(minutesSinceCheckIn)} after check-in`;
+  return `${change('Pulse', pulse.base, pulse.now, heartRate)}, ${change('breathing', breathing.base, breathing.now, breathsPerMin)}${score}, ${minutes(minutesSinceCheckIn)} after ${hasReCheckBaseline(flag.detail) ? 'the first reading' : 'check-in'}`;
 }
 
 /**
@@ -276,7 +283,12 @@ function FlagItem({ alert, onChanged }: { alert: FlagAlert; onChanged: () => voi
         <StatusBadge state={overdue ? 'overdue' : 'flag'} severity={severity}>
           {overdue ? 'Overdue' : 'Trend flag'}
         </StatusBadge>
-        <span className="type-label text-ink">{rulesText(flags.map((each) => each.rule))}</span>
+        <span className="type-label text-ink">
+          {rulesText(
+            flags.map((each) => each.rule),
+            flags.some((each) => hasReCheckBaseline(each.detail)),
+          )}
+        </span>
         <span className="type-caption text-ink-faint tabular-nums">Opened at {clockTime(flag.openedAt)}</span>
       </div>
       <p className={cx('type-dense tabular-nums', urgent ? 'text-ink' : 'text-ink-muted')}>{flagNumbers(flag)}</p>

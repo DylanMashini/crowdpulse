@@ -1,6 +1,6 @@
 'use client';
 
-import { patientLabel, type FlagRule, type PatientStatistics, type Statistics, type TileState } from '@triagecam/contracts';
+import { LOWER_CONFIDENCE_REPEAT, patientLabel, type FlagRule, type PatientStatistics, type Statistics, type TileState } from '@triagecam/contracts';
 import Link from 'next/link';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
@@ -74,11 +74,14 @@ const SHARES: Array<{ share: Share; label: string; swatch: string }> = [
 
 /**
  * Who is in the room now, by state: one bar split in the order a nurse would walk it. A flagged
- * patient is the colour their worklist row is, so `urgentFlags` of the flags are drawn red.
+ * patient is the colour their worklist row is, so `urgentFlags` of the flags are drawn red. A
+ * patient whose latest sitting gave a lower-confidence pulse is in the no-reading state and
+ * its part of the bar, and is counted under its own words in the legend.
  */
-function StateBar({ byState, urgentFlags, total }: { byState: Record<TileState, number>; urgentFlags: number; total: number }) {
+function StateBar({ byState, urgentFlags, lowConfidence, total }: { byState: Record<TileState, number>; urgentFlags: number; lowConfidence: number; total: number }) {
   const urgent = Math.min(urgentFlags, byState.flag);
   const counts: Record<Share, number> = { ...byState, urgent, flag: byState.flag - urgent };
+  const shown = (share: Share) => (share === 'no-reading' ? counts[share] - lowConfidence : counts[share]);
   return (
     <div className="flex flex-col gap-3">
       <div aria-hidden className="flex h-[8px] gap-[2px]">
@@ -90,8 +93,14 @@ function StateBar({ byState, urgentFlags, total }: { byState: Record<TileState, 
         {SHARES.map(({ share, label, swatch }) => (
           <li key={share} className="flex items-center gap-2">
             <span aria-hidden className={cx('size-[8px] rounded-[2px]', swatch)} />
-            <span className="text-ink tabular-nums">{counts[share]}</span>
+            <span className="text-ink tabular-nums">{shown(share)}</span>
             <span className="text-ink-muted">{label}</span>
+            {share === 'no-reading' && lowConfidence > 0 ? (
+              <>
+                <span className="text-ink tabular-nums">{lowConfidence}</span>
+                <span className="text-ink-muted">{LOWER_CONFIDENCE_REPEAT}</span>
+              </>
+            ) : null}
           </li>
         ))}
       </ul>
@@ -234,7 +243,7 @@ function Results({ data }: { data: Statistics }) {
             <p className="type-dense text-ink-muted">Nobody is waiting. Patients appear here when a check-in starts.</p>
           ) : (
             <div className="flex flex-col gap-4">
-              <StateBar byState={waitingNow.byState} urgentFlags={urgentFlags} total={waitingNow.patients} />
+              <StateBar byState={waitingNow.byState} urgentFlags={urgentFlags} lowConfidence={waitingNow.lowConfidence ?? 0} total={waitingNow.patients} />
               <dl>
                 <Line label="Median wait">{orNone(waitingNow.medianMinutesWaiting, minutes, 'Nobody waiting')}</Line>
                 <Line label="Longest wait">{orNone(waitingNow.longestMinutesWaiting, minutes, 'Nobody waiting')}</Line>
@@ -364,7 +373,7 @@ function PatientRow({ row, severity }: { row: PatientStatistics; severity: Sever
       </td>
       <td className={tableCell}>
         {row.state ? (
-          <StatusBadge state={row.state} severity={severity} minutes={row.minutesSinceObserved} brief />
+          <StatusBadge state={row.state} severity={severity} minutes={row.minutesSinceObserved} lowConfidence={row.pulse.lowConfidence != null} brief />
         ) : (
           <span className="whitespace-nowrap text-ink-faint tabular-nums">Discharged{row.dischargedAt ? ` ${timeOrDayTime(row.dischargedAt)}` : ''}</span>
         )}

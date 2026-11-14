@@ -36,7 +36,7 @@ export function WorklistCard({ item, onPress }: { item: WorklistItem; onPress: (
     <Touchable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`Rank ${item.rank}, ${patientLabel(item.patient)}, ${statusText(item.state, item.minutesSinceObserved)}`}
+      accessibilityLabel={`Rank ${item.rank}, ${patientLabel(item.patient)}, ${statusText(item.state, item.minutesSinceObserved, item.pulse.lowConfidence != null)}`}
       accessibilityHint="Opens the patient"
       style={({ pressed }) => [cardStyle(theme, urgent ? 'urgent' : 'plain', pressed), { padding: space.space4, gap: space.space3 }]}
     >
@@ -80,7 +80,7 @@ export function WorklistCard({ item, onPress }: { item: WorklistItem; onPress: (
 
       {/* One chip: the patient's state. What a nurse has to do sits beside it in plain text. */}
       <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: space.space3, rowGap: space.space1 }}>
-        <StatusBadge severity={severity} label={statusText(item.state, item.minutesSinceObserved)} />
+        <StatusBadge severity={severity} label={statusText(item.state, item.minutesSinceObserved, item.pulse.lowConfidence != null)} />
         {toAcknowledge ? (
           <Text style={[theme.type.caption, { fontWeight: weight.medium, color: colors.ink }]}>{toAcknowledge}</Text>
         ) : null}

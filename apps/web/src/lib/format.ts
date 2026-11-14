@@ -1,4 +1,4 @@
-import type { CaptureSource, EstimateReason, FlagRule } from '@triagecam/contracts';
+import { EXPOSURE_STUCK_AFTER_SECONDS, type CaptureSource, type EstimateReason, type FlagRule, type TileState, type Trend } from '@triagecam/contracts';
 
 /** A true minus sign, so a negative number lines up with a positive one. */
 const MINUS = '\u2212';
@@ -110,8 +110,8 @@ const REASONS: Record<EstimateReason, string> = {
   no_face: 'No face in view',
   face_changed: 'A different face came into view, starting again',
   exposure_adjusting: 'Camera exposure is still adjusting',
-  low_quality: 'Signal quality too low',
-  motion: 'Too much movement',
+  low_quality: 'Signal too weak. Keep still, more light',
+  motion: 'Too much movement. Keep still',
   gaps: 'Too many dropped frames',
   band_edge: 'Estimate is at the edge of the measurable range',
   no_chest: 'Chest not in view',
@@ -120,6 +120,16 @@ const REASONS: Record<EstimateReason, string> = {
 
 export function reasonText(reason: EstimateReason | null): string | undefined {
   return reason ? REASONS[reason] : undefined;
+}
+
+/**
+ * Whether the camera has been unable to set its exposure for too long to be settling: the
+ * newest `EXPOSURE_STUCK_AFTER_SECONDS` one-second readings, oldest first in `reasons`, all
+ * say so. The screen then says what to do about it (`EXPOSURE_STUCK`).
+ */
+export function exposureIsStuck(reasons: Array<EstimateReason | null>): boolean {
+  if (reasons.length < EXPOSURE_STUCK_AFTER_SECONDS) return false;
+  return reasons.slice(-EXPOSURE_STUCK_AFTER_SECONDS).every((reason) => reason === 'exposure_adjusting');
 }
 
 const SOURCES: Record<CaptureSource, string> = {
@@ -139,15 +149,45 @@ const RULES: Record<FlagRule, string> = {
   overdue: 'Overdue for a re-check',
 };
 
-export function ruleText(rule: FlagRule): string {
-  return RULES[rule];
+const RULES_FROM_A_RE_CHECK: Partial<Record<FlagRule, string>> = {
+  score_rise: 'Partial score rose from baseline',
+  baseline_shift: 'Moved from baseline',
+};
+
+/** `reCheckBaseline`: a baseline the flag moved from is a re-check's, so the words do not say check-in. */
+export function ruleText(rule: FlagRule, reCheckBaseline = false): string {
+  return (reCheckBaseline ? RULES_FROM_A_RE_CHECK[rule] : undefined) ?? RULES[rule];
 }
 
-/** The rules one alert tripped, as one phrase: "Score rose and vitals moved from check-in". */
-export function rulesText(rules: readonly FlagRule[]): string {
+/**
+ * What the waiting room holds, for the sentence over the worklist. A patient whose latest
+ * sitting gave a lower-confidence pulse has a reading, tagged, so is counted as that and not
+ * as "without a reading".
+ */
+export function waitingCounts(items: Array<{ state: TileState; pulse: Pick<Trend, 'lowConfidence'> }>): {
+  flags: number;
+  overdue: number;
+  noReading: number;
+  lowConfidence: number;
+} {
+  const count = (state: TileState) => items.filter((item) => item.state === state).length;
+  const lowConfidence = items.filter((item) => item.state === 'no-reading' && item.pulse.lowConfidence != null).length;
+  return { flags: count('flag'), overdue: count('overdue'), noReading: count('no-reading') - lowConfidence, lowConfidence };
+}
+
+/**
+ * The rules one alert tripped, as one phrase: "Score rose and vitals moved from check-in".
+ * `reCheckBaseline`: a baseline the alert moved from is a re-check's, so the words do not say check-in.
+ */
+export function rulesText(rules: readonly FlagRule[], reCheckBaseline = false): string {
   // The two trend rules name the same baseline, so together they share it.
-  if (rules.length === 2 && rules.includes('score_rise') && rules.includes('baseline_shift')) return 'Score rose and vitals moved from check-in';
-  return rules.map((rule, index) => (index === 0 ? RULES[rule] : RULES[rule].charAt(0).toLowerCase() + RULES[rule].slice(1))).join(' and ');
+  if (rules.length === 2 && rules.includes('score_rise') && rules.includes('baseline_shift')) {
+    return reCheckBaseline ? 'Score rose and vitals moved from baseline' : 'Score rose and vitals moved from check-in';
+  }
+  return rules
+    .map((rule) => ruleText(rule, reCheckBaseline))
+    .map((text, index) => (index === 0 ? text : text.charAt(0).toLowerCase() + text.slice(1)))
+    .join(' and ');
 }
 
 /** Whole years since a YYYY-MM-DD date of birth, in the browser's zone. Null when it is not known. */

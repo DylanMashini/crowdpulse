@@ -1,4 +1,15 @@
-import { byFlagRule, timelineByAlert, type CaptureSource, type FlagRule, type TimelineEntry, type WorklistItem } from '@triagecam/contracts';
+import {
+  byFlagRule,
+  hasReCheckBaseline,
+  isLowConfidence,
+  LOWER_CONFIDENCE,
+  timelineByAlert,
+  type CaptureSource,
+  type Flag,
+  type FlagRule,
+  type TimelineEntry,
+  type WorklistItem,
+} from '@triagecam/contracts';
 
 import type { Provenance, Severity, TimelineItem, WorklistRow } from '@/components/ds';
 
@@ -41,7 +52,7 @@ export function toWorklistRow(item: WorklistItem): WorklistRow & { measured: num
   };
 }
 
-function toTimelineItem(entry: TimelineEntry, rules: Map<string, FlagRule>, alertRules: Map<string, FlagRule[]>): TimelineItem {
+function toTimelineItem(entry: TimelineEntry, rules: Map<string, FlagRule>, alertRules: Map<string, FlagRule[]>, reCheckBaseline: Set<string>): TimelineItem {
   const time = clockTime(entry.at);
   switch (entry.type) {
     case 'created':
@@ -53,6 +64,7 @@ function toTimelineItem(entry: TimelineEntry, rules: Map<string, FlagRule>, aler
         time,
         title: entry.kind === 'check_in' ? 'Check-in sitting' : 'Re-check sitting',
         vitals: { pulse: entry.heartRate, breathing: entry.breathingRate },
+        pulseNote: entry.heartRate != null && isLowConfidence(entry.heartRateConfidence) ? LOWER_CONFIDENCE : undefined,
         score: entry.score,
         state: noReading ? 'no-reading' : 'observed',
         source: provenance.kind,
@@ -67,7 +79,7 @@ function toTimelineItem(entry: TimelineEntry, rules: Map<string, FlagRule>, aler
         title: 'Flag opened',
         state: entry.rule === 'overdue' ? 'overdue' : 'flag',
         severity: entry.rule === 'overdue' ? null : severityOf('flag', null, tripped),
-        note: rulesText(tripped),
+        note: rulesText(tripped, reCheckBaseline.has(entry.alertId)),
       };
     }
     case 'flag_acknowledged': {
@@ -91,7 +103,9 @@ function toTimelineItem(entry: TimelineEntry, rules: Map<string, FlagRule>, aler
  * The server sends the timeline newest first; the timeline component reads oldest first. An
  * alert opening or closing is one row, however many rules it tripped (`timelineByAlert`).
  */
-export function toTimelineItems(entries: TimelineEntry[]): TimelineItem[] {
+export function toTimelineItems(entries: TimelineEntry[], flags: Flag[] = []): TimelineItem[] {
+  // Alerts raised against a baseline that is a re-check's: their rows do not say "check-in".
+  const reCheckBaseline = new Set(flags.filter((flag) => hasReCheckBaseline(flag.detail)).map((flag) => flag.alertId));
   const rules = new Map<string, FlagRule>();
   const alertRules = new Map<string, FlagRule[]>();
   for (const entry of entries) {
@@ -102,6 +116,6 @@ export function toTimelineItems(entries: TimelineEntry[]): TimelineItem[] {
   // The order the alert's card names them in.
   for (const tripped of alertRules.values()) tripped.sort(byFlagRule);
   return timelineByAlert(entries)
-    .map((entry) => toTimelineItem(entry, rules, alertRules))
+    .map((entry) => toTimelineItem(entry, rules, alertRules, reCheckBaseline))
     .reverse();
 }

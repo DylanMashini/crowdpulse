@@ -1,7 +1,7 @@
 import * as z from 'zod';
 
 import { Id, PatientNumber, Timestamp } from './common.ts';
-import { BeatInterval, CaptureSource, Estimate, SittingSummary, SummaryValue } from './signal.ts';
+import { BeatInterval, CaptureSource, Estimate, HeartRateConfidence, SittingSummary, SummaryValue } from './signal.ts';
 
 export const SittingKind = z.enum(['check_in', 'recheck']);
 export type SittingKind = z.infer<typeof SittingKind>;
@@ -51,6 +51,8 @@ export const Sitting = z.object({
       longestDropoutSeconds: z.number().nonnegative(),
       frameCount: z.int().nonnegative(),
       droppedFrames: z.int().nonnegative(),
+      /** Null when there is no heart rate, and for sittings stored before it existed. */
+      heartRateConfidence: HeartRateConfidence.nullable().optional(),
     })
     .nullable(),
 });

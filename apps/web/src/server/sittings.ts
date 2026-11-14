@@ -8,6 +8,7 @@ import {
   type SittingDetailResponse,
   SittingFileHeader,
   type StartSittingRequest,
+  summaryHeartRateConfidence,
 } from "@triagecam/contracts";
 import { and, asc, eq, isNull } from "drizzle-orm";
 
@@ -115,6 +116,10 @@ export async function finishSitting(sittingId: string, request: FinishSittingReq
         durationSeconds: summary.durationSeconds,
         heartRate: summary.heartRate.value,
         heartRateCoverage: summary.heartRate.coverage,
+        // The lower of what the phone says and the engine's own rule applied here: a rate that
+        // rests on fewer than ten valid seconds is `low`, whether the phone left the field out
+        // (a build from before it existed) or stated `normal`.
+        heartRateConfidence: summaryHeartRateConfidence(summary),
         breathingRate: summary.breathingRate.value,
         breathingRateCoverage: summary.breathingRate.coverage,
         rmssd: summary.rmssd.value,

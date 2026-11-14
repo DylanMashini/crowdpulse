@@ -4,6 +4,12 @@
 //   pnpm smoke                                   against http://localhost:3101
 //   SMOKE_URL=https://….ngrok-free.app pnpm smoke
 //
+// The server must not be in production mode. With NODE_ENV=production and no mail key the
+// server, by design, neither returns nor logs a verification link, so this script cannot get
+// past sign-up; and it refuses sitting files (403). To run this against a production build,
+// start that build with NODE_ENV=test: `NODE_ENV=test next start`. The bundle served is the
+// same one; only those two development allowances come back.
+//
 // Optional environment:
 //   SMOKE_SERVER_LOG   Path of the server's log. The verification link is then read from the
 //                      log, as a person would; otherwise devVerificationToken is used.
@@ -162,9 +168,14 @@ async function tokenFromLog(path: string): Promise<string> {
   });
 }
 const verificationToken = process.env.SMOKE_SERVER_LOG
-  ? await tokenFromLog(process.env.SMOKE_SERVER_LOG)
+  ? await tokenFromLog(process.env.SMOKE_SERVER_LOG).catch(() => undefined)
   : resent.devVerificationToken;
-assert.ok(verificationToken, "No verification token: the server has RESEND_API_KEY set, so use a real mailbox");
+assert.ok(
+  verificationToken,
+  "No verification link came back. Either the server runs with NODE_ENV=production, where it never returns or logs one " +
+    "(start it with NODE_ENV=test instead, the build is the same), or it has RESEND_API_KEY set and sent a real email " +
+    "(unset it), or SMOKE_SERVER_LOG is not the log of the server at SMOKE_URL.",
+);
 if (signedUp.devVerificationToken && again.devVerificationToken) {
   // Each new link replaces the one before it.
   await refused(410, "token_invalid", "POST", routes.auth.verifyEmail, { body: { token: signedUp.devVerificationToken } });
@@ -303,7 +314,15 @@ function summary(heartRate: number | null, breathingRate: number | null) {
 }
 
 /** A whole sitting compressed in time: start, `seconds` readings one per request, finish. */
-async function sit(patientNumber: number, kind: "check_in" | "recheck", heartRate: number | null, breathingRate: number | null, seconds: number) {
+async function sit(
+  patientNumber: number,
+  kind: "check_in" | "recheck",
+  heartRate: number | null,
+  breathingRate: number | null,
+  seconds: number,
+  /** Changes to the summary: a heart-rate coverage, a confidence. */
+  summaryChanges: { heartRateCoverage?: number; heartRateConfidence?: "normal" | "low" } = {},
+) {
   const startedOnPhone = phoneNow();
   const started = await ok(StartSittingResponse, 201, "POST", routes.sittings, {
     auth: mobile,
@@ -324,7 +343,14 @@ async function sit(patientNumber: number, kind: "check_in" | "recheck", heartRat
   const finish = () =>
     ok(SittingResponse, 200, "POST", routes.sittingFinish(id), {
       auth: mobile,
-      body: { endedAt: new Date(startedOnPhone.getTime() + seconds * 1000).toISOString(), summary: summary(heartRate, breathingRate) },
+      body: {
+        endedAt: new Date(startedOnPhone.getTime() + seconds * 1000).toISOString(),
+        summary: {
+          ...summary(heartRate, breathingRate),
+          ...(summaryChanges.heartRateCoverage === undefined ? {} : { heartRate: { value: heartRate, coverage: summaryChanges.heartRateCoverage } }),
+          ...(summaryChanges.heartRateConfidence === undefined ? {} : { heartRateConfidence: summaryChanges.heartRateConfidence }),
+        },
+      },
     });
   return { id, started, readings, startedOnPhone, finish };
 }
@@ -375,6 +401,11 @@ const upload = await call("PUT", routes.sittingFile(checkIn.id), {
   auth: mobile,
   raw: { body: `${JSON.stringify(header)}\n${JSON.stringify(frame)}\n`, contentType: "application/x-ndjson" },
 });
+assert.notEqual(
+  upload.status,
+  403,
+  "The server refused the sitting file: it runs with NODE_ENV=production, where sitting files are not accepted. Start it with NODE_ENV=test.",
+);
 assert.equal(upload.status, 204, await upload.text());
 await refused(400, "invalid_request", "PUT", routes.sittingFile(checkIn.id), {
   auth: mobile,
@@ -519,6 +550,98 @@ const firstOpened = oldestFirst.findIndex((entry) => entry.type === "flag_opened
 assert.ok(trippingAt !== -1 && trippingAt < firstOpened, "the sitting comes before the flags it raised");
 done("patient detail: baseline, sittings, flags and a newest-first timeline");
 
+// --- lower-confidence heart rates --------------------------------------------------------------
+
+{
+  // A phone build from before heartRateConfidence: a rate with no valid second behind it. The
+  // server applies the engine's rule itself, so it is stored low and is no baseline.
+  const old = (await ok(PatientResponse, 201, "POST", routes.patients, { auth: web, body: {} })).patient.number;
+  const weak = (await (await sit(old, "check_in", 61.5, null, 3, { heartRateCoverage: 0 })).finish()).sitting;
+  assert.equal(weak.summary?.heartRate.value, 61.5);
+  assert.equal(weak.summary?.heartRateConfidence, "low", "a rate on fewer than ten valid seconds is low without the phone saying so");
+  let row = (await worklistItem(old)).item;
+  assert.equal(row.state, "no-reading");
+  assert.deepEqual(row.pulse, { base: null, now: null, lowConfidence: 61.5 });
+  assert.equal(row.score, null);
+  assert.equal(row.minutesSinceObserved, null);
+  assert.match(row.handoff, /not yet observed.*read pulse 62 bpm with lower confidence; repeat it\.$/);
+  // Nine valid seconds of sixty is low; ten is normal; a stated low stands on any coverage.
+  const nine = (await (await sit(old, "recheck", 70, null, 3, { heartRateCoverage: 9 / 60 })).finish()).sitting;
+  assert.equal(nine.summary?.heartRateConfidence, "low");
+  const stated = (await (await sit(old, "recheck", 70, null, 3, { heartRateCoverage: 0.87, heartRateConfidence: "low" })).finish()).sitting;
+  assert.equal(stated.summary?.heartRateConfidence, "low");
+  const ten = (await (await sit(old, "recheck", 74, null, 3, { heartRateCoverage: 10 / 60 })).finish()).sitting;
+  assert.equal(ten.summary?.heartRateConfidence, "normal");
+  row = (await worklistItem(old)).item;
+  assert.equal(row.state, "observed");
+  assert.equal(row.pulse.base, 74);
+  assert.equal(row.pulse.now, 74);
+  assert.equal(row.pulse.lowConfidence, undefined);
+  assert.ok(row.pulse.baseAt, "a baseline from a re-check says when it is from");
+  assert.match(row.handoff, /pulse 74 bpm now, lower confidence at check-in/);
+  // A stated normal that the sitting's own numbers contradict is not believed (QA round 3, N2):
+  // it is stored low and the baseline stays where it was.
+  const overstated = (await (await sit(old, "recheck", 102, null, 3, { heartRateCoverage: 3 / 60, heartRateConfidence: "normal" })).finish()).sitting;
+  assert.equal(overstated.summary?.heartRateConfidence, "low", "a stated normal on three valid seconds is stored low");
+  row = (await worklistItem(old)).item;
+  assert.equal(row.pulse.base, 74);
+  assert.equal(row.pulse.lowConfidence, 102);
+  assert.equal(row.state, "no-reading");
+  const borneOut = (await (await sit(old, "recheck", 75, null, 3, { heartRateCoverage: 0.5, heartRateConfidence: "normal" })).finish()).sitting;
+  assert.equal(borneOut.summary?.heartRateConfidence, "normal");
+  await ok(PatientResponse, 200, "POST", routes.patientDischarge(old), { auth: web });
+  done("a finish without heartRateConfidence is stored low under ten valid seconds, and is no baseline");
+
+  // A lower-confidence check-in that also read breathing: the first re-check with a pulse that
+  // counts is the pulse baseline, and a large change from it opens a flag (QA round 2, W1).
+  const { pulseDeltaBpm, baselineShiftEnabled } = (await ok(SettingsResponse, 200, "GET", routes.settings, { auth: web })).settings;
+  if (!baselineShiftEnabled || pulseDeltaBpm >= 30) {
+    done(`pulse baseline after a lower-confidence check-in: not run, baseline shift is ${baselineShiftEnabled ? `${pulseDeltaBpm} bpm` : "off"}`);
+  } else {
+    const later = (await ok(PatientResponse, 201, "POST", routes.patients, { auth: web, body: {} })).patient.number;
+    await (await sit(later, "check_in", 101.5, 16, 3, { heartRateCoverage: 0.05, heartRateConfidence: "low" })).finish();
+    row = (await worklistItem(later)).item;
+    assert.equal(row.state, "observed", "breathing makes the check-in an observation");
+    assert.deepEqual(row.pulse, { base: null, now: null, lowConfidence: 101.5 });
+    assert.deepEqual(row.breathing, { base: 16, now: 16 });
+    await (await sit(later, "recheck", 55, 16, 3)).finish();
+    row = (await worklistItem(later)).item;
+    assert.equal(row.pulse.base, 55);
+    assert.ok(row.pulse.baseAt);
+    assert.equal(row.breathing.baseAt, undefined);
+    await (await sit(later, "recheck", 85, 16, 3)).finish();
+    assert.equal((await openFlags(later)).length, 0, "one raised observation is not yet a flag");
+    await (await sit(later, "recheck", 86, 16, 3)).finish();
+    const raised = await openFlags(later);
+    assert.deepEqual(raised.map((flag) => flag.rule), ["baseline_shift"]);
+    assert.equal(raised[0]?.detail.pulse.base, 55);
+    assert.equal(raised[0]?.detail.pulse.now, 86);
+    assert.ok(raised[0]?.detail.pulse.baseAt);
+    assert.match(raised[0]?.handoff ?? "", /pulse 55 bpm at a re-check, 86 bpm now/);
+    assert.doesNotMatch(raised[0]?.handoff ?? "", /pulse[^;]*at check-in/);
+    row = (await worklistItem(later)).item;
+    assert.equal(row.state, "flag");
+    await ok(PatientResponse, 200, "POST", routes.patientDischarge(later), { auth: web });
+    done("after a lower-confidence check-in with breathing, the first re-check that counts is the pulse baseline and 55, 85, 86 bpm opens a flag");
+  }
+}
+
+{
+  // The same check-in followed by a steady 100 and 101 bpm: the score is measured from the
+  // re-check's 100, like the shift, so nothing rose and no flag opens (QA round 3, N1).
+  const steady = (await ok(PatientResponse, 201, "POST", routes.patients, { auth: web, body: {} })).patient.number;
+  await (await sit(steady, "check_in", 101.5, 16, 3, { heartRateCoverage: 0.05, heartRateConfidence: "low" })).finish();
+  await (await sit(steady, "recheck", 100, 16, 3)).finish();
+  await (await sit(steady, "recheck", 101, 16, 3)).finish();
+  assert.deepEqual(await openFlags(steady), [], "steady re-checks after a lower-confidence check-in raise nothing");
+  const row = (await worklistItem(steady)).item;
+  assert.equal(row.state, "observed");
+  assert.equal(row.score, 1);
+  assert.equal(row.scoreAtCheckIn, 1, "the score a rise is measured from is the baselines' score");
+  await ok(PatientResponse, 200, "POST", routes.patientDischarge(steady), { auth: web });
+  done("after a lower-confidence check-in with breathing, steady re-checks at 100 and 101 bpm open no flag");
+}
+
 // --- two deteriorations, two alerts -----------------------------------------------------------
 
 {
@@ -607,6 +730,9 @@ const unchanged = await ok(SettingsResponse, 200, "PATCH", routes.settings, {
 });
 assert.deepEqual(unchanged.settings, settings.settings);
 
+// A patient whose only sitting gave a lower-confidence pulse, still waiting when the statistics are read.
+const tagged = (await ok(PatientResponse, 201, "POST", routes.patients, { auth: web, body: {} })).patient.number;
+await (await sit(tagged, "check_in", 61.5, null, 3, { heartRateCoverage: 0, heartRateConfidence: "low" })).finish();
 const stats = await ok(Statistics, 200, "GET", `${routes.statistics}?from=${new Date(Date.now() - 3_600_000).toISOString()}`, { auth: web });
 assert.ok(stats.patients.seen >= 1 && stats.patients.arrived >= 1);
 assert.ok(stats.sittings.finished >= 7 && stats.sittings.withReading < stats.sittings.finished);
@@ -636,6 +762,10 @@ assert.equal(
   stats.waitingNow.byState.observed + stats.waitingNow.byState.flag + stats.waitingNow.byState.overdue + stats.waitingNow.byState["no-reading"],
 );
 assert.ok(stats.waitingNow.byState["no-reading"] >= 1 && stats.waitingNow.longestMinutesWaiting !== null);
+// A lower-confidence patient is in the no-reading state and counted apart from those with no reading (QA round 3, N6).
+assert.ok(stats.waitingNow.lowConfidence !== undefined && stats.waitingNow.lowConfidence >= 1);
+assert.ok(stats.waitingNow.lowConfidence <= stats.waitingNow.byState["no-reading"]);
+await ok(PatientResponse, 200, "POST", routes.patientDischarge(tagged), { auth: web });
 const empty = await ok(Statistics, 200, "GET", `${routes.statistics}?from=2001-01-01T00:00:00.000Z&to=2001-01-02T00:00:00.000Z`, { auth: web });
 assert.equal(empty.patients.seen, 0);
 assert.equal(empty.sittings.meanHeartRateCoverage, null);

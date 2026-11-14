@@ -89,7 +89,7 @@ export default function Patients() {
       return patient.dischargedAt ? `Discharged ${dayTime(patient.dischargedAt, now)}` : 'Discharged';
     }
     const item = stateOf.get(patient.number);
-    return item ? statusText(item.state, item.minutesSinceObserved) : `Arrived ${dayTime(patient.createdAt, now)}`;
+    return item ? statusText(item.state, item.minutesSinceObserved, item.pulse.lowConfidence != null) : `Arrived ${dayTime(patient.createdAt, now)}`;
   };
 
   return (

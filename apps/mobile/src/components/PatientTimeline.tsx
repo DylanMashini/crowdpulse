@@ -73,6 +73,7 @@ export function PatientTimeline({ rows }: { rows: TimelineRow[] }) {
               {row.vitals ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: space.space3, rowGap: space.space1 }}>
                   <Vital value={row.vitals.pulse} unit="bpm" name="pulse" />
+                  {row.vitals.pulseNote ? <ProvenanceTag kind="experimental" label={row.vitals.pulseNote} /> : null}
                   <Vital value={row.vitals.breathing} unit="breaths per min" name="breathing" />
                   {row.vitals.score != null ? <ScoreChip score={row.vitals.score} caption={false} /> : null}
                 </View>

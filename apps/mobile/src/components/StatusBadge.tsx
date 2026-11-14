@@ -10,7 +10,10 @@ import { Text } from './Text';
 type Props = {
   /** `live` is not a severity: it marks a sitting that is running now. */
   severity: Severity | 'live';
-  /** The state in words. A chip never rests on its colour. */
+  /**
+   * The state in words. A chip never rests on its colour. `statusText` gives them, and says
+   * "Lower confidence, repeat" for a no-reading patient whose latest pulse was lower confidence.
+   */
   label: string;
 };
 

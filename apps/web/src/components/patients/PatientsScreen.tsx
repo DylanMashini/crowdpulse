@@ -135,7 +135,7 @@ export function PatientsScreen() {
                       {patient.status === 'discharged' ? (
                         <span className="text-ink-faint">Discharged</span>
                       ) : item ? (
-                        <StatusBadge state={item.state} severity={rowSeverity(item)} minutes={item.minutesSinceObserved} />
+                        <StatusBadge state={item.state} severity={rowSeverity(item)} minutes={item.minutesSinceObserved} lowConfidence={item.pulse.lowConfidence != null} />
                       ) : (
                         'Waiting'
                       )}

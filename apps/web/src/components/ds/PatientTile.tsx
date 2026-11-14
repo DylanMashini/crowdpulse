@@ -45,7 +45,7 @@ export function PatientTile({ patient, reason, ageYears, state, severity, minute
       </dl>
       <footer className="mt-auto flex w-full flex-col gap-2">
         <div className="flex items-center justify-between gap-3">
-          <StatusBadge state={state} severity={severity} minutes={minutes} />
+          <StatusBadge state={state} severity={severity} minutes={minutes} lowConfidence={pulse?.lowConfidence != null} />
           {source ? (
             <ProvenanceTag kind={source} plain>
               {sourceLabel}

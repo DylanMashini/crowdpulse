@@ -1,7 +1,9 @@
 // The trend rules of docs/CONTRACTS.md section 6 (plan section 5). Everything here is a pure
 // function of a patient's sittings, the settings row and the clock, so the server, the seed
 // script and the tests all get the same answer.
-import type { CaptureSource, FlagDetail, FlagRule, Score, Settings, Trend } from "@triagecam/contracts";
+import type { CaptureSource, FlagDetail, FlagRule, Score, Settings, SittingKind, Trend } from "@triagecam/contracts";
+
+import type { LaterBaseline } from "./handoff.ts";
 
 const MINUTE_MS = 60_000;
 
@@ -12,13 +14,17 @@ const IN_PROGRESS_LIMIT_MS = 10 * MINUTE_MS;
 export type SittingFacts = {
   id: string;
   source: CaptureSource;
+  /** Left out, the sitting is taken for a check-in. A baseline from a re-check says so on screen. */
+  kind?: SittingKind;
   startedAt: Date;
   /** Null while the sitting runs. */
   endedAt: Date | null;
   /** The phone finished it and sent a summary. An abandoned sitting has none and is ignored. */
   finished: boolean;
-  /** bpm from the summary; null is "No reading". */
+  /** bpm from the summary; null is "No reading", and so is a lower-confidence rate (`lowConfidenceHeartRate`). */
   heartRate: number | null;
+  /** bpm the sitting gave with lower confidence. Stated in the handoff; never a baseline, a score or a flag. */
+  lowConfidenceHeartRate?: number | null;
   /** Breaths per minute from the summary; null is "No reading". */
   breathingRate: number | null;
 };
@@ -63,23 +69,39 @@ const wholeMinutes = (fromMs: number, toMs: number) => Math.max(0, Math.floor((t
 
 /** Everything derived from a patient's sittings that the worklist, the flags and the handoff sentence use. */
 export type PatientSnapshot = {
-  /** The first observation: the sitting trends are measured against. */
+  /** The first observation: where the visit's trends start. */
   baseline: FinishedSitting | null;
+  /**
+   * The first sitting with a heart rate that counts: what pulse is measured against. It is a
+   * later sitting than `baseline` when that one gave breathing only, or a lower-confidence pulse.
+   */
+  pulseBaseline: FinishedSitting | null;
+  /** The first sitting with a breathing rate: what breathing is measured against. */
+  breathingBaseline: FinishedSitting | null;
+  /** For the handoff sentence: set when that parameter's baseline is a re-check's, not the check-in's. */
+  pulseFrom: LaterBaseline | undefined;
+  breathingFrom: LaterBaseline | undefined;
   /** The newest finished sitting, observation or not. */
   latest: FinishedSitting | null;
   /** The newest finished sitting that gave a heart or breathing rate. */
   latestObservation: FinishedSitting | null;
   /** The newest finished sitting gave neither rate. */
   latestGaveNoReading: boolean;
+  /** bpm the newest finished sitting gave with lower confidence, when it did. */
+  latestLowConfidencePulse: number | null;
   lastObservedAt: Date | null;
   minutesSinceObserved: number | null;
   /** Whole minutes from the baseline to the latest observation; null while the baseline is the only one. */
   minutesToLatestObservation: number | null;
   minutesWaiting: number;
-  /** Check-in value against the latest sitting's value. */
+  /** Each parameter's own baseline value against the latest sitting's value. */
   pulse: Trend;
   breathing: Trend;
   score: Score | null;
+  /**
+   * The partial score of the two baselines above, which is what a rise is measured from. It is
+   * the check-in's own score unless a parameter's baseline had to come from a re-check.
+   */
   scoreAtCheckIn: Score | null;
   parametersMeasured: 0 | 1 | 2;
   source: CaptureSource | null;
@@ -96,6 +118,8 @@ export function snapshotPatient(sittings: SittingFacts[], createdAt: Date, setti
     .sort((a, b) => a.endedAt.getTime() - b.endedAt.getTime());
   const observations = finished.filter(isObservation);
   const baseline = observations[0] ?? null;
+  const pulseBaseline = observations.find((sitting) => sitting.heartRate !== null) ?? null;
+  const breathingBaseline = observations.find((sitting) => sitting.breathingRate !== null) ?? null;
   const latest = finished.at(-1) ?? null;
   const latestObservation = observations.at(-1) ?? null;
   const lastObservedAt = latestObservation?.endedAt ?? null;
@@ -105,19 +129,44 @@ export function snapshotPatient(sittings: SittingFacts[], createdAt: Date, setti
       ? wholeMinutes(baseline.endedAt.getTime(), latestObservation.endedAt.getTime())
       : null;
   const minutesWaiting = wholeMinutes(createdAt.getTime(), now.getTime());
-  const scoreAtCheckIn = baseline ? scoreOf(baseline) : null;
+  const scoreAtCheckIn = partialScore(pulseBaseline?.heartRate ?? null, breathingBaseline?.breathingRate ?? null);
+
+  // Said only when the baseline is not from a check-in sitting, so the screens can say where it is from.
+  const baseAt = (from: FinishedSitting | null) => (from && from.kind === "recheck" ? { baseAt: from.endedAt.toISOString() } : {});
+  const lowConfidence = latest?.lowConfidenceHeartRate ?? null;
+  const checkInPulseWasLowConfidence = finished.some((sitting) => sitting.kind !== "recheck" && sitting.lowConfidenceHeartRate != null);
+  const later = (from: FinishedSitting | null, checkIn: LaterBaseline["checkIn"]): LaterBaseline | undefined =>
+    from && from.kind === "recheck"
+      ? {
+          minutesLater:
+            latestObservation && latestObservation !== from
+              ? wholeMinutes(from.endedAt.getTime(), latestObservation.endedAt.getTime())
+              : null,
+          checkIn,
+        }
+      : undefined;
 
   return {
     baseline,
+    pulseBaseline,
+    breathingBaseline,
+    pulseFrom: later(pulseBaseline, checkInPulseWasLowConfidence ? "lower_confidence" : "not_measured"),
+    breathingFrom: later(breathingBaseline, "not_measured"),
     latest,
     latestObservation,
     latestGaveNoReading: latest !== null && !isObservation(latest),
+    latestLowConfidencePulse: lowConfidence,
     lastObservedAt,
     minutesSinceObserved,
     minutesToLatestObservation,
     minutesWaiting,
-    pulse: { base: baseline?.heartRate ?? null, now: latest?.heartRate ?? null },
-    breathing: { base: baseline?.breathingRate ?? null, now: latest?.breathingRate ?? null },
+    pulse: {
+      base: pulseBaseline?.heartRate ?? null,
+      now: latest?.heartRate ?? null,
+      ...baseAt(pulseBaseline),
+      ...(lowConfidence === null ? {} : { lowConfidence }),
+    },
+    breathing: { base: breathingBaseline?.breathingRate ?? null, now: latest?.breathingRate ?? null, ...baseAt(breathingBaseline) },
     score: latest ? scoreOf(latest) : null,
     scoreAtCheckIn,
     parametersMeasured: ((latest?.heartRate != null ? 1 : 0) + (latest?.breathingRate != null ? 1 : 0)) as 0 | 1 | 2,
@@ -133,8 +182,12 @@ export function snapshotPatient(sittings: SittingFacts[], createdAt: Date, setti
         : DISABLED,
     },
     flagDetail: {
-      pulse: { base: baseline?.heartRate ?? null, now: latestObservation?.heartRate ?? null },
-      breathing: { base: baseline?.breathingRate ?? null, now: latestObservation?.breathingRate ?? null },
+      pulse: { base: pulseBaseline?.heartRate ?? null, now: latestObservation?.heartRate ?? null, ...baseAt(pulseBaseline) },
+      breathing: {
+        base: breathingBaseline?.breathingRate ?? null,
+        now: latestObservation?.breathingRate ?? null,
+        ...baseAt(breathingBaseline),
+      },
       scoreAtCheckIn,
       scoreNow: latestObservation ? scoreOf(latestObservation) : null,
       minutesSinceCheckIn: minutesToLatestObservation ?? (baseline ? 0 : minutesWaiting),
@@ -158,26 +211,43 @@ function persisting(observations: SittingFacts[], raised: (observation: SittingF
   return { met: previous !== undefined && raised(previous), cleared: false };
 }
 
-/** The partial score has risen since check-in and the rise persists across two consecutive observations. */
+/** Each parameter's baseline: the first observation that gave it. Both trend rules measure from these. */
+function baselines(observations: SittingFacts[]): { pulse: number | null; breathing: number | null } {
+  return {
+    pulse: observations.find((observation) => observation.heartRate !== null)?.heartRate ?? null,
+    breathing: observations.find((observation) => observation.breathingRate !== null)?.breathingRate ?? null,
+  };
+}
+
+/**
+ * The partial score is above the score of the baselines and the rise persists across two
+ * consecutive observations. The baselines are per parameter, as in `baselineShift`: scored
+ * against the first observation alone, a check-in that read breathing but no pulse that counts
+ * would turn every later pulse in a raised band into a rise, with nothing to have risen from.
+ */
 export function scoreRise(observations: SittingFacts[]): RuleStatus {
-  const baseline = observations[0];
-  const baselineScore = baseline ? (scoreOf(baseline) ?? 0) : 0;
+  const base = baselines(observations);
+  const baselineScore = partialScore(base.pulse, base.breathing) ?? 0;
   return persisting(observations, (observation) => (scoreOf(observation) ?? 0) > baselineScore);
 }
 
-/** Pulse or breathing has moved more than the configured amount from check-in on two consecutive observations. */
+/**
+ * Pulse or breathing has moved more than the configured amount from its baseline on two
+ * consecutive observations. Each parameter has its own baseline: the first observation that
+ * gave it. So a check-in that read breathing but no pulse that counts does not leave pulse
+ * without a baseline for the rest of the visit; the first re-check that reads one sets it.
+ */
 export function baselineShift(
   observations: SittingFacts[],
   thresholds: Pick<Settings, "pulseDeltaBpm" | "breathingDeltaPerMin">,
 ): RuleStatus {
-  const baseline = observations[0];
-  const moved = (now: number | null, base: number | null | undefined, limit: number) =>
-    now !== null && base != null && Math.abs(now - base) > limit;
+  const base = baselines(observations);
+  const moved = (now: number | null, from: number | null, limit: number) => now !== null && from !== null && Math.abs(now - from) > limit;
   return persisting(
     observations,
     (observation) =>
-      moved(observation.heartRate, baseline?.heartRate, thresholds.pulseDeltaBpm) ||
-      moved(observation.breathingRate, baseline?.breathingRate, thresholds.breathingDeltaPerMin),
+      moved(observation.heartRate, base.pulse, thresholds.pulseDeltaBpm) ||
+      moved(observation.breathingRate, base.breathing, thresholds.breathingDeltaPerMin),
   );
 }
 

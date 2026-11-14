@@ -2,10 +2,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { Estimate } from '@triagecam/contracts';
+import { EXPOSURE_STUCK, EXPOSURE_STUCK_AFTER_SECONDS, type Estimate } from '@triagecam/contracts';
 import type { CaptureSittingSummary, VariabilityReason } from 'triage-capture';
 
-import { ReasonTally, STALE_BLANK_AFTER_MS, readoutFor, summaryItems } from './readingFormat.ts';
+import { ReasonTally, STALE_BLANK_AFTER_MS, hasLowConfidencePulse, readoutFor, summaryItems, viewfinderHint } from './readingFormat.ts';
 
 const estimate = (patch: Partial<Estimate>): Estimate => ({
   value: null,
@@ -86,6 +86,34 @@ test('the summary names the main reason a measurement failed and tags variabilit
   assert.equal(items[1]!.coverage, 0.1);
 });
 
+test('a lower-confidence heart rate says so in place of "Median of this sitting"', () => {
+  const none = { value: null, coverage: 0, reason: 'no_heart_rate' } as const;
+  const summary = (heartRateConfidence: 'normal' | 'low' | null | undefined, value: number | null = 101.5): CaptureSittingSummary => ({
+    durationSeconds: 60,
+    frameCount: 3600,
+    droppedFrames: 0,
+    heartRate: { value, coverage: 0.05, reason: value === null ? 'too_few_readings' : null },
+    breathingRate: { value: null, coverage: 0, reason: 'no_chest' },
+    rmssd: none,
+    sdnn: none,
+    beatIntervals: [],
+    timeToFirstReadingSeconds: 9,
+    longestDropoutSeconds: 49,
+    heartRateConfidence,
+  });
+  const note = (s: CaptureSittingSummary) => summaryItems(s, { heartRate: null, breathingRate: null })[0]!.note;
+  assert.equal(note(summary('low')), 'Lower confidence. Too little of the sitting gave a clear pulse. Not used for trends or flags. Repeat the sitting.');
+  assert.equal(hasLowConfidencePulse(summary('low')), true);
+  // Normal, null and a capture module from before the field existed all read as an ordinary rate.
+  for (const confidence of ['normal', null, undefined] as const) {
+    assert.equal(note(summary(confidence)), undefined);
+    assert.equal(hasLowConfidencePulse(summary(confidence)), false);
+  }
+  // No heart rate: nothing to qualify.
+  assert.equal(hasLowConfidencePulse(summary('low', null)), false);
+  assert.equal(note(summary('low', null)), undefined);
+});
+
 test('a withheld RMSSD or SDNN gives the reason the engine gave', () => {
   const value = (reason: VariabilityReason) => ({ value: null, coverage: 0.94, reason });
   const reasonFor = (reason: VariabilityReason, heartRate: number | null) =>
@@ -112,4 +140,13 @@ test('a withheld RMSSD or SDNN gives the reason the engine gave', () => {
   assert.deepEqual(reasonFor('too_few_beats', 72), Array(2).fill('Too few clean beats in this sitting to report'));
   assert.deepEqual(reasonFor('low_beat_coverage', 72), Array(2).fill('Clean beats covered too little of the sitting'));
   assert.deepEqual(reasonFor('no_heart_rate', null), Array(2).fill('Needs a pulse reading first'));
+});
+
+test('exposure that will not settle says what to do about it (QA round 3, R5)', () => {
+  assert.equal(viewfinderHint('locking', 0), undefined);
+  assert.equal(viewfinderHint('locking', EXPOSURE_STUCK_AFTER_SECONDS - 1), undefined);
+  assert.equal(viewfinderHint('locking', EXPOSURE_STUCK_AFTER_SECONDS), `${EXPOSURE_STUCK}.`);
+  assert.match(viewfinderHint('locking', 60) ?? '', /move the light\.$/);
+  // Only while the camera is trying to lock on a face.
+  for (const state of ['searching', 'measuring', 'lost'] as const) assert.equal(viewfinderHint(state, 60), undefined);
 });
