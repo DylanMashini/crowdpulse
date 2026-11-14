@@ -478,12 +478,11 @@
   color: var(--ink-muted);
 }
 
-/* The product's own rows, at the product's own sizes. The notification sits over the corner. */
+/* The product's own rows, at the product's own sizes. The notification follows the table and
+   laps its corner by less than a row's padding, so it never covers a patient. */
 .lp-worklist {
   container-type: inline-size;
-  position: relative;
   min-width: 0;
-  padding-bottom: 56px;
   font-size: 13px;
   line-height: 20px;
 }
@@ -515,7 +514,7 @@
 
 .lp-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 96px 44px 88px 104px;
+  grid-template-columns: minmax(0, 1fr) 96px 44px 112px 112px;
   align-items: center;
   gap: var(--space-3);
   height: var(--row);
@@ -585,42 +584,52 @@
 }
 
 .lp-row-delta {
-  min-width: 28px;
+  min-width: 72px;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   text-align: left;
   color: var(--ink-faint);
 }
 
-.lp-row-delta-urgent {
+.lp-row-change {
+  color: var(--ink-muted);
+}
+
+.lp-row-urgent .lp-row-change {
   color: var(--urgent);
 }
 
 /* A narrow preview keeps fewer columns instead of shrinking the text. */
 @container (max-width: 600px) {
   .lp-row {
-    grid-template-columns: minmax(0, 1fr) 96px 88px;
+    grid-template-columns: minmax(0, 1fr) 96px 64px;
   }
 
   .lp-row-score,
-  .lp-row-breathing {
+  .lp-row-breathing,
+  .lp-row-from {
     display: none;
+  }
+
+  .lp-row-delta {
+    min-width: 28px;
   }
 }
 
-@container (max-width: 420px) {
+/* Below this the reason would be cut to a few letters, so the name stands alone. */
+@container (max-width: 680px) {
   .lp-row-reason {
     display: none;
   }
 }
 
 .lp-push {
-  position: absolute;
-  right: var(--space-5);
-  bottom: 0;
+  position: relative;
   display: grid;
   gap: var(--space-1);
+  width: fit-content;
   max-width: calc(100% - var(--space-8));
+  margin: calc(-1 * var(--space-2)) var(--space-5) 0 auto;
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-xl);
@@ -639,6 +648,14 @@
 
 .lp-push-body {
   color: var(--ink);
+}
+
+/* Narrow: the message wraps, so the notification sits clear of the table. */
+@container (max-width: 600px) {
+  .lp-push {
+    max-width: 100%;
+    margin: var(--space-3) 0 0 auto;
+  }
 }
 
 /* ---------------------------------------------------------------- accuracy */
@@ -705,6 +722,10 @@
 
 /* The numerals of a vitals readout: mono, regular weight, tight. */
 .lp-figure-value {
+  /* A fixed box: a figure with a unit and one without put their captions on the same line. */
+  display: flex;
+  align-items: baseline;
+  height: 48px;
   font-family: var(--font-mono);
   font-size: 48px;
   line-height: 48px;

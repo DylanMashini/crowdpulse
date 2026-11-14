@@ -22,12 +22,20 @@ const ROWS: Row[] = [
   { name: 'Tom Whitfield', reason: 'Wrist injury', state: 'observed', score: 0, pulse: { from: 74, now: 72 }, breathing: { from: 14, now: 15 } },
 ];
 
-function Value({ from, now, severity, className }: { from?: number; now: number; severity?: Severity; className?: string }) {
+/** The worklist's own cell: the value, then the change and the check-in baseline it is measured from. */
+function Value({ from, now, className }: { from?: number; now: number; className?: string }) {
   const change = from == null ? null : now - from;
   return (
     <span className={`lp-row-value ${className ?? ''}`}>
       <span className="lp-row-now">{now}</span>
-      <span className={`lp-row-delta${change && severity ? ' lp-row-delta-urgent' : ''}`}>{change == null ? '' : change > 0 ? `+${change}` : change < 0 ? `−${-change}` : '0'}</span>
+      <span className="lp-row-delta">
+        {change == null ? null : (
+          <>
+            {change === 0 ? null : <span className="lp-row-change">{change > 0 ? `+${change} ` : `−${-change} `}</span>}
+            <span className="lp-row-from">from {from}</span>
+          </>
+        )}
+      </span>
     </span>
   );
 }
@@ -60,8 +68,8 @@ export function WorklistPreview() {
               <span className="lp-row-score">
                 <ScoreChip score={row.score} caption={false} />
               </span>
-              <Value {...row.pulse} severity={row.severity} />
-              <Value {...row.breathing} severity={row.severity} className="lp-row-breathing" />
+              <Value {...row.pulse} />
+              <Value {...row.breathing} className="lp-row-breathing" />
             </li>
           ))}
         </ol>
