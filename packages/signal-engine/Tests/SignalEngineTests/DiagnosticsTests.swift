@@ -116,7 +116,9 @@ private func brightnessStep(at second: Double, factor: Double) -> [FrameRecord] 
 
 @Suite struct DiagnosticsNameTheCheck {
   @Test func motionIsNamedWithItsShareAndWhatTheWindowHeld() {
-    let result = diagnosed(sitting { $0.motionBursts = [.init(start: 20, end: 21.5)] }.frames())
+    // Long enough that more than `maximumDisturbedShare` of a window has to be cut: a
+    // shorter burst is now cut out and the rest of the window analysed.
+    let result = diagnosed(sitting { $0.motionBursts = [.init(start: 20, end: 25)] }.frames())
     let refused = result.diagnostics.filter { $0.gate == .motion }
     #expect(!refused.isEmpty)
     for diagnostic in refused {
