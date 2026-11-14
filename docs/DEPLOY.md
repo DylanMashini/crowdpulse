@@ -113,7 +113,8 @@ terraform apply
 cd ..
 registry=$(cd infra && terraform output -raw ecr_repository_url)
 aws ecr get-login-password | docker login --username AWS --password-stdin "${registry%%/*}"
-docker build --platform linux/amd64 -f apps/web/Dockerfile -t "$registry:bootstrap" .
+docker build --platform linux/amd64 --provenance=false --sbom=false \
+  -f apps/web/Dockerfile -t "$registry:bootstrap" .
 docker push "$registry:bootstrap"
 
 # 5. What the workflow needs.
@@ -144,7 +145,9 @@ The bootstrap state (`infra/bootstrap/terraform.tfstate`) is a local, git-ignore
 3. Runs `infra/deploy.sh <commit hash>`, which does the rest:
    - Registers a task definition: a copy of the one Terraform manages, with the new image. Terraform's revision is the template and its ARN is in the SSM parameter `/triagecam-prod/deploy/task-definition-template`.
    - Runs the migrations as a one-off task from that task definition (`node src/db/migrate.mts`, the same image) and waits for it, up to 30 minutes. A non-zero exit stops the deploy before the service is touched. The migration output is printed.
-   - Updates the service and follows the ECS deployment until it has succeeded (about three minutes). A deployment that ECS rolls back fails the script.
+   - Updates the service and follows the ECS deployment until it has succeeded (about three minutes; it gives up after 30). A deployment that ECS rolls back fails the script.
+
+The job's timeout is 90 minutes, above the script's own limits, so a stuck deploy ends with the script's message. A job that is cancelled or times out does not stop what it started: the migration task or the ECS deployment carries on, and `aws ecs list-service-deployments` (Operating it) shows how it ended.
 
 The workflow's actions are pinned to commit hashes, with the version in a comment beside each. To update one, look up the commit of the new version's tag (`gh api repos/<owner>/<action>/commits/<tag> -q .sha`) and change both.
 
@@ -169,11 +172,16 @@ commit=$(git rev-parse HEAD)
 repository=$(aws ecr describe-repositories --repository-names triagecam-prod-web \
   --query 'repositories[0].repositoryUri' --output text)
 aws ecr get-login-password | docker login --username AWS --password-stdin "${repository%%/*}"
-docker build --platform linux/amd64 -f apps/web/Dockerfile -t "$repository:$commit" .
+docker build --platform linux/amd64 --provenance=false --sbom=false \
+  -f apps/web/Dockerfile -t "$repository:$commit" .
 docker push "$repository:$commit"
 
 infra/deploy.sh "$commit"     # migrations, then the blue/green deployment; about six minutes
 ```
+
+`--provenance=false --sbom=false` makes the push one manifest, as the workflow's build does. Without them Docker pushes an index and two untagged manifests for one image. Nothing breaks (the repository keeps whatever a tagged image refers to), but the listing in "Rolling back" then shows three entries for one image.
+
+**One deploy at a time.** `infra/deploy.sh` refuses to start, and refuses again after the migrations, while ECS is still carrying out a deployment of the service, so a deploy by hand cannot land on top of one that is rolling out (the workflow's, another person's, or a `--force-new-deployment`). It cannot see a workflow run that is still building or migrating: once Actions works, look at `gh run list --workflow deploy.yml --limit 3` before deploying by hand, and do not deploy while a run is in progress.
 
 On an Apple-silicon Mac the build is emulated and takes several minutes; it needs a few GB of free disk in Docker. If the image for that commit is already in ECR (a re-run, or the workflow built it), skip the build and run only `infra/deploy.sh`.
 
@@ -191,11 +199,12 @@ infra/deploy.sh --skip-migrations "${commit##*:}"
 
 **With a commit**: `git revert` the commit on `main`, push, and deploy the result (the workflow does it on the push; by hand, as above). This is the normal way and keeps `main` and production the same.
 
-**Without a commit**, go back to an earlier image. ECR keeps the newest 20:
+**Without a commit**, go back to an earlier image. The repository keeps the 20 newest images that are tagged with a commit hash, and the `bootstrap` image; untagged manifests that no tagged image refers to are removed after a day (`aws_ecr_lifecycle_policy.web` in `infra/ecs.tf`):
 
 ```bash
 # Images, newest first: when each was pushed and the commit it was built from.
 aws ecr describe-images --repository-name triagecam-prod-web \
+  --filter tagStatus=TAGGED \
   --query 'reverse(sort_by(imageDetails, &imagePushedAt))[].[imagePushedAt, imageTags[0]]' --output text
 
 infra/deploy.sh --skip-migrations <commit hash of the earlier image>
@@ -286,9 +295,11 @@ aws ecs update-service --cluster triagecam-prod --service triagecam-prod-web --f
 
 The database is in private subnets and has no public address. To run SQL against it, run a one-off task from the service's task definition with a command override, the way the workflow runs the migrations.
 
-Rate limits (`apps/web/src/server/rate-limit.ts`) take the caller's address from `X-Forwarded-For`, counting `TRUSTED_PROXY_HOPS` entries from the right: the load balancer appends the address it was called from, and Cloudflare before it appends the visitor's. Terraform sets the variable to match the stage. An IPv6 caller is counted by /64. Sign-in allows, per five minutes, 60 attempts from one address (so a venue behind one address can sign in to its different accounts), 10 on one account from one address, and 30 on one account from all addresses together. The counters are in memory and start again with every deploy.
+Rate limits (`apps/web/src/server/rate-limit.ts`) take the caller's address from `X-Forwarded-For`, counting `TRUSTED_PROXY_HOPS` entries from the right: the load balancer appends the address it was called from, and Cloudflare before it appends the visitor's. Terraform sets the variable to match the stage. An IPv6 caller is counted by /64. Sign-in allows, per five minutes, 60 attempts from one address (so a venue behind one address can sign in to its different accounts), 10 on one account from one address, and 30 on one account from all addresses together. A refused attempt answers 429 with a `Retry-After` header: the seconds left in the window. The counters are in memory and start again with every deploy.
 
-The app sends its own security headers on every response (`apps/web/next.config.ts`): HSTS, `X-Frame-Options: DENY` with `frame-ancestors 'none'`, `nosniff`, a referrer policy and a permissions policy. Nothing at Cloudflare adds or removes them. There is no script or style content policy.
+The limit on one account from all addresses counts every attempt, right password or wrong, and is checked before the password. **Anyone who knows an account's email can therefore keep that account from signing in**, with 30 attempts every five minutes from three addresses, for as long as they keep it up. Devices that are already signed in are not affected, and a deploy or a task restart clears the counters. This is known and left as it is for now (counting only failed attempts is the fix); see "Before a demo".
+
+The app sends its own security headers on every response (`apps/web/next.config.ts`): HSTS, `X-Frame-Options: DENY` with `frame-ancestors 'none'`, `nosniff`, a referrer policy and a permissions policy. Nothing at Cloudflare adds or removes them. There is no script or style content policy. The redirects the load balancer makes itself (`www` to the apex, and port 80 to HTTPS) never reach the app and carry none of these headers. That is known and left as it is: the `www` name is covered by the apex's HSTS (`includeSubDomains`) once a browser has visited the apex, and a browser ignores HSTS on a plain HTTP answer anyway. "Always Use HTTPS" and HSTS at Cloudflare would close it; the token in use cannot set them.
 
 ### Who can reach the load balancer
 
@@ -296,6 +307,8 @@ Two layers, of which the second is **not switched on yet**:
 
 1. **Cloudflare's addresses only** (the security group, `infra/network.tf`). Direct connections time out. The list is read from Cloudflare when Terraform plans, so it is as old as the last apply: **run `terraform apply` every month or two**, and whenever Cloudflare announces new ranges, or visitors routed through a new range get timeouts.
 2. **This zone only** (`origin_header_check`, `infra/dns.tf`). Cloudflare's addresses are shared by all its customers, so anyone can send requests to the load balancer through a zone or Worker of their own. With the check on, a Cloudflare rule adds a header holding a generated secret to every request of this zone on its way to the origin, and the listener rule that forwards to the app requires it; anything else gets the listener's 404. The secret is generated by Terraform and is only in the state, at Cloudflare and in the listener rule.
+
+   **Switch it on, off, or rotate the secret outside demo hours.** Terraform changes the load balancer as soon as Cloudflare's API has accepted the rule, and Cloudflare's edge takes a few seconds to start (or stop) sending the header; in between, requests can get the listener's 404.
 
    Switching it on needs a Cloudflare API token that has **Zone > Transform Rules > Edit** on the zone as well as the DNS rights; the token used so far has DNS rights only, so this has been planned (`terraform plan -var origin_header_check=true`: one rule set, one secret, one listener rule change) but never applied. With such a token in `CLOUDFLARE_API_TOKEN`:
 
@@ -309,9 +322,18 @@ Two layers, of which the second is **not switched on yet**:
    curl -sI https://crowdpulse.care/api/health    # still 200
    ```
 
-   Terraform makes the Cloudflare rule first and changes the load balancer after it. If the site answers 404 "Not found" afterwards, Cloudflare is not adding the header: set the variable back to `false` and apply. If the zone already has "Modify request header" rules made in the dashboard, Cloudflare refuses a second rule set for that phase; import the existing one into `cloudflare_ruleset.origin_header[0]` first. Every later apply needs the wider token too.
+   Terraform makes the Cloudflare rule first and changes the load balancer after it. If the site answers 404 "Not found" afterwards, Cloudflare is not adding the header: set the variable back to `false` and apply; that apply deletes the Cloudflare rule, so it needs the same wider token. If the zone already has "Modify request header" rules made in the dashboard, Cloudflare refuses a second rule set for that phase; import the existing one into `cloudflare_ruleset.origin_header[0]` first. Every later apply needs the wider token too.
 
 The mobile app has to be built against the production URL (`EXPO_PUBLIC_API_URL=https://crowdpulse.care` in `apps/mobile/.env.local`, then a new build); nothing in this stack does that.
+
+## Before a demo
+
+- **Sign every demo device in beforehand**: each dashboard browser, and each phone in the camera role and the nurse role. A signed-in device keeps its session whatever happens to sign-in. A new sign-in can be refused during the demo: one account takes 10 attempts per five minutes from one address (a venue's network is one address) and 30 from everywhere, and anyone who knows the email can use those up (Operating it, rate limits). If it happens anyway, wait out the five minutes, or restart the task (`--force-new-deployment`), which clears the counters and cuts the open streams once.
+- `RESEND_API_KEY` is set and a sign-up email has been seen to arrive (Secrets).
+- Do not deploy, restart the task, or apply Terraform during the demo: a deploy cuts the open streams once, and the origin check can answer 404 for a few seconds when it changes.
+- After the last deploy or restart, open a signed-in dashboard once: the overdue timer starts with the first signed-in request (Health).
+- The phones run a build made against `https://crowdpulse.care`.
+- `curl -sI https://crowdpulse.care/api/health` answers 200, and the service runs one task (Operating it).
 
 ## Cost
 
@@ -348,7 +370,7 @@ Do this when nobody is using the site: the database change takes it away for som
 
 3. The smaller task size is in the new template but **not in the running service until a deploy**. Redeploy the running image ("Deploying by hand", the `--skip-migrations` commands, or the workflow). This is a blue/green deploy with no downtime beyond the stream reconnect.
 
-4. Take `db_apply_immediately` out of `terraform.tfvars` again (no apply needed; it only says when later changes are made), so that a future change does not restart the database at a moment nobody chose.
+4. Take `db_apply_immediately` out of `terraform.tfvars` again and apply once more, so that a future change does not restart the database at a moment nobody chose. The plan shows one in-place change to `aws_db_instance.this`, `apply_immediately: true -> false`. It only says when later changes are made and restarts nothing; until it is applied, `terraform plan` does not come back clean.
 
 Scaling back up is the same in reverse.
 
