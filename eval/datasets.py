@@ -51,6 +51,12 @@ REFERENCE_RULES = {
             "which is most of the tuning set's error. No held-out sample is below 40 or at 127. A fix to the rule is decided on the "
             "tuning set with A2 and A3, recorded here, and only then is the held-out figure computed again.",
 }
+# Subjects the engine had already been checked against when the split was drawn (the six UBFC-rPPG
+# subjects on disk since the first run, used again to judge the BUG-3 engine fixes). The split is
+# by seed and was not redrawn around them, so those that fell in the held-out set stay in the
+# published figure, are marked `seenInDevelopment` on their rows, and are disclosed wherever the
+# figure appears, with the figure without them. Never tune on any of them again (`--subjects 6`).
+SEEN_IN_DEVELOPMENT = {"ubfc": {"subject1", "subject3", "subject4", "subject5", "subject8", "subject9"}}
 
 
 _fetch_locks = {}
@@ -230,7 +236,7 @@ def ubfc(subjects):
         fresh run refuses it. None when there is no ground truth on disk to check."""
         return ubfc_reference_check(folder, listing, name, download=False) if (folder / name / "ground_truth.txt").exists() else None
 
-    return [{"dataset": "ubfc", "id": name, "group": "All", "info": {"subject": name},
+    return [{"dataset": "ubfc", "id": name, "group": "All", "info": {"subject": name, "seenInDevelopment": name in SEEN_IN_DEVELOPMENT["ubfc"]},
              "prepare": lambda sitting, name=name: prepare(name, sitting),
              "check": lambda name=name: check_on_disk(name)} for name in names]
 

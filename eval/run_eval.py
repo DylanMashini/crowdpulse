@@ -28,6 +28,9 @@ authors' file: `check-references` does that, and the next re-score records the r
 
 Subjects are split into a tuning set and a held-out set by eval/split.json (see eval/split.py).
 Tune on the tuning set only (--split tuning). Every published figure comes from the held-out set.
+Four held-out UBFC subjects were used in engine checks before the split was drawn
+(datasets.SEEN_IN_DEVELOPMENT): they stay in the figure and the report discloses them, with the
+figure without them. Say so wherever the held-out figure is published.
 
 The UBFC-rPPG reference is the dataset's own oximeter heart rate, samples at 0 dropped: the rule
 the harness used before the split existed. It is written out with its reason in
@@ -298,6 +301,14 @@ def write_report(target, names, recorded, lines):
             if checks:
                 lines += ["", "Reference checked against: "
                           + ", ".join(f"{check} ({checks.count(check)} recordings)" for check in sorted(set(checks))) + "."]
+            seen = sorted({r["subject"] for r in in_set if r.get("seenInDevelopment")}, key=lambda name: (len(name), name))
+            if key == split.HELD_OUT and seen:
+                u = summarise([r for r in in_set if not r.get("seenInDevelopment")])
+                lines += ["", f"**Disclosure.** {len(seen)} of the {scored} held-out subjects scored ({', '.join(seen)}) had been used to check the engine "
+                          "during earlier development, before the split was drawn. The split was fixed by its seed and is not redrawn around them, "
+                          f"so the figures above keep them. Without them: {u['subjects']} subjects, {u['pairedReadings']} paired readings, "
+                          f"MAE {number(u['maeBpm'])} bpm, bias {number(u['biasBpm'], '{:+.1f}')} bpm, {number(u['within5'], '{:.0%}')} within 5 bpm, "
+                          f"coverage {number(u['coverage'], '{:.0%}')}."]
             unchecked = [r["id"] for r in in_set if "error" not in r and not r.get("referenceCheck")] if name in datasets.REFERENCE_CHECKED else []
             if unchecked:
                 lines += ["", f"**Reference not checked, {len(unchecked)} recording(s):** {', '.join(unchecked)}. "
