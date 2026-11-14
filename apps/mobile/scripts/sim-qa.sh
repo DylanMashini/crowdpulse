@@ -272,8 +272,11 @@ push_when_ready() {
 
 start_app_logs() {
   local udid="$1" name="$2" out="$3"
-  xcrun simctl spawn "$udid" log stream --style compact \
-    --predicate 'process == "TriageCam"' >"$out/$name-app.log" 2>&1 &
+  # The app's own lines (JavaScript console, the capture module) and anything iOS logs about
+  # it as an error. Everything the process logs would be a quarter of a million lines a run.
+  xcrun simctl spawn "$udid" log stream --style compact --predicate \
+    'process == "TriageCam" AND (messageType == error OR messageType == fault OR subsystem == "com.facebook.react.log" OR eventMessage CONTAINS "TriageCapture")' \
+    >"$out/$name-app.log" 2>&1 &
   echo $! >"$PIDS/log-$name"
 }
 
