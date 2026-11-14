@@ -122,7 +122,7 @@ function TicketView({ detail, updatedAt, refreshError, onChanged }: TicketViewPr
               Handoff
             </h2>
             <HandoffNote>{detail.handoff}</HandoffNote>
-            <p className="type-caption text-ink-muted">Built from the measured values by a fixed template. Camera estimates, not a clinical assessment.</p>
+            <p className="type-caption text-ink-muted">Written from the readings on this page</p>
           </section>
 
           {waiting ? (
