@@ -82,6 +82,17 @@ variable "db_multi_az" {
   default     = true
 }
 
+variable "db_apply_immediately" {
+  description = <<-EOT
+    Apply changes to the database (instance class, Multi-AZ, storage) at once and not in the
+    next maintenance window. A change of instance class restarts the database: a few minutes
+    of downtime on a single instance, a failover of a minute or two with Multi-AZ. Set it for
+    the apply that scales the database down, then unset it again.
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "db_engine_version" {
   description = "Postgres version. The major version matches local development (17); AWS chooses and upgrades the minor."
   type        = string

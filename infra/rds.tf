@@ -28,9 +28,12 @@ resource "aws_db_instance" "this" {
   vpc_security_group_ids = [aws_security_group.db.id]
   publicly_accessible    = false
 
-  backup_retention_period   = var.db_backup_retention_days
-  backup_window             = "08:00-08:30"
-  maintenance_window        = "sun:09:00-sun:09:30"
+  backup_retention_period = var.db_backup_retention_days
+  backup_window           = "08:00-08:30"
+  # Wednesday 04:00 US Eastern. Minor version upgrades happen here and restart the database,
+  # which also replaces the web task (its health check needs the database).
+  maintenance_window        = "wed:09:00-wed:09:30"
+  apply_immediately         = var.db_apply_immediately
   copy_tags_to_snapshot     = true
   deletion_protection       = true
   skip_final_snapshot       = false
