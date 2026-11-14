@@ -44,6 +44,20 @@ export function errorMessage(error: unknown): string {
 
 type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 
+const sessionEndedListeners = new Set<() => void>();
+
+/**
+ * Calls `listener` when any request is refused with `unauthenticated`: the session has expired
+ * or was ended elsewhere, and nothing on the page can succeed until staff sign in again. One
+ * place (the app shell) listens and sends them to sign-in, so no screen handles it itself.
+ */
+export function onSessionEnded(listener: () => void): () => void {
+  sessionEndedListeners.add(listener);
+  return () => {
+    sessionEndedListeners.delete(listener);
+  };
+}
+
 async function send(path: string, init: RequestInit): Promise<Response> {
   if (process.env.NEXT_PUBLIC_API_MOCK === '1') {
     const { mockFetch } = await import('./mock/server');
@@ -67,7 +81,10 @@ async function request<T>(schema: ZodType<T> | null, method: Method, path: strin
 
   if (!response.ok) {
     const parsed = ErrorResponse.safeParse(await response.json().catch(() => null));
-    if (parsed.success) throw new ApiError(parsed.data.error.code, parsed.data.error.message, response.status);
+    if (parsed.success) {
+      if (parsed.data.error.code === 'unauthenticated') sessionEndedListeners.forEach((listener) => listener());
+      throw new ApiError(parsed.data.error.code, parsed.data.error.message, response.status);
+    }
     throw new ApiError('bad_response', `The server answered with status ${response.status} and no explanation.`, response.status);
   }
 

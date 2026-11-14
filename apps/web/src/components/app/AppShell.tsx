@@ -2,11 +2,11 @@
 
 import type { Device } from '@triagecam/contracts';
 import { usePathname, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 
 import { BrandLockup, SideNav, type SideNavGroup, type SideNavStation } from '@/components/ds';
 import { StateMessage } from '@/components/ui/StateMessage';
-import { api, errorMessage } from '@/lib/api';
+import { ApiError, api, errorMessage, onSessionEnded } from '@/lib/api';
 import { useNow } from '@/lib/clock';
 import { minutesAgo } from '@/lib/format';
 import { useResource } from '@/lib/use-resource';
@@ -55,13 +55,30 @@ export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const session = useResource('session', api.me);
-  const signedOut = session.error?.code === 'unauthenticated';
+  // Any request refused for want of a session, on any screen, ends up here: the session expired
+  // or was ended elsewhere while the dashboard was open.
+  const [ended, setEnded] = useState(false);
+  const signingOut = useRef(false);
+  useEffect(
+    () =>
+      onSessionEnded(() => {
+        // Signing out on purpose goes to a plain sign-in page, not back to where staff were.
+        if (!signingOut.current) setEnded(true);
+      }),
+    [],
+  );
+  const signedOut = ended || session.error?.code === 'unauthenticated';
 
   useEffect(() => {
-    if (signedOut) router.replace(`/sign-in?next=${encodeURIComponent(pathname)}`);
+    if (signedOut) router.replace(`/sign-in?next=${encodeURIComponent(pathname + window.location.search)}`);
   }, [signedOut, router, pathname]);
+  const onSigningOut = useCallback((active: boolean) => {
+    signingOut.current = active;
+  }, []);
 
-  if (session.data) {
+  // Once the session has ended the dashboard is taken down at once: it must not go on looking
+  // live and signed in while nothing on it can work.
+  if (session.data && !signedOut) {
     return (
       <LiveProvider>
         <a
@@ -71,7 +88,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           Skip to content
         </a>
         <div className="min-h-screen md:flex">
-          <Navigation pathname={pathname} email={session.data.user.email} />
+          <Navigation pathname={pathname} email={session.data.user.email} onSigningOut={onSigningOut} />
           <main id="main" tabIndex={-1} className="min-w-0 flex-1 p-4 outline-none md:p-6">
             <div className="mx-auto max-w-[1400px]">{children}</div>
           </main>
@@ -144,7 +161,16 @@ function stationDevice(devices: Device[] | undefined, serverNow: number): SideNa
   return { label: camera.label, detail: `Offline, last seen ${minutesAgo(Math.floor(silentMs / 60_000))}`, connected: false };
 }
 
-function Navigation({ pathname, email }: { pathname: string; email: string }) {
+function Navigation({
+  pathname,
+  email,
+  onSigningOut,
+}: {
+  pathname: string;
+  email: string;
+  /** Told true while staff sign out on purpose, so requests refused meanwhile are not taken for an expired session. */
+  onSigningOut: (active: boolean) => void;
+}) {
   const router = useRouter();
   const { status, worklist } = useLive();
   const rail = useRail();
@@ -196,11 +222,15 @@ function Navigation({ pathname, email }: { pathname: string; email: string }) {
 
   const onSignOut = async () => {
     setSignOut({ busy: true, error: null });
+    onSigningOut(true);
     try {
       await api.signOut();
       router.replace('/sign-in');
     } catch (error) {
-      setSignOut({ busy: false, error: errorMessage(error) });
+      onSigningOut(false);
+      // The session had already ended: there is nothing left to sign out of.
+      if (error instanceof ApiError && error.code === 'unauthenticated') router.replace('/sign-in');
+      else setSignOut({ busy: false, error: errorMessage(error) });
     }
   };
 
