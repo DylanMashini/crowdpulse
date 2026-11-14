@@ -2,7 +2,9 @@
 # your own IP address belong here and not in a committed file.
 
 cloudflare_zone_id = "<id of the crowdpulse.care zone, from the Cloudflare dashboard>"
-github_repository  = "<owner>/<repository>"
+
+# gh api repos/<owner>/<repository>/actions/oidc/customization/sub -q .sub_claim_prefix
+github_oidc_subject_prefix = "repo:<owner>/<repository>"
 
 # Your own public address, to reach the load balancer directly: `curl -s https://checkip.amazonaws.com`.
 # Stage 1 (domain not live yet): the only way in. Stage 2: remove it again.

@@ -131,13 +131,25 @@ variable "bootstrap_image_tag" {
   default     = "bootstrap"
 }
 
-variable "github_repository" {
-  description = "The GitHub repository whose Actions workflow may deploy, as owner/name."
+variable "github_oidc_subject_prefix" {
+  description = <<-EOT
+    How GitHub names the repository in the OIDC tokens of its workflow runs: the start of the
+    token's `sub` claim, up to but not including ":ref:...". Ask GitHub for it:
+      gh api repos/<owner>/<repository>/actions/oidc/customization/sub -q .sub_claim_prefix
+    It is "repo:<owner>/<repository>" for a repository on the classic format, and carries the
+    numeric owner and repository ids ("repo:<owner>@<id>/<repository>@<id>") on the immutable
+    format, which survives a rename.
+  EOT
   type        = string
+
+  validation {
+    condition     = startswith(var.github_oidc_subject_prefix, "repo:") && !strcontains(var.github_oidc_subject_prefix, "*")
+    error_message = "Must start with \"repo:\" and name exactly one repository (no wildcards)."
+  }
 }
 
 variable "github_deploy_refs" {
-  description = "Git refs of that repository whose workflow runs may deploy."
+  description = "Git refs of the repository whose workflow runs may deploy."
   type        = list(string)
   default     = ["refs/heads/main"]
 }

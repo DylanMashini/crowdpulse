@@ -23,7 +23,7 @@ locals {
 
 resource "aws_iam_role" "deploy" {
   name                 = "${local.name}-github-deploy"
-  description          = "Assumed by the deploy workflow of ${var.github_repository}"
+  description          = "Assumed by the GitHub Actions deploy workflow"
   max_session_duration = 3600
 
   assume_role_policy = jsonencode({
@@ -35,7 +35,7 @@ resource "aws_iam_role" "deploy" {
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          "token.actions.githubusercontent.com:sub" = [for ref in var.github_deploy_refs : "repo:${var.github_repository}:ref:${ref}"]
+          "token.actions.githubusercontent.com:sub" = [for ref in var.github_deploy_refs : "${var.github_oidc_subject_prefix}:ref:${ref}"]
         }
       }
     }]
