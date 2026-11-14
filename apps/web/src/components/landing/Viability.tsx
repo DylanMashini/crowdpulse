@@ -26,11 +26,11 @@ export function Viability() {
 
         <div className="lp-viability-grid">
           <div className="lp-decisions">
-            <h3 className="lp-h3">Six products, one regulation</h3>
+            <h3 className="lp-h3">One regulation, a growing list</h3>
             <p className="lp-decisions-lead">
               In 2021 the FDA granted a De Novo request for Oxehealth Vital Signs and created a device class for software that measures pulse
               and breathing rate with an optical camera, 21 CFR 870.2785
-              <Cite n={2} />. Products from five more companies have been cleared under it since.
+              <Cite n={2} />. Contact-free products from five more companies have been cleared under it since. Each company’s first is listed here.
             </p>
             <ol className="lp-timeline">
               {DECISIONS.map((d) => (

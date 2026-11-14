@@ -70,7 +70,11 @@ export interface Decision {
   source: number;
 }
 
-/** FDA decisions under 21 CFR 870.2785, in date order. Not a complete list of the product code. */
+/**
+ * Each company's first FDA decision for a contact-free camera product under 21 CFR 870.2785
+ * (product code QME), in date order. Later clearances for the same companies and the one
+ * fingertip-contact product in the code (FibriCheck, K232804) are left out.
+ */
 export const DECISIONS: Decision[] = [
   { date: '26 Mar', year: '2021', product: 'Oxehealth Vital Signs', company: 'Oxehealth', decision: 'De Novo granted', number: 'DEN200019', source: 2 },
   { date: '1 Sep', year: '2023', product: 'FaceHeart Vitals SDK', company: 'FaceHeart', decision: '510(k) cleared', number: 'K223622', source: 3 },
