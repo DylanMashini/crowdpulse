@@ -12,6 +12,7 @@ import { captureErrorMessage } from '@/lib/capture/captureErrors';
 import { sentences } from '@/lib/format';
 
 import { Icon } from './Icon';
+import { Text } from './Text';
 import { useScopedTheme } from './ThemeScope';
 import { Touchable } from './Touchable';
 import { Viewfinder } from './Viewfinder';
@@ -83,7 +84,10 @@ export function LiveViewfinder({ state, message, flipDisabled = false }: Props) 
 
 type FlipProps = { camera: CameraFacing; disabled: boolean; onPress: () => void };
 
-/** A round control on the picture. The touch target is the full 48 points; the disc is smaller. */
+/**
+ * A pill on the picture that names the camera in use and flips to the other one. The touch
+ * target is the full 48 points high; the pill is smaller.
+ */
 function FlipCameraButton({ camera, disabled, onPress }: FlipProps) {
   const theme = useScopedTheme();
   const { colors } = theme;
@@ -98,9 +102,12 @@ function FlipCameraButton({ camera, disabled, onPress }: FlipProps) {
       accessibilityValue={{ text: `Using the ${camera} camera` }}
       accessibilityState={{ disabled }}
       style={({ pressed }) => ({
-        width: 40,
         height: 40,
+        minWidth: 40,
+        paddingHorizontal: theme.space.space3,
+        gap: theme.space.space2,
         borderRadius: theme.radius.radiusPill,
+        flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 1,
@@ -110,6 +117,10 @@ function FlipCameraButton({ camera, disabled, onPress }: FlipProps) {
       })}
     >
       <Icon name="flip-camera" size={20} color={colors.ink} />
+      {/* The pill keeps its height, so its word grows less than the text around it. */}
+      <Text maxFontSizeMultiplier={1.2} style={[theme.type.label, { color: colors.ink }]}>
+        {camera === 'front' ? 'Front' : 'Back'}
+      </Text>
     </Touchable>
   );
 }
