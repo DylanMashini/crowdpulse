@@ -1,0 +1,5 @@
+{
+  "name": "triagecam",
+  "except": [],
+  "keep": ["com.apple.apsd"]
+}
