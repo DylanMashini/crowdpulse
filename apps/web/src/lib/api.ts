@@ -3,7 +3,6 @@ import {
   ErrorResponse,
   FlagResponse,
   MeResponse,
-  PostReadingsResponse,
   ResendVerificationResponse,
   SettingsResponse,
   SignInResponse,
@@ -18,7 +17,6 @@ import {
   routes,
   type ErrorCode,
   type PatientRef,
-  type ReferenceReading,
   type UpdatePatientRequest,
   type UpdateSettingsRequest,
 } from '@triagecam/contracts';
@@ -120,8 +118,6 @@ export const api = {
   acknowledgeFlag: (id: string) => request(FlagResponse, 'POST', routes.flagAcknowledge(id)),
 
   sitting: (id: string) => request(SittingDetailResponse, 'GET', routes.sitting(id)),
-  postReference: (sittingId: string, readings: ReferenceReading[]) =>
-    request(PostReadingsResponse, 'POST', routes.sittingReference(sittingId), { readings }),
 
   settings: () => request(SettingsResponse, 'GET', routes.settings),
   updateSettings: (changes: UpdateSettingsRequest) => request(SettingsResponse, 'PATCH', routes.settings, changes),

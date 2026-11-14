@@ -1,6 +1,6 @@
 import * as z from 'zod';
 
-import { Id, PatientNumber, Timestamp, Unit } from './common.ts';
+import { Id, PatientNumber, Timestamp } from './common.ts';
 import { BeatInterval, CaptureSource, Estimate, SittingSummary, SummaryValue } from './signal.ts';
 
 export const SittingKind = z.enum(['check_in', 'recheck']);
@@ -80,36 +80,12 @@ export const StoredReading = z.object({
 });
 export type StoredReading = z.infer<typeof StoredReading>;
 
-export const ReferenceSource = z.enum(['chest_strap', 'oximeter', 'manual']);
-export type ReferenceSource = z.infer<typeof ReferenceSource>;
-
-export const ReferenceReading = z.object({
-  /** Laptop wall clock, which is the server clock. */
-  t: Timestamp,
-  /** bpm. */
-  heartRate: z.number().positive().nullable(),
-  /** Beat intervals in ms reported with this sample; empty when the device gives none. */
-  rrIntervalsMs: z.array(z.number().positive()).max(32),
-  /** Breaths per minute from a manual count. */
-  breathingRate: z.number().positive().nullable().optional(),
-  source: ReferenceSource,
-});
-export type ReferenceReading = z.infer<typeof ReferenceReading>;
-
-export const PostReferenceRequest = z.object({ readings: z.array(ReferenceReading).min(1).max(120) });
-export type PostReferenceRequest = z.infer<typeof PostReferenceRequest>;
-
 export const SittingResponse = z.object({ sitting: Sitting });
 export type SittingResponse = z.infer<typeof SittingResponse>;
 
 export const SittingDetailResponse = z.object({
   sitting: Sitting,
   readings: z.array(StoredReading),
-  referenceReadings: z.array(ReferenceReading),
   beatIntervals: z.array(BeatInterval),
-  /** Mean absolute difference between paired estimate and reference heart rate, in bpm. */
-  meanAbsoluteErrorBpm: z.number().nonnegative().nullable(),
-  pairedReadings: z.int().nonnegative(),
-  within5BpmShare: Unit.nullable(),
 });
 export type SittingDetailResponse = z.infer<typeof SittingDetailResponse>;

@@ -782,6 +782,11 @@
   color: var(--ink-muted);
 }
 
+/* The sentence runs to two lines: it breaks between its two halves, never inside "check-in". */
+.lp-push-body span {
+  white-space: nowrap;
+}
+
 .lp-push-action {
   flex: none;
   margin-left: 4px;
@@ -834,6 +839,33 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 28px 24px;
+}
+
+.lp-figure-groups {
+  display: grid;
+  gap: 28px;
+}
+
+.lp-figure-group {
+  display: grid;
+  gap: 16px;
+}
+
+.lp-figure-group + .lp-figure-group {
+  padding-top: 28px;
+  border-top: 1px solid var(--line);
+}
+
+.lp-figure-caption {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.lp-figure-caption span {
+  display: block;
+  font-weight: 400;
+  color: var(--ink-muted);
 }
 
 .lp-figure {

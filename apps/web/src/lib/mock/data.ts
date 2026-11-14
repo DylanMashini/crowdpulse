@@ -6,7 +6,6 @@ import {
   type Device,
   type Estimate,
   type Flag,
-  type ReferenceReading,
   type Settings,
   type Sitting,
   type Statistics,
@@ -20,6 +19,8 @@ import {
   type User,
   type WorklistItem,
 } from '@triagecam/contracts';
+
+import { breathsPerMin, heartRate, minutes, minutesAgo, rate } from '@/lib/format';
 
 const MINUTE = 60_000;
 /** Everything is placed relative to the moment the mock was loaded. */
@@ -101,13 +102,20 @@ export const runningSittingId = uuid(3, 1700);
 export const acknowledged = new Map<string, string>();
 export const discharged = new Map<number, string>([[13, ago(95)]]);
 
+/** The server's fixed template, written out with the same formatters. */
 function handoffFor(seed: Seed): string {
   const [pulseBase, pulseNow] = seed.pulse;
   const [breathingBase, breathingNow] = seed.breathing;
-  const pulse = pulseNow == null ? `pulse ${pulseBase} at check-in, no reading now` : `pulse ${pulseBase} at check-in, ${pulseNow} now (${seed.waitedMin - (seed.observedMin ?? 0) - 2} min later)`;
-  const breathing = breathingNow == null ? `breathing ${breathingBase} at check-in, no reading now` : `breathing ${breathingBase} to ${breathingNow}`;
-  return `${labelOf(seed.number)}: ${pulse}; ${breathing}. Last observed ${seed.observedMin} min ago.`;
+  if (pulseBase == null || breathingBase == null) return `${labelOf(seed.number)}: not measured at check-in.`;
+  const later = minutes(seed.waitedMin - (seed.observedMin ?? 0) - 2);
+  const pulse =
+    pulseNow == null ? `pulse ${heartRate(pulseBase)} at check-in, no reading now` : `pulse ${heartRate(pulseBase)} at check-in, ${heartRate(pulseNow)} now (${later} later)`;
+  const breathing =
+    breathingNow == null ? `breathing ${breathsPerMin(breathingBase)} at check-in, no reading now` : `breathing ${rate(breathingBase)} to ${breathsPerMin(breathingNow)}`;
+  return `${labelOf(seed.number)}: ${pulse}; ${breathing}. Last observed ${minutesAgo(seed.observedMin ?? 0)}.`;
 }
+
+const CHECK_IN_ONLY = `pulse ${heartRate(77)}, breathing ${breathsPerMin(16)} at check-in`;
 
 function flagFor(seed: Seed): Flag | null {
   if (!seed.flag) return null;
@@ -180,7 +188,7 @@ export function worklistItems(): WorklistItem[] {
       parametersMeasured: done ? 2 : 0,
       source: done ? 'camera' : null,
       flags: [],
-      handoff: done ? `${labelOf(RUNNING_PATIENT)}: pulse 77 at check-in; breathing 16. Last observed 0 min ago.` : `${labelOf(RUNNING_PATIENT)}: not yet observed.`,
+      handoff: done ? `${labelOf(RUNNING_PATIENT)}: ${CHECK_IN_ONLY}. Last observed just now.` : `${labelOf(RUNNING_PATIENT)}: not yet observed, waiting under 1 min.`,
       sittingInProgress: !done,
     });
   }
@@ -233,11 +241,6 @@ export function runningReading(i: number): StoredReading {
   const breathingRate =
     i >= 30 ? valid(16, breathingCoverage) : waiting('settling', i < 25 ? 'warming_up' : 'awaiting_agreement', 0);
   return { t: iso(runningStart + i * 1000), heartRate, breathingRate };
-}
-
-export function runningReference(i: number): ReferenceReading {
-  const heartRate = 77 + Math.round(2 * Math.sin(i / 5 + 0.4));
-  return { t: iso(runningStart + i * 1000), heartRate, rrIntervalsMs: [Math.round(60_000 / heartRate)], source: 'chest_strap' };
 }
 
 const summaryValue = (value: number | null, coverage: number) => ({ value, coverage });
@@ -298,7 +301,7 @@ export function patientDetail(number: number): PatientDetailResponse | null {
       sittings: [sitting],
       flags: [],
       timeline,
-      handoff: item?.handoff ?? `${labelOf(number)}: pulse 77 at check-in; breathing 16.`,
+      handoff: item?.handoff ?? `${labelOf(number)}: ${CHECK_IN_ONLY}. Last observed just now.`,
     };
   }
 
@@ -316,7 +319,7 @@ export function patientDetail(number: number): PatientDetailResponse | null {
         { type: 'sitting', at: baseline.endedAt!, sittingId: baseline.id, kind: 'check_in', source: 'camera', heartRate: 71, breathingRate: 15, score: 0 },
         { type: 'created', at: patient.createdAt },
       ],
-      handoff: `${labelOf(number)}: pulse 71 at check-in; breathing 15. Discharged.`,
+      handoff: `${labelOf(number)}: pulse ${heartRate(71)}, breathing ${breathsPerMin(15)} at check-in.`,
     };
   }
 
@@ -358,40 +361,90 @@ export function findFlag(id: string): Flag | null {
 
 export function statistics(empty: boolean): Statistics {
   const now = Date.now();
-  const range = { generatedAt: iso(now), from: iso(new Date(now).setHours(0, 0, 0, 0)), to: iso(now) };
+  const range = { generatedAt: iso(now), from: iso(new Date(now).setHours(0, 0, 0, 0)), to: iso(now), recheckIntervalMin: settings.value.recheckIntervalMin };
+  const noRates = { sittings: 0, median: null, lowest: null, highest: null, bins: [] };
   if (empty) {
     return {
       ...range,
-      totals: { patientsWaiting: 0, patientsDischarged: 0, sittings: 0, sittingsWithReference: 0, openFlags: 0, personHours: 0 },
-      heartRate: { pairedReadings: 0, meanAbsoluteErrorBpm: null, biasBpm: null, within5BpmShare: null },
-      sittings: { attempted: 0, withReading: 0, accurateAcceptedShare: null, meanCoverage: null, medianTimeToFirstReadingSeconds: null, longestDropoutSeconds: null },
-      flags: { episodes: 0, episodesPerPersonHour: null, acknowledged: 0, medianMinutesToAcknowledge: null },
+      patients: { seen: 0, arrived: 0, discharged: 0, medianMinutesToFirstObservation: null, medianMinutesToDischarge: null },
+      waitingNow: {
+        patients: 0,
+        byState: { observed: 0, flag: 0, overdue: 0, 'no-reading': 0 },
+        medianMinutesWaiting: null,
+        longestMinutesWaiting: null,
+        medianMinutesSinceObserved: null,
+        longestMinutesSinceObserved: null,
+      },
+      sittings: {
+        finished: 0,
+        withReading: 0,
+        checkIns: 0,
+        rechecks: 0,
+        meanPerPatient: null,
+        medianMinutesBetweenObservations: null,
+        meanHeartRateCoverage: null,
+        meanBreathingRateCoverage: null,
+        medianTimeToFirstReadingSeconds: null,
+      },
+      heartRate: noRates,
+      breathingRate: noRates,
+      flags: { raised: 0, byRule: { score_rise: 0, baseline_shift: 0, overdue: 0 }, acknowledged: 0, medianMinutesToAcknowledge: null, openNow: 0, unacknowledgedNow: 0 },
       perPatient: [],
     };
   }
-  const row = (patientNumber: number, pairedReadings: number, mae: number | null, bias: number | null, within: number | null, coverage: number | null) => ({
-    patientNumber,
-    sittings: 2,
-    pairedReadings,
-    meanAbsoluteErrorBpm: mae,
-    biasBpm: bias,
-    within5BpmShare: within,
-    coverage,
-  });
+
+  const waiting = seeds.filter((seed) => !discharged.has(seed.number));
+  const byState = { observed: 0, flag: 0, overdue: 0, 'no-reading': 0 };
+  for (const seed of waiting) byState[seed.state] += 1;
+  const bins = (from: number, width: number, counts: number[]) =>
+    counts.map((sittings, index) => ({ from: from + index * width, to: from + (index + 1) * width - 1, sittings }));
+
   return {
     ...range,
-    totals: { patientsWaiting: 6, patientsDischarged: 1, sittings: 13, sittingsWithReference: 12, openFlags: 2, personHours: 4.6 },
-    heartRate: { pairedReadings: 508, meanAbsoluteErrorBpm: 2.9, biasBpm: 0.7, within5BpmShare: 0.87 },
-    sittings: { attempted: 13, withReading: 11, accurateAcceptedShare: 0.75, meanCoverage: 0.78, medianTimeToFirstReadingSeconds: 11.5, longestDropoutSeconds: 19 },
-    flags: { episodes: 3, episodesPerPersonHour: 0.65, acknowledged: 2, medianMinutesToAcknowledge: 4 },
-    perPatient: [
-      row(11, 96, 1.8, 0.4, 0.97, 0.88),
-      row(12, 91, 2.2, -1.1, 0.93, 0.84),
-      row(13, 88, 2.6, 1.9, 0.9, 0.81),
-      row(14, 102, 3.1, -0.6, 0.86, 0.9),
-      row(15, 41, 7.4, 6.2, 0.44, 0.37),
-      row(16, 90, 2.4, 0.9, 0.92, 0.8),
-      row(17, 0, null, null, null, 0.83),
-    ],
+    patients: { seen: seeds.length + 2, arrived: seeds.length + 2, discharged: discharged.size, medianMinutesToFirstObservation: 2.4, medianMinutesToDischarge: 95.2 },
+    waitingNow: {
+      patients: waiting.length,
+      byState,
+      medianMinutesWaiting: 29.3,
+      longestMinutesWaiting: 64.8,
+      medianMinutesSinceObserved: 12.1,
+      longestMinutesSinceObserved: 41.6,
+    },
+    sittings: {
+      finished: 13,
+      withReading: 11,
+      checkIns: 7,
+      rechecks: 6,
+      meanPerPatient: 1.857,
+      medianMinutesBetweenObservations: 21.5,
+      meanHeartRateCoverage: 0.7812,
+      meanBreathingRateCoverage: 0.6431,
+      medianTimeToFirstReadingSeconds: 11.5,
+    },
+    heartRate: { sittings: 11, median: 78.42, lowest: 67.9, highest: 108.3, bins: bins(51, 10, [0, 2, 4, 2, 1, 2]) },
+    breathingRate: { sittings: 10, median: 16.2, lowest: 13.8, highest: 24.1, bins: [...bins(12, 3, [3, 4, 1]), { from: 21, to: 24, sittings: 2 }] },
+    flags: { raised: 3, byRule: { score_rise: 1, baseline_shift: 0, overdue: 2 }, acknowledged: acknowledged.size, medianMinutesToAcknowledge: acknowledged.size ? 4.3 : null, openNow: 2, unacknowledgedNow: 2 - Math.min(2, acknowledged.size) },
+    perPatient: seeds.map((seed) => {
+      const left = discharged.get(seed.number) ?? null;
+      const [pulseBase, pulseNow] = seed.pulse;
+      return {
+        patientNumber: seed.number,
+        patient: refOf(seed.number),
+        status: left ? ('discharged' as const) : ('waiting' as const),
+        state: left ? null : seed.state,
+        arrivedAt: ago(seed.waitedMin),
+        dischargedAt: left,
+        minutesInRoom: seed.waitedMin,
+        minutesSinceObserved: left ? null : seed.observedMin,
+        sittings: 2,
+        observations: pulseNow == null ? 1 : 2,
+        pulse: { base: pulseBase, now: pulseNow },
+        breathing: { base: seed.breathing[0], now: seed.breathing[1] },
+        // Unrounded on purpose: the mock should exercise the formatters as the engine does.
+        heartRates: [pulseBase, pulseNow].flatMap((value) => (value == null ? [] : [value + 0.763824])),
+        score: seed.score,
+        flags: seed.flag ? 1 : 0,
+      };
+    }),
   };
 }

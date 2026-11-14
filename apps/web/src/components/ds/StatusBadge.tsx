@@ -21,16 +21,26 @@ const STATES: Record<TileState, { icon: IconName; className: string; text: (minu
   'no-reading': { icon: 'no-reading', className: 'border-dashed border-line-strong text-ink', text: () => 'No reading' },
 };
 
+/** The state in a word or two. */
+const BRIEF: Record<TileState, (minutes?: number | null) => string> = {
+  observed: (minutes) => (minutes == null ? 'Not yet observed' : 'Observed'),
+  flag: () => 'Trend flag',
+  overdue: () => 'Overdue',
+  'no-reading': () => 'No reading',
+};
+
 export interface StatusBadgeProps {
   state: TileState;
   /** Whole minutes since the last observation. */
   minutes?: number | null;
+  /** Leaves out how long ago, for a table row that has its own column for it. */
+  brief?: boolean;
   children?: ReactNode;
   className?: string;
 }
 
 /** The state of a waiting patient: an icon, the words, and a form that differs for each state. */
-export function StatusBadge({ state, minutes, children, className }: StatusBadgeProps) {
+export function StatusBadge({ state, minutes, brief, children, className }: StatusBadgeProps) {
   const spec = STATES[state];
   return (
     <span
@@ -41,7 +51,7 @@ export function StatusBadge({ state, minutes, children, className }: StatusBadge
       )}
     >
       <Icon name={spec.icon} size={16} />
-      <span>{children ?? spec.text(minutes)}</span>
+      <span>{children ?? (brief ? BRIEF[state](minutes) : spec.text(minutes))}</span>
     </span>
   );
 }

@@ -30,11 +30,7 @@ function sittingDetail(): SittingDetailResponse {
   return {
     sitting: data.runningSitting(),
     readings: seconds.map(data.runningReading),
-    referenceReadings: seconds.map(data.runningReference),
     beatIntervals: [],
-    meanAbsoluteErrorBpm: 1.6,
-    pairedReadings: seconds.length,
-    within5BpmShare: 1,
   };
 }
 
@@ -116,9 +112,8 @@ export async function mockFetch(path: string, init: RequestInit): Promise<Respon
     return flag ? json(200, { flag }) : fail(404, 'not_found', 'There is no such flag');
   }
 
-  const sittingMatch = /^\/api\/sittings\/([^/]+)(\/reference)?$/.exec(route);
+  const sittingMatch = /^\/api\/sittings\/([^/]+)$/.exec(route);
   if (sittingMatch) {
-    if (sittingMatch[2]) return json(200, { accepted: Array.isArray(body.readings) ? body.readings.length : 0 });
     if (sittingMatch[1] === data.runningSittingId) return json(200, sittingDetail());
     return fail(404, 'not_found', 'There is no such sitting');
   }

@@ -37,10 +37,10 @@ export function WorklistTable({ rows, selected, onSelect }: WorklistTableProps) 
               State
             </th>
             <th scope="col" className={tableHeadCell}>
-              Pulse, bpm
+              Pulse
             </th>
             <th scope="col" className={tableHeadCell}>
-              Breathing, per min
+              Breathing
             </th>
             <th scope="col" className={tableHeadCell}>
               Partial score
@@ -71,17 +71,17 @@ export function WorklistTable({ rows, selected, onSelect }: WorklistTableProps) 
                 )}
               >
                 <td className={cx(tableCell, 'w-[40px] text-right font-mono text-ink-muted tabular-nums')}>{index + 1}</td>
-                <td className={cx(tableCell, 'max-w-[320px] min-w-[220px]')}>
+                <td className={cx(tableCell, 'w-full max-w-0 min-w-[220px]')}>
                   <PatientIdentity patient={row.patient} size="sm" detail={intakeSummary(row.ageYears, row.reason)} />
                 </td>
                 <td className={tableCell}>
-                  <StatusBadge state={row.state} minutes={row.minutes} />
+                  <StatusBadge state={row.state} minutes={row.minutes} brief />
                 </td>
                 <td className={tableCell}>
-                  <TrendValue trend={row.pulse} notMeasuredYet={!row.source} />
+                  <TrendValue trend={row.pulse} unit="bpm" notMeasuredYet={!row.source} stacked />
                 </td>
                 <td className={tableCell}>
-                  <TrendValue trend={row.breathing} notMeasuredYet={!row.source} />
+                  <TrendValue trend={row.breathing} unit="/min" notMeasuredYet={!row.source} stacked />
                 </td>
                 <td className={tableCell}>
                   {row.score != null ? (

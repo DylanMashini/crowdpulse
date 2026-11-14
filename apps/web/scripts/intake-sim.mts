@@ -380,7 +380,7 @@ try {
     },
   });
   const detail = PatientDetailResponse.parse(await json("GET", routes.patient(number), web));
-  assert.match(detail.handoff, /^Simone Rivera: pulse 74 at check-in/);
+  assert.match(detail.handoff, /^Simone Rivera: pulse 74 bpm at check-in\. Last observed /);
   console.log(`Handoff: ${detail.handoff}`);
 
 } finally {

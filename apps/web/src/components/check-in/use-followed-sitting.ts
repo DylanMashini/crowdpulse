@@ -1,4 +1,4 @@
-import type { ReferenceReading, Sitting, SittingDetailResponse, StoredReading } from '@triagecam/contracts';
+import type { Sitting, SittingDetailResponse, StoredReading } from '@triagecam/contracts';
 import { useCallback, useEffect, useReducer } from 'react';
 
 import { useLiveEvents } from '@/components/app/live';
@@ -10,8 +10,6 @@ export interface FollowedSitting {
   sitting: Sitting | null;
   /** In time order. */
   readings: StoredReading[];
-  /** Reference readings the server already had when this page found the sitting. */
-  storedReference: ReferenceReading[];
   error: ApiError | null;
 }
 
@@ -22,7 +20,7 @@ type Action =
   | { type: 'finished'; sitting: Sitting }
   | { type: 'failed'; error: ApiError };
 
-const initial: FollowedSitting = { phase: 'searching', sitting: null, readings: [], storedReference: [], error: null };
+const initial: FollowedSitting = { phase: 'searching', sitting: null, readings: [], error: null };
 
 function reduce(state: FollowedSitting, action: Action): FollowedSitting {
   switch (action.type) {
@@ -32,11 +30,10 @@ function reduce(state: FollowedSitting, action: Action): FollowedSitting {
         phase: 'following',
         sitting: action.detail.sitting,
         readings: action.detail.readings,
-        storedReference: action.detail.referenceReadings,
         error: null,
       };
     case 'started':
-      return { phase: 'following', sitting: action.sitting, readings: [], storedReference: [], error: null };
+      return { phase: 'following', sitting: action.sitting, readings: [], error: null };
     case 'reading': {
       if (state.sitting?.id !== action.sittingId) return state;
       if (state.readings.some((reading) => reading.t === action.reading.t)) return state;
@@ -88,8 +85,7 @@ export function useFollowedSitting(deviceId: string): FollowedSitting & { retry:
     else if (event.type === 'reading') dispatch({ type: 'reading', sittingId: event.sittingId, reading: event.reading });
     else if (event.type === 'sitting_finished') {
       dispatch({ type: 'finished', sitting: event.sitting });
-      // The stream carries readings only. Fetch the finished sitting for the reference
-      // readings the server holds, which may have come from somewhere other than this page.
+      // Fetch the finished sitting, so a reading this page missed on the stream is not lost.
       if (event.sitting.id === currentId) settle(api.sitting(event.sitting.id));
     }
     else if (event.type === 'reconnected') look(currentId);

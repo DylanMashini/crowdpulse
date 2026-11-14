@@ -46,11 +46,38 @@ export function Accuracy() {
             </p>
             <p className="lp-result-n">{counts(rest)}</p>
           </div>
-          <dl className="lp-figures">
-            <Figure value={bpm(rest.maeBpm)} unit="bpm" label="Mean absolute error" />
-            <Figure value={percent(rest.within5)} label="Readings within 5 bpm" />
-            <Figure value={signedBpm(rest.biasBpm)} unit="bpm" label="Bias against the sensor" />
-          </dl>
+          <div className="lp-figure-groups">
+            <div className="lp-figure-group">
+              <p className="lp-figure-caption">
+                Second by second{' '}
+                <span>
+                  Every one-second reading against the sensor at that second. {rest.withReading} of the {rest.recordings} recordings gave at least one
+                  reading.
+                </span>
+              </p>
+              <dl className="lp-figures">
+                <Figure value={bpm(rest.maeBpm)} unit="bpm" label="Mean absolute error" />
+                <Figure value={percent(rest.within5)} label="Readings within 5 bpm" />
+                <Figure value={signedBpm(rest.biasBpm)} unit="bpm" label="Bias against the sensor" />
+              </dl>
+            </div>
+            {rest.recordingsWithSummary > 0 ? (
+              <div className="lp-figure-group">
+                <p className="lp-figure-caption">
+                  Per sitting{' '}
+                  <span>
+                    The one heart rate a nurse sees for a sitting, against the sensor&apos;s mean over the same recording. {rest.recordingsWithSummary} of
+                    those {rest.withReading} recordings gave a sitting heart rate.
+                  </span>
+                </p>
+                <dl className="lp-figures">
+                  <Figure value={bpm(rest.perRecordingMaeBpm)} unit="bpm" label="Mean absolute error" />
+                  <Figure value={percent(rest.perRecordingWithin5)} label={`Within 5 bpm, of the ${rest.recordingsWithSummary} sittings that gave a heart rate`} />
+                  <Figure value={String(rest.recordingsWithSummary)} unit={`of ${rest.recordings}`} label="Recordings that gave a sitting heart rate" />
+                </dl>
+              </div>
+            ) : null}
+          </div>
         </div>
 
         <div className="lp-result-pair">

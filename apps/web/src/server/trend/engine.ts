@@ -25,7 +25,7 @@ export type PatientHistory = {
 
 export type SyncOptions = { now?: Date; notify?: boolean };
 
-const sittingFacts = (row: SittingRow): SittingFacts => ({
+export const sittingFacts = (row: SittingRow): SittingFacts => ({
   id: row.id,
   source: row.source,
   startedAt: row.startedAt,

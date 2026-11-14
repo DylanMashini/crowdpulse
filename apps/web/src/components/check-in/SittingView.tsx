@@ -4,9 +4,9 @@ import type { Estimate, PatientRef, Sitting, StoredReading, SummaryValue } from 
 import Link from 'next/link';
 import { useMemo } from 'react';
 
-import { PatientIdentity, QualityMeter, Readout, ReferenceChart, buttonClass, type IconName, type ReadoutState } from '@/components/ds';
+import { PatientIdentity, QualityMeter, Readout, SittingChart, buttonClass, type IconName, type ReadoutState } from '@/components/ds';
 import { Panel } from '@/components/ui/Panel';
-import { clockTime, reasonText, secondsAgo } from '@/lib/format';
+import { clockTime, rate, reasonText, seconds, secondsAgo } from '@/lib/format';
 import { provenanceOf } from '@/lib/mapping';
 
 /** No reading from the phone for this long: the last value is struck through as stale. */
@@ -14,26 +14,19 @@ const STALE_AFTER_MS = 3000;
 /** And for this long: the value is taken off the screen. */
 const BLANK_AFTER_MS = 10_000;
 
-export interface ReferencePoint {
-  /** Server clock, in ms. */
-  t: number;
-  /** bpm. */
-  heartRate: number;
-}
-
 export interface SittingViewProps {
   sitting: Sitting;
   /** Who is sitting in front of the camera. */
   patient: PatientRef;
   readings: StoredReading[];
-  reference: ReferencePoint[];
   /** The server clock now, in ms. */
   serverNow: number;
 }
 
 interface ReadoutContent {
   state: ReadoutState;
-  value?: number;
+  /** Already rounded for the screen. */
+  value?: string;
   age?: string;
   reason?: string;
   coverage: number;
@@ -62,10 +55,10 @@ function liveContent(readings: StoredReading[], pick: (reading: StoredReading) =
     const previous = lastValid(readings, pick);
     return previous == null
       ? { state: 'none', reason: `No readings from the phone since ${secondsAgo(at, serverNow)}`, coverage: estimate.coverage }
-      : { state: 'stale', value: Math.round(previous), age: `last reading ${secondsAgo(at, serverNow)}`, coverage: estimate.coverage };
+      : { state: 'stale', value: rate(previous), age: `last reading ${secondsAgo(at, serverNow)}`, coverage: estimate.coverage };
   }
   if (estimate.state === 'valid' && estimate.value != null) {
-    return { state: 'valid', value: Math.round(estimate.value), age: secondsAgo(at, serverNow), coverage: estimate.coverage };
+    return { state: 'valid', value: rate(estimate.value), age: secondsAgo(at, serverNow), coverage: estimate.coverage };
   }
   // The engine's own stale state arrives without a value, so there is nothing to strike through.
   return {
@@ -78,7 +71,7 @@ function liveContent(readings: StoredReading[], pick: (reading: StoredReading) =
 function summaryContent(value: SummaryValue, endedAt: string): ReadoutContent {
   return value.value == null
     ? { state: 'none', reason: 'No reading was accepted in this sitting', coverage: value.coverage }
-    : { state: 'valid', value: Math.round(value.value), age: `Median of the sitting that ended at ${clockTime(endedAt)}`, coverage: value.coverage };
+    : { state: 'valid', value: rate(value.value), age: `Median of the sitting that ended at ${clockTime(endedAt)}`, coverage: value.coverage };
 }
 
 function Vital({ label, icon, unit, content, tag }: { label: string; icon: IconName; unit: string; content: ReadoutContent; tag: ReturnType<typeof provenanceOf> }) {
@@ -111,8 +104,8 @@ function series(points: Array<{ t: number; value: number | null }>, startedAt: n
   return out;
 }
 
-/** One sitting as it runs and after it ends: who it is, the two vitals, and estimate against reference. */
-export function SittingView({ sitting, patient, readings, reference, serverNow }: SittingViewProps) {
+/** One sitting as it runs and after it ends: who it is, the two vitals, and the heart rate second by second. */
+export function SittingView({ sitting, patient, readings, serverNow }: SittingViewProps) {
   const startedAt = new Date(sitting.startedAt).getTime();
   const running = sitting.endedAt === null;
   const endMs = sitting.endedAt ? new Date(sitting.endedAt).getTime() : serverNow;
@@ -124,21 +117,15 @@ export function SittingView({ sitting, patient, readings, reference, serverNow }
   const breathing =
     sitting.summary && sitting.endedAt ? summaryContent(sitting.summary.breathingRate, sitting.endedAt) : liveContent(readings, (r) => r.breathingRate, serverNow);
 
-  const chart = useMemo(() => {
-    const length = Math.min(900, elapsed + 1);
-    return {
-      estimate: series(
+  const heartRates = useMemo(
+    () =>
+      series(
         readings.map((reading) => ({ t: new Date(reading.t).getTime(), value: reading.heartRate.value })),
         startedAt,
-        length,
+        Math.min(900, elapsed + 1),
       ),
-      reference: series(
-        reference.map((point) => ({ t: point.t, value: point.heartRate })),
-        startedAt,
-        length,
-      ),
-    };
-  }, [readings, reference, startedAt, elapsed]);
+    [readings, startedAt, elapsed],
+  );
 
   const summary = sitting.summary;
 
@@ -151,7 +138,7 @@ export function SittingView({ sitting, patient, readings, reference, serverNow }
             size="md"
             detail={
               <span className="tabular-nums">
-                {sitting.kind === 'check_in' ? 'Check-in' : 'Re-check'}, {running ? `running for ${elapsed} s` : `${elapsed} s, finished at ${clockTime(endMs)}`}
+                {sitting.kind === 'check_in' ? 'Check-in' : 'Re-check'}, {running ? `running for ${seconds(elapsed)}` : `${seconds(elapsed)}, finished at ${clockTime(endMs)}`}
               </span>
             }
           />
@@ -167,22 +154,22 @@ export function SittingView({ sitting, patient, readings, reference, serverNow }
 
         {summary ? (
           <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-line pt-4 lg:grid-cols-4">
-            <Readout size="md" label="RMSSD" tag="experimental" unit="ms" value={summary.rmssd.value == null ? undefined : Math.round(summary.rmssd.value)} state={summary.rmssd.value == null ? 'none' : 'valid'} reason="Too few clean beat intervals" />
-            <Readout size="md" label="SDNN" tag="experimental" unit="ms" value={summary.sdnn.value == null ? undefined : Math.round(summary.sdnn.value)} state={summary.sdnn.value == null ? 'none' : 'valid'} reason="Too few clean beat intervals" />
+            <Readout size="md" label="RMSSD" tag="experimental" unit="ms" value={summary.rmssd.value == null ? undefined : rate(summary.rmssd.value)} state={summary.rmssd.value == null ? 'none' : 'valid'} reason="Too few clean beat intervals" />
+            <Readout size="md" label="SDNN" tag="experimental" unit="ms" value={summary.sdnn.value == null ? undefined : rate(summary.sdnn.value)} state={summary.sdnn.value == null ? 'none' : 'valid'} reason="Too few clean beat intervals" />
             <Readout
               size="md"
               label="Time to first reading"
               unit="s"
-              value={summary.timeToFirstReadingSeconds == null ? undefined : Math.round(summary.timeToFirstReadingSeconds)}
+              value={summary.timeToFirstReadingSeconds == null ? undefined : rate(summary.timeToFirstReadingSeconds)}
               state={summary.timeToFirstReadingSeconds == null ? 'none' : 'valid'}
               reason="No heart rate was accepted"
             />
-            <Readout size="md" label="Longest dropout" unit="s" value={Math.round(summary.longestDropoutSeconds)} />
+            <Readout size="md" label="Longest dropout" unit="s" value={rate(summary.longestDropoutSeconds)} />
           </div>
         ) : null}
       </Panel>
 
-      <ReferenceChart estimate={chart.estimate} reference={chart.reference} minSeconds={60} />
+      <SittingChart values={heartRates} minSeconds={60} />
     </div>
   );
 }

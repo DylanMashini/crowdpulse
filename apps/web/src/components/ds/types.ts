@@ -1,7 +1,7 @@
 import type { PatientRef } from '@triagecam/contracts';
 
 export type TileState = 'observed' | 'flag' | 'overdue' | 'no-reading';
-export type Provenance = 'live' | 'recording' | 'experimental' | 'ai-draft' | 'reference';
+export type Provenance = 'live' | 'recording' | 'experimental' | 'ai-draft';
 export type ScoreValue = 0 | 1 | 2 | 3;
 
 /** A value against the patient's own check-in baseline. `now: null` means no reading. */

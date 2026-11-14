@@ -22,7 +22,6 @@ export const routes = {
   sittingReadings: (id: string) => `/api/sittings/${id}/readings`,
   sittingFinish: (id: string) => `/api/sittings/${id}/finish`,
   sittingFile: (id: string) => `/api/sittings/${id}/file`,
-  sittingReference: (id: string) => `/api/sittings/${id}/reference`,
   worklist: '/api/worklist',
   flags: '/api/flags',
   flagAcknowledge: (id: string) => `/api/flags/${id}/acknowledge`,

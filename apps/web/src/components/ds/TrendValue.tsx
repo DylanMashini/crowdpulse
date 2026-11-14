@@ -1,19 +1,34 @@
+import { cx } from '@/lib/cx';
+import { rate, rateChange } from '@/lib/format';
+
 import type { Trend } from './types';
 
-/** The latest value, the check-in baseline it is measured against, and the difference. */
-export function TrendValue({ trend, notMeasuredYet }: { trend?: Trend; notMeasuredYet?: boolean }) {
+export interface TrendValueProps {
+  trend?: Trend;
+  /** Printed after the latest value: "bpm", "/min". */
+  unit: string;
+  notMeasuredYet?: boolean;
+  /** Puts the baseline under the value, for tables that have no width to spare. */
+  stacked?: boolean;
+}
+
+/** The latest value with its unit, the check-in baseline it is measured against, and the difference. */
+export function TrendValue({ trend, unit, notMeasuredYet, stacked }: TrendValueProps) {
   if (!trend || trend.now == null) {
     // "No reading" means a sitting ran and gave nothing. Before the first sitting, say that instead.
     return <span className="text-[13px] whitespace-nowrap text-ink-muted">{notMeasuredYet ? 'Not measured yet' : 'No reading'}</span>;
   }
-  const delta = trend.base != null ? trend.now - trend.base : 0;
+  const change = trend.base != null ? rateChange(trend.base, trend.now) : null;
   return (
-    <span className="inline-flex items-baseline gap-2 whitespace-nowrap">
-      <span className="type-readout-md">{trend.now}</span>
+    <span className={cx('inline-flex whitespace-nowrap', stacked ? 'flex-col' : 'items-baseline gap-2')}>
+      <span className="inline-flex items-baseline gap-1">
+        <span className="type-readout-md">{rate(trend.now)}</span>
+        <span className="text-[13px] text-ink-muted">{unit}</span>
+      </span>
       {trend.base != null ? (
         <span className="text-[13px] text-ink-muted tabular-nums">
-          from {trend.base}
-          {delta ? ` (${delta > 0 ? '+' : '−'}${Math.abs(delta)})` : ''}
+          from {rate(trend.base)}
+          {change ? ` (${change})` : ''}
         </span>
       ) : null}
     </span>

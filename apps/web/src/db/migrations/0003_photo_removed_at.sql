@@ -1,0 +1,1 @@
+ALTER TABLE "patients" ADD COLUMN "photo_removed_at" timestamp with time zone;

@@ -2,7 +2,7 @@ import { PatientPhotoRequest, type PatientResponse } from "@triagecam/contracts"
 
 import { requireSession } from "@/server/auth/session";
 import { ApiError, noContent, patientNumberParam, readJson, route } from "@/server/http";
-import { mayTakePhotoUnasked, notePhotoRemoved, notePhotoStored } from "@/server/intake";
+import { notePhotoRemoved, notePhotoStored } from "@/server/intake";
 import { findPatient, patientToWire } from "@/server/patients";
 import { deletePhoto, portraitFromCrop, readPhoto, storePhoto } from "@/server/photos";
 
@@ -35,9 +35,7 @@ export const PUT = route(async (request: Request, context: Context) => {
   const patient = await findPatient(patientNumberParam((await context.params).number));
   const { jpegBase64, replace } = await readJson(request, PatientPhotoRequest);
   const portrait = await portraitFromCrop(Buffer.from(jpegBase64, "base64"));
-  if (!replace && !mayTakePhotoUnasked(patient.id)) {
-    return Response.json({ patient: await patientToWire(patient) } satisfies PatientResponse);
-  }
+  // Without `replace` this stores nothing when there is a photo already or staff removed it.
   const updated = await storePhoto(patient, portrait, { onlyIfMissing: !replace });
   if (updated.photoUpdatedAt) notePhotoStored(patient.id);
   return Response.json({ patient: await patientToWire(updated) } satisfies PatientResponse);
@@ -46,8 +44,7 @@ export const PUT = route(async (request: Request, context: Context) => {
 export const DELETE = route(async (request: Request, context: Context) => {
   await requireSession(request);
   const patient = await findPatient(patientNumberParam((await context.params).number));
-  // First, so a frame that is being looked at right now is not stored after the delete.
-  notePhotoRemoved(patient.id);
   await deletePhoto(patient);
+  notePhotoRemoved(patient.id);
   return noContent();
 });
