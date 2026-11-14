@@ -520,7 +520,7 @@ Rank order: all `flag` patients first (higher `score` first, then the flag that 
 
 ### Handoff sentence and push
 
-- The handoff sentence is built on the server from a fixed template and sent as a string; clients show it as it is. It opens with `patientLabel(patient)`. Example: "Maya Chen: pulse 82 at check-in, 108 now (26 min later); breathing 16 to 24. Last observed 3 min ago." A flag keeps the numbers it was raised on, but its opening words follow the patient's current name.
+- The handoff sentence is built on the server from a fixed template and sent as a string; clients show it as it is. It opens with `patientLabel(patient)`. Every number carries its unit and times use the dashboard's form ("26 min", "1 h 15 min", "just now"). Example: "Maya Chen: pulse 82 bpm at check-in, 108 bpm now (26 min later); breathing 16 to 24 breaths per min. Last observed 3 min ago." A flag keeps the numbers it was raised on, but its opening words follow the patient's current name.
 - When a flag opens, the server sends one push through Expo's push service to every `nurse` device that has a token, unless a push for the same patient went out within `notifyCooldownMin`. Title: "Trend flag: Maya Chen" (or "Overdue: Maya Chen"). Body: the handoff sentence. `data`: `{ flagId, patientNumber }`.
 - The nurse role shows the same flag in the app whether or not the push arrives.
 

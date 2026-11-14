@@ -383,7 +383,7 @@ assert.deepEqual(item.pulse, { base: 72, now: 72 });
 assert.equal(item.score, 0);
 assert.equal(item.parametersMeasured, 2);
 assert.equal(item.source, "simulated");
-assert.equal(item.handoff, `Patient ${number}: pulse 72, breathing 16 at check-in. Last observed 0 min ago.`);
+assert.equal(item.handoff, `Patient ${number}: pulse 72 bpm, breathing 16 breaths per min at check-in. Last observed just now.`);
 
 await (await sit(number, "recheck", 104, 22, 3)).finish();
 item = (await worklistItem(number)).item;
@@ -401,7 +401,7 @@ assert.deepEqual(flagged.breathing, { base: 16, now: 24 });
 assert.deepEqual(flagged.flags.map((flag) => flag.rule), ["score_rise", "baseline_shift"]);
 assert.match(
   flagged.handoff,
-  new RegExp(`^Patient ${number}: pulse 72 at check-in, 108 now \\(\\d+ min later\\); breathing 16 to 24\\. Last observed 0 min ago\\.$`),
+  new RegExp(`^Patient ${number}: pulse 72 bpm at check-in, 108 bpm now \\((under 1|\\d+) min later\\); breathing 16 to 24 breaths per min\\. Last observed just now\\.$`),
 );
 const firstUnflagged = worklist.items.findIndex((candidate) => candidate.state !== "flag");
 assert.ok(firstUnflagged === -1 || flagged.rank <= firstUnflagged, "flagged patients lead the worklist");
