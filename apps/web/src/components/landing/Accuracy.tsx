@@ -1,5 +1,19 @@
-import { AccuracyChart } from './AccuracyChart';
-import { bpm, dataset, evaluatedOn, longDate, pairing, percent, signedBpm, type EvalSummary } from './eval-data';
+import {
+  bpm,
+  dataset,
+  evaluatedOn,
+  heldOut,
+  heldOutWithoutSeen,
+  longDate,
+  pairing,
+  percent,
+  provenance,
+  referenceChecks,
+  seenInDevelopment,
+  signedBpm,
+  split,
+  type EvalSummary,
+} from './eval-data';
 
 function Figure({ value, unit, label }: { value: string; unit?: string; label: string }) {
   return (
@@ -13,114 +27,57 @@ function Figure({ value, unit, label }: { value: string; unit?: string; label: s
   );
 }
 
-const counts = (s: EvalSummary) =>
-  `${s.pairedReadings.toLocaleString('en-US')} one-second readings from ${s.withReading} of ${s.recordings} recordings`;
-
-/** The accuracy section. Every figure is read from eval-data.json. */
+/**
+ * The accuracy section. Every figure is read from eval-data.json, which holds one thing: the
+ * held-out set of UBFC-rPPG. Each group of figures carries its provenance line (dataset, set, n,
+ * date), and the error figures say they are measured on the seconds that had a reading.
+ *
+ * The held-out figure is never shown without its disclosure: some held-out subjects had been
+ * used in engine checks before the split was drawn. They stay in the figure, and the figure
+ * without them is printed beside it.
+ */
 export function Accuracy() {
-  const mcd = dataset('mcd');
-  const ubfc = dataset('ubfc');
-  const rest = mcd?.groups.find((g) => g.id === 'front-rest');
-  const exercise = mcd?.groups.find((g) => g.id === 'front-exercise');
-  if (!mcd || !rest) return null;
-
-  const side = mcd.groups.filter((g) => g.camera !== 'front').map((g) => g.maeBpm ?? 0);
-  const date = longDate(evaluatedOn);
+  const s = heldOut;
+  const unseen = heldOutWithoutSeen;
+  const date = longDate(evaluatedOn) ?? evaluatedOn;
 
   return (
     <section id="accuracy" className="lp-section lp-accuracy">
       <div className="lp-wrap">
         <header className="lp-section-head">
-          <h2 className="lp-h2">Checked against contact sensors, second by second</h2>
+          <h2 className="lp-h2">Checked against a contact sensor, second by second</h2>
           <p className="lp-lead">
-            We ran the same engine that ships on the phone over public recordings of real people, each filmed while wearing a contact pulse
-            sensor, and compared every one-second reading with the sensor.
+            We ran the same engine that ships on the phone over public recordings of real people, each filmed while wearing a fingertip
+            oximeter, and compared every one-second reading with the oximeter.
           </p>
         </header>
 
         <div className="lp-result">
           <div className="lp-result-what">
-            <h3 className="lp-h3">Facing the camera, at rest</h3>
+            <h3 className="lp-h3">Seated, facing a webcam</h3>
             <p>
-              The condition the station is built for. {mcd.title}: {rest.subjects} people filmed by a front-facing webcam before exercise.
+              The condition the station is built for. {dataset.title}: {s.subjects} people seated at a webcam, each wearing a fingertip
+              oximeter. The dataset&apos;s {dataset.totalSubjects} subjects were divided by a fixed seed, and these {s.subjects} are the
+              held-out set.
             </p>
-            <p className="lp-result-n">{counts(rest)}</p>
+            <p className="lp-result-n">{provenance()}.</p>
           </div>
           <div className="lp-figure-groups">
             <div className="lp-figure-group">
               <p className="lp-figure-caption">
                 Second by second{' '}
                 <span>
-                  Every one-second reading against the sensor at that second. {rest.withReading} of the {rest.recordings} recordings gave at least one
-                  reading.
+                  Every one-second reading against the oximeter at that second. Error is measured on the seconds when the engine gave a
+                  reading, which was {percent(s.coverage)} of seconds.
                 </span>
               </p>
               <dl className="lp-figures">
-                <Figure value={bpm(rest.maeBpm)} unit="bpm" label="Mean absolute error" />
-                <Figure value={percent(rest.within5)} label="Readings within 5 bpm" />
-                <Figure value={signedBpm(rest.biasBpm)} unit="bpm" label="Bias against the sensor" />
+                <Figure value={bpm(s.maeBpm)} unit="bpm" label="Mean absolute error" />
+                <Figure value={percent(s.within5)} label="Readings within 5 bpm" />
+                <Figure value={signedBpm(s.biasBpm)} unit="bpm" label="Bias against the oximeter" />
               </dl>
             </div>
-            {rest.recordingsWithSummary > 0 ? (
-              <div className="lp-figure-group">
-                <p className="lp-figure-caption">
-                  Per sitting{' '}
-                  <span>
-                    The one heart rate a nurse sees for a sitting, against the sensor&apos;s mean over the same recording. {rest.recordingsWithSummary} of
-                    those {rest.withReading} recordings gave a sitting heart rate.
-                  </span>
-                </p>
-                <dl className="lp-figures">
-                  <Figure value={bpm(rest.perRecordingMaeBpm)} unit="bpm" label="Mean absolute error" />
-                  <Figure value={percent(rest.perRecordingWithin5)} label={`Within 5 bpm, of the ${rest.recordingsWithSummary} sittings that gave a heart rate`} />
-                  <Figure value={String(rest.recordingsWithSummary)} unit={`of ${rest.recordings}`} label="Recordings that gave a sitting heart rate" />
-                </dl>
-              </div>
-            ) : null}
           </div>
-        </div>
-
-        <div className="lp-result-pair">
-          {exercise ? (
-            <div className="lp-result lp-result-small">
-              <div className="lp-result-what">
-                <h3 className="lp-h3">Same camera, after exercise</h3>
-                <p>The same {exercise.subjects} people straight after squats, with heart rates still falling.</p>
-                <p className="lp-result-n">{counts(exercise)}</p>
-              </div>
-              <dl className="lp-figures">
-                <Figure value={bpm(exercise.maeBpm)} unit="bpm" label="Mean absolute error" />
-                <Figure value={percent(exercise.within5)} label="Within 5 bpm" />
-              </dl>
-            </div>
-          ) : null}
-          {ubfc ? (
-            <div className="lp-result lp-result-small">
-              <div className="lp-result-what">
-                <h3 className="lp-h3">Uncompressed webcam video</h3>
-                <p>
-                  {ubfc.title}: the first {ubfc.all.subjects} of its {ubfc.totalSubjects} subjects, seated at a webcam, against a fingertip oximeter.
-                </p>
-                <p className="lp-result-n">{counts(ubfc.all)}</p>
-              </div>
-              <dl className="lp-figures">
-                <Figure value={bpm(ubfc.all.maeBpm)} unit="bpm" label="Mean absolute error" />
-                <Figure value={percent(ubfc.all.within5)} label="Within 5 bpm" />
-              </dl>
-            </div>
-          ) : null}
-        </div>
-
-        <div className="lp-chart-block">
-          <div className="lp-chart-copy">
-            <h3 className="lp-h3">Why the patient faces the phone</h3>
-            <p>
-              {mcd.title} films every person from three positions at once. Side-on cameras see less skin and more shadow, and their error
-              is {bpm(Math.min(...side))} to {bpm(Math.max(...side))} bpm. That is the reason check-in seats the patient square to the
-              camera.
-            </p>
-          </div>
-          <AccuracyChart groups={mcd.groups} />
         </div>
 
         <div className="lp-silence">
@@ -133,47 +90,75 @@ export function Accuracy() {
           </div>
           <dl className="lp-silence-facts">
             <div>
-              <dt>{mcd.title}, front-facing, at rest</dt>
+              <dt>How often it gave a reading</dt>
               <dd>
-                A reading in {percent(rest.coverage)} of seconds, and at least one in {rest.withReading} of {rest.recordings} recordings.
-                First reading after a median {rest.medianTimeToFirstS} s. Footage: {mcd.video}.
+                A reading in {percent(s.coverage)} of seconds, and at least one in {s.withReading} of {s.recordings} recordings. First
+                reading after a median {s.medianTimeToFirstS} s. {provenance()}.
               </dd>
             </div>
-            {ubfc ? (
+            <div>
+              <dt>How that share is counted</dt>
+              <dd>
+                In each recording, the share of one-second ticks, counting the warm-up, in which the engine gave a heart rate. The shares
+                are averaged over the {s.recordings} recordings, each counting equally.
+              </dd>
+            </div>
+          </dl>
+        </div>
+
+        <div className="lp-silence">
+          <div>
+            <h3 className="lp-h3">How the test set was kept apart</h3>
+            <p>
+              Subjects were split into a tuning set and a held-out set by a fixed seed before the new recordings were scored. Every figure
+              here comes from the held-out set.
+            </p>
+          </div>
+          <dl className="lp-silence-facts">
+            {unseen ? (
               <div>
-                <dt>{ubfc.title}</dt>
+                <dt>
+                  {numberWord(seenInDevelopment)} of the {s.subjects} were not new to the engine
+                </dt>
                 <dd>
-                  A reading in {percent(ubfc.all.coverage)} of seconds, and at least one in {ubfc.all.withReading} of {ubfc.all.recordings}{' '}
-                  recordings. First reading after a median {ubfc.all.medianTimeToFirstS} s. Footage: {ubfc.video}.
+                  {numberWord(seenInDevelopment)} of the {s.subjects} held-out subjects had been used to check the engine during earlier
+                  development. They stay in the figures above. Without them, the mean absolute error is {bpm(unseen.maeBpm)} bpm, with{' '}
+                  {percent(unseen.within5)} of readings within 5 bpm ({unseen.subjects} subjects,{' '}
+                  {unseen.pairedReadings.toLocaleString('en-US')} one-second readings, evaluated {date}).
                 </dd>
               </div>
             ) : null}
+            <div>
+              <dt>The reference</dt>
+              <dd>
+                The fingertip oximeter heart rate recorded with the dataset. For {referenceChecks.authorsFile} of the {s.subjects} subjects
+                the reference file was checked against the dataset authors&apos; copy; for the other {referenceChecks.otherCopies}, against
+                two other public copies of the dataset.
+              </dd>
+            </div>
           </dl>
         </div>
 
         <details className="lp-table-details">
-          <summary>Every condition as a table</summary>
+          <summary>The figures as a table</summary>
           <div className="lp-table-scroll">
             <table className="lp-table">
               <thead>
                 <tr>
-                  <th scope="col">Dataset and condition</th>
-                  <th scope="col">Recordings</th>
-                  <th scope="col">With a reading</th>
+                  <th scope="col">Dataset and set</th>
+                  <th scope="col">Subjects</th>
+                  <th scope="col">Recordings with a reading</th>
                   <th scope="col">Paired readings</th>
                   <th scope="col">MAE, bpm</th>
                   <th scope="col">Bias, bpm</th>
                   <th scope="col">Within 5 bpm</th>
                   <th scope="col">Seconds with a reading</th>
-                  <th scope="col">Sitting summary MAE, bpm</th>
+                  <th scope="col">Median time to first reading, s</th>
                 </tr>
               </thead>
               <tbody>
-                {mcd.groups.map((g) => (
-                  <Row key={g.id} label={`${mcd.title}: ${lowerFirst(g.cameraLabel)}, ${lowerFirst(g.conditionLabel)}`} s={g} />
-                ))}
-                <Row label={`${mcd.title}: all six conditions`} s={mcd.all} />
-                {ubfc ? <Row label={`${ubfc.title}: ${ubfc.all.subjects} of ${ubfc.totalSubjects} subjects`} s={ubfc.all} /> : null}
+                <Row label={`${dataset.title}, held-out set, evaluated ${date}`} s={s} />
+                {unseen ? <Row label={`The same, without the ${seenInDevelopment} subjects used in earlier engine checks`} s={unseen} /> : null}
               </tbody>
             </table>
           </div>
@@ -181,20 +166,12 @@ export function Accuracy() {
 
         <p className="lp-method">
           Method: {lowerFirst(pairing)}. Each video goes through the same path as a sitting on the phone: frames, face regions, signal engine
-          at its default settings. References: {mcd.title}, {lowerFirst(mcd.reference)}
-          {ubfc ? `; ${ubfc.title}, ${lowerFirst(ubfc.reference)}` : ''}. Datasets:{' '}
-          <a href={mcd.source} rel="noreferrer">
-            {mcd.title}
+          at its default settings. Footage: {dataset.video}. Reference: {lowerFirst(dataset.reference)}. Dataset:{' '}
+          <a href={dataset.source} rel="noreferrer">
+            {dataset.title}
           </a>
-          {ubfc ? (
-            <>
-              ,{' '}
-              <a href={ubfc.source} rel="noreferrer">
-                {ubfc.title}
-              </a>
-            </>
-          ) : null}
-          .{date ? ` Evaluated ${date}.` : ''}
+          , {dataset.totalSubjects} subjects, divided by a fixed seed into {split.tuningSubjects} for tuning the engine and{' '}
+          {split.heldOutSubjects} held out; every figure here is from the held-out set. Evaluated {date}. Not a clinical validation.
         </p>
       </div>
     </section>
@@ -205,18 +182,21 @@ function Row({ label, s }: { label: string; s: EvalSummary }) {
   return (
     <tr>
       <th scope="row">{label}</th>
-      <td>{s.recordings}</td>
-      <td>{s.withReading}</td>
+      <td>{s.subjects}</td>
+      <td>
+        {s.withReading} of {s.recordings}
+      </td>
       <td>{s.pairedReadings.toLocaleString('en-US')}</td>
       <td>{bpm(s.maeBpm)}</td>
       <td>{signedBpm(s.biasBpm)}</td>
       <td>{percent(s.within5)}</td>
       <td>{percent(s.coverage)}</td>
-      <td>
-        {bpm(s.perRecordingMaeBpm)} <span className="lp-table-n">(n={s.recordingsWithSummary})</span>
-      </td>
+      <td>{s.medianTimeToFirstS ?? 'n/a'}</td>
     </tr>
   );
 }
+
+/** "Four" for 4: counts that open a sentence are spelled out. */
+const numberWord = (n: number) => ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'][n] ?? String(n);
 
 const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);

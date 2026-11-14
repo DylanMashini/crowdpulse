@@ -343,6 +343,22 @@ import Testing
     #expect(comparison.timeToFirstReadingSeconds == 10)
     #expect(comparison.longestDropoutSeconds == 0)
     #expect(comparison.referenceMeanBpm.map { abs($0 - 80) < 0.1 } == true)
+    #expect(comparison.pairedReferenceMeanBpm.map { abs($0 - 80) < 0.2 } == true)
+  }
+
+  /// The reference climbs before the first reading; only the seconds that had a reading count
+  /// toward the mean the sitting summary is held against.
+  @Test func pairedReferenceMeanLeavesOutSecondsWithoutAReading() throws {
+    let result = replay(sitting { $0.heartRateBpm = 80 })
+    let first = try #require(result.summary.timeToFirstReadingSeconds)
+    let lines = (1...59).map { #"{"t":\#($0),"heartRate":\#(Double($0) < first ? 140 : 80)}"# }
+    let reference = try ReferenceFile.decode(
+      Data(lines.joined(separator: "\n").utf8), sittingStartedAt: "2026-11-14T03:00:00.000Z")
+    let comparison = ReferenceComparison(replay: result, reference: reference)
+
+    #expect(try #require(comparison.referenceMeanBpm) > 85)
+    #expect(abs(try #require(comparison.pairedReferenceMeanBpm) - 80) < 0.01)
+    #expect(ReferenceComparison(replay: result, reference: []).pairedReferenceMeanBpm == nil)
   }
 
   @Test func readsWallClockReferenceTimes() throws {

@@ -119,9 +119,14 @@ public struct ReferenceComparison: Codable, Sendable, Equatable {
   public var coverage: Double
   public var timeToFirstReadingSeconds: Double?
   public var longestDropoutSeconds: Double
-  /// The sitting's summary heart rate and the mean of the reference, for the per-sitting check.
+  /// The sitting's summary heart rate, for the per-sitting check.
   public var summaryHeartRateBpm: Double?
+  /// Mean of the reference over the whole recording, seconds without a reading included.
   public var referenceMeanBpm: Double?
+  /// Mean of the reference over the paired readings only. The summary is built from the seconds
+  /// that had a reading, so this is the mean to hold it against: when the rate moves during a
+  /// recording, the whole-recording mean describes seconds the summary never saw.
+  public var pairedReferenceMeanBpm: Double?
 
   /// A reading pairs with the nearest reference sample no further away than this, in seconds.
   public static let pairingSeconds = 1.5
@@ -137,11 +142,13 @@ public struct ReferenceComparison: Codable, Sendable, Equatable {
 
   public init(replay: SittingReplay.Result, reference: [ReferenceSample]) {
     var errors: [Double] = []
+    var pairedReference = 0.0
     for reading in replay.readings {
       guard let estimate = reading.heartRate.value,
         let paired = ReferenceComparison.reference(at: reading.elapsed, in: reference)
       else { continue }
       errors.append(estimate - paired)
+      pairedReference += paired
     }
     let pairs = Double(errors.count)
     pairedReadings = errors.count
@@ -152,6 +159,7 @@ public struct ReferenceComparison: Codable, Sendable, Equatable {
     timeToFirstReadingSeconds = replay.summary.timeToFirstReadingSeconds
     longestDropoutSeconds = replay.summary.longestDropoutSeconds
     summaryHeartRateBpm = replay.summary.heartRate.value
+    pairedReferenceMeanBpm = errors.isEmpty ? nil : pairedReference / pairs
     referenceMeanBpm = reference.isEmpty ? nil : reference.reduce(0) { $0 + $1.heartRate } / Double(reference.count)
   }
 }
