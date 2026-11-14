@@ -55,7 +55,7 @@ export const PatientStatistics = z.object({
   /** Heart rate of every observation that has one, oldest first, in bpm. */
   heartRates: z.array(z.number()),
   score: Score.nullable(),
-  /** Flag episodes opened in the range. */
+  /** Alerts raised in the range, counted as in `Statistics.flags.raised`. */
   flags: count,
 });
 export type PatientStatistics = z.infer<typeof PatientStatistics>;
@@ -106,16 +106,25 @@ export const Statistics = z.object({
   }),
   heartRate: RateDistribution,
   breathingRate: RateDistribution,
+  /**
+   * Counted in alerts (`flagAlerts`), the unit every other screen counts in: a deterioration
+   * that trips both trend rules is one. Only `byRule` counts single flags.
+   */
   flags: z.object({
-    /** Flag episodes opened in the range. */
+    /** Alerts opened in the range. */
     raised: count,
+    /**
+     * How often each rule tripped in the range: flags, one per rule. An alert that tripped both
+     * trend rules is under both, so these can add up to more than `raised`.
+     */
     byRule: z.record(FlagRule, count),
     /** Of those raised, how many a staff member acknowledged. */
     acknowledged: count,
+    /** From an alert opening to its first acknowledgement. */
     medianMinutesToAcknowledge: measure,
-    /** Open at generatedAt, whenever they were raised. */
+    /** Alerts open at generatedAt, whenever they were raised. */
     openNow: count,
-    /** Open at generatedAt and not acknowledged by anyone. */
+    /** Of those, the ones still waiting for an acknowledgement, as the nurse app counts them. */
     unacknowledgedNow: count,
   }),
   /** Patients seen in the range: those waiting first, then by longest time in the room. */
