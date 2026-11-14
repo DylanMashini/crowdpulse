@@ -49,6 +49,7 @@ enum Payloads {
       "beatIntervals": summary.beatIntervals.map { ["tMs": $0.tMs, "ms": $0.ms] },
       "timeToFirstReadingSeconds": orNull(summary.timeToFirstReadingSeconds),
       "longestDropoutSeconds": summary.longestDropoutSeconds,
+      "heartRateConfidence": orNull(summary.heartRateConfidence?.rawValue),
     ]
   }
 

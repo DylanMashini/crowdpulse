@@ -160,6 +160,7 @@ export class TriageCaptureStub implements TriageCapture {
         coverage: sitting.heartRate.validCount / seconds,
         reason: heartRate === null ? 'too_few_readings' : null,
       },
+      heartRateConfidence: heartRate === null ? null : 'normal',
       breathingRate: {
         value: breathingRate,
         coverage: sitting.breathingRate.validCount / seconds,
