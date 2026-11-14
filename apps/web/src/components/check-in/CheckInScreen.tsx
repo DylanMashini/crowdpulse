@@ -74,12 +74,17 @@ export function CheckInScreen() {
   const isConnected = (device: Device) => device.camera !== null || device.liveAt !== null;
   const isOnline = (device: Device) => isConnected(device) || serverNow - new Date(device.lastSeenAt).getTime() < ONLINE_WITHIN_MS;
   const [chosen, setChosen] = useState<string | null>(null);
+  // The phone this page was last showing. When it goes quiet the page stays on it and says so,
+  // instead of dropping to an empty list in the middle of a sitting.
+  const [last, setLast] = useState<string | null>(null);
   const selected =
     cameras.find((device) => device.id === chosen) ??
     cameras.find((device) => device.liveAt !== null) ??
     cameras.find(isConnected) ??
+    cameras.find((device) => device.id === last) ??
     cameras.find(isOnline) ??
     null;
+  if (selected && selected.id !== last) setLast(selected.id);
 
   const picker = (
     <Section heading="Camera phone" className="max-xl:order-4">
