@@ -1,0 +1,3 @@
+# Face models are downloaded by scripts/fetch-face-models.mjs, never committed.
+*
+!.gitignore

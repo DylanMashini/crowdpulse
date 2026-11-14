@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "Triage Cam",
+    "slug": "triagecam",
+    "scheme": "triagecam",
+    "version": "1.0.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "bundleIdentifier": "com.triagecam.app",
+      "deploymentTarget": "16.4",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Triage Cam measures pulse and breathing with the camera. Video is shown live to the operator and is not stored. Only numbers are saved.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "experiments": {
+      "typedRoutes": true
+    },
+    "plugins": [
+      "expo-router",
+      "expo-dev-client",
+      "expo-secure-store",
+      "expo-notifications",
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./assets/fonts/AtkinsonHyperlegibleNext_400Regular.ttf",
+            "./assets/fonts/AtkinsonHyperlegibleNext_500Medium.ttf",
+            "./assets/fonts/AtkinsonHyperlegibleNext_600SemiBold.ttf",
+            "./assets/fonts/AtkinsonHyperlegibleMono_400Regular.ttf",
+            "./assets/fonts/AtkinsonHyperlegibleMono_500Medium.ttf",
+            "./assets/fonts/AtkinsonHyperlegibleMono_600SemiBold.ttf"
+          ]
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "extraPods": [
+              {
+                "name": "SignalEngine",
+                "path": "../../../packages/signal-engine"
+              }
+            ]
+          }
+        }
+      ]
+    ]
+  }
+}

@@ -1,0 +1,32 @@
+@import "tailwindcss";
+@import "../styles/tokens.css";
+
+body {
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 22px;
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer base {
+  /* One focus ring everywhere: 2px solid, offset 2px so a surface gap separates it from fills.
+     In the base layer so a component can move the ring, as Field does onto its box. */
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  /* Keep the browser's autofill tint inside the palette. */
+  input:-webkit-autofill {
+    -webkit-text-fill-color: var(--ink);
+    box-shadow: inset 0 0 0 100px var(--surface-raised);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}

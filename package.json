@@ -1,0 +1,19 @@
+{
+  "name": "triagecam",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@10.22.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev:web": "pnpm --filter @triagecam/web dev",
+    "dev:mobile": "pnpm --filter @triagecam/mobile start",
+    "tokens": "node scripts/build-tokens.mjs",
+    "db:generate": "pnpm --filter @triagecam/web db:generate",
+    "db:migrate": "pnpm --filter @triagecam/web db:migrate",
+    "db:reset": "pnpm --filter @triagecam/web db:reset",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r --if-present test && swift test --package-path packages/signal-engine"
+  }
+}

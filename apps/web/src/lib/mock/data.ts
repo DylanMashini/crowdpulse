@@ -1,0 +1,353 @@
+// Contract-shaped data for building the dashboard before the API routes exist. Loaded only when
+// NEXT_PUBLIC_API_MOCK=1. Nothing here is measured: every number is made up.
+
+import {
+  defaultSettings,
+  type Device,
+  type Estimate,
+  type Flag,
+  type ReferenceReading,
+  type Settings,
+  type Sitting,
+  type Statistics,
+  type StoredReading,
+  type Ticket,
+  type TicketDetailResponse,
+  type TimelineEntry,
+  type User,
+  type WorklistItem,
+} from '@triagecam/contracts';
+
+const MINUTE = 60_000;
+/** Everything is placed relative to the moment the mock was loaded. */
+export const loadedAt = Date.now();
+
+const iso = (ms: number) => new Date(ms).toISOString();
+const ago = (minutes: number) => iso(loadedAt - minutes * MINUTE);
+const uuid = (kind: number, n: number) => `00000000-0000-4000-8000-${String(kind).padStart(4, '0')}${String(n).padStart(8, '0')}`;
+
+export const user: User = { id: uuid(1, 1), email: 'operator@station.test', emailVerified: true, createdAt: ago(600) };
+
+export const CAMERA_ID = uuid(2, 1);
+export const devices: Device[] = [
+  { id: CAMERA_ID, role: 'camera', label: 'Front desk phone', hasPushToken: false, lastSeenAt: ago(0), liveAt: ago(0) },
+  { id: uuid(2, 2), role: 'camera', label: 'Bay 2 phone', hasPushToken: false, lastSeenAt: ago(47), liveAt: null },
+  { id: uuid(2, 3), role: 'nurse', label: 'Charge nurse phone', hasPushToken: true, lastSeenAt: ago(1), liveAt: null },
+];
+
+export const settings: { value: Settings; updatedAt: string } = { value: { ...defaultSettings }, updatedAt: ago(180) };
+
+interface Seed {
+  number: number;
+  waitedMin: number;
+  state: WorklistItem['state'];
+  observedMin: number | null;
+  pulse: [base: number | null, now: number | null];
+  breathing: [base: number | null, now: number | null];
+  score: WorklistItem['score'];
+  scoreAtCheckIn: WorklistItem['score'];
+  source: WorklistItem['source'];
+  flag?: Flag['rule'];
+}
+
+const seeds: Seed[] = [
+  { number: 14, waitedMin: 29, state: 'flag', observedMin: 3, pulse: [82, 108], breathing: [16, 24], score: 2, scoreAtCheckIn: 0, source: 'camera', flag: 'score_rise' },
+  { number: 11, waitedMin: 64, state: 'overdue', observedMin: 41, pulse: [74, 78], breathing: [14, 15], score: 0, scoreAtCheckIn: 0, source: 'camera', flag: 'overdue' },
+  { number: 15, waitedMin: 24, state: 'no-reading', observedMin: 22, pulse: [88, null], breathing: [18, null], score: null, scoreAtCheckIn: 0, source: 'camera' },
+  { number: 12, waitedMin: 52, state: 'observed', observedMin: 12, pulse: [68, 71], breathing: [15, 14], score: 0, scoreAtCheckIn: 0, source: 'recording' },
+  { number: 16, waitedMin: 18, state: 'observed', observedMin: 6, pulse: [95, 92], breathing: [19, 18], score: 1, scoreAtCheckIn: 1, source: 'simulated' },
+];
+
+export const RUNNING_TICKET = 17;
+/** The check-in sitting that is running when the mock loads. It finishes after 60 seconds. */
+export const runningStart = loadedAt - 25_000;
+export const RUNNING_SECONDS = 60;
+export const runningSittingId = uuid(3, 1700);
+
+export const acknowledged = new Map<string, string>();
+export const discharged = new Map<number, string>([[13, ago(95)]]);
+
+function handoffFor(seed: Seed): string {
+  const [pulseBase, pulseNow] = seed.pulse;
+  const [breathingBase, breathingNow] = seed.breathing;
+  const pulse = pulseNow == null ? `pulse ${pulseBase} at check-in, no reading now` : `pulse ${pulseBase} at check-in, ${pulseNow} now (${seed.waitedMin - (seed.observedMin ?? 0) - 2} min later)`;
+  const breathing = breathingNow == null ? `breathing ${breathingBase} at check-in, no reading now` : `breathing ${breathingBase} to ${breathingNow}`;
+  return `Ticket ${seed.number}: ${pulse}; ${breathing}. Last observed ${seed.observedMin} min ago.`;
+}
+
+function flagFor(seed: Seed): Flag | null {
+  if (!seed.flag) return null;
+  const id = uuid(4, seed.number);
+  const acknowledgedAt = acknowledged.get(id) ?? null;
+  return {
+    id,
+    ticketNumber: seed.number,
+    rule: seed.flag,
+    openedAt: ago(seed.flag === 'overdue' ? (seed.observedMin ?? 0) - 30 : (seed.observedMin ?? 0)),
+    closedAt: discharged.has(seed.number) ? discharged.get(seed.number)! : null,
+    detail: {
+      pulse: { base: seed.pulse[0], now: seed.pulse[1] },
+      breathing: { base: seed.breathing[0], now: seed.breathing[1] },
+      scoreAtCheckIn: seed.scoreAtCheckIn,
+      scoreNow: seed.score,
+      minutesSinceCheckIn: seed.waitedMin - 2,
+      minutesSinceObserved: seed.flag === 'overdue' ? 30 : null,
+    },
+    acknowledgedAt,
+    acknowledgedBy: acknowledgedAt ? user.email : null,
+    handoff: handoffFor(seed),
+  };
+}
+
+export function runningFinished(now = Date.now()): boolean {
+  return now - runningStart >= RUNNING_SECONDS * 1000;
+}
+
+export function worklistItems(): WorklistItem[] {
+  const waiting = seeds.filter((seed) => !discharged.has(seed.number));
+  const items = waiting.map((seed): Omit<WorklistItem, 'rank'> => {
+    const flag = flagFor(seed);
+    return {
+      ticketNumber: seed.number,
+      state: seed.state,
+      waitingSince: ago(seed.waitedMin),
+      lastObservedAt: seed.observedMin == null ? null : ago(seed.observedMin),
+      minutesSinceObserved: seed.observedMin,
+      pulse: { base: seed.pulse[0], now: seed.pulse[1] },
+      breathing: { base: seed.breathing[0], now: seed.breathing[1] },
+      score: seed.score,
+      scoreAtCheckIn: seed.scoreAtCheckIn,
+      parametersMeasured: seed.score == null ? 0 : 2,
+      source: seed.source,
+      flags: flag ? [flag] : [],
+      handoff: handoffFor(seed),
+      sittingInProgress: false,
+    };
+  });
+  if (!discharged.has(RUNNING_TICKET)) {
+    const done = runningFinished();
+    items.push({
+      ticketNumber: RUNNING_TICKET,
+      state: 'observed',
+      waitingSince: iso(runningStart - 40_000),
+      lastObservedAt: done ? iso(runningStart + RUNNING_SECONDS * 1000) : null,
+      minutesSinceObserved: done ? 0 : null,
+      pulse: { base: done ? 77 : null, now: done ? 77 : null },
+      breathing: { base: done ? 16 : null, now: done ? 16 : null },
+      score: done ? 0 : null,
+      scoreAtCheckIn: done ? 0 : null,
+      parametersMeasured: done ? 2 : 0,
+      source: done ? 'camera' : null,
+      flags: [],
+      handoff: done ? 'Ticket 17: pulse 77 at check-in; breathing 16. Last observed 0 min ago.' : 'Ticket 17: not yet observed.',
+      sittingInProgress: !done,
+    });
+  }
+  return items.map((item, index) => ({ ...item, rank: index + 1 }));
+}
+
+export function tickets(): Ticket[] {
+  const numbers = [RUNNING_TICKET, ...seeds.map((seed) => seed.number), 13].sort((a, b) => b - a);
+  return numbers.map((number) => {
+    const seed = seeds.find((candidate) => candidate.number === number);
+    const dischargedAt = discharged.get(number) ?? null;
+    return {
+      number,
+      status: dischargedAt ? 'discharged' : 'waiting',
+      createdAt: number === RUNNING_TICKET ? iso(runningStart - 40_000) : ago(seed?.waitedMin ?? 170),
+      dischargedAt,
+      faceOptIn: number % 2 === 0,
+      faceEnrolled: number % 2 === 0 && !dischargedAt,
+    };
+  });
+}
+
+const valid = (value: number, coverage: number): Estimate => ({ value, state: 'valid', reason: null, quality: 0.82, coverage, ageMs: 0 });
+const waiting = (state: 'settling' | 'none', reason: Estimate['reason'], coverage: number): Estimate => ({
+  value: null,
+  state,
+  reason,
+  quality: 0.2,
+  coverage,
+  ageMs: null,
+});
+
+/** The reading for second `i` of the running sitting. Second 31 to 34 is a movement gap. */
+export function runningReading(i: number): StoredReading {
+  const heartValid = (second: number) => second >= 10 && (second < 31 || second > 34);
+  let validSoFar = 0;
+  for (let second = 0; second <= i; second++) if (heartValid(second)) validSoFar++;
+  const coverage = validSoFar / (i + 1);
+  const heartRate = heartValid(i)
+    ? valid(76 + Math.round(3 * Math.sin(i / 5)), coverage)
+    : i < 4
+      ? waiting('settling', 'warming_up', 0)
+      : i < 10
+        ? waiting('settling', 'awaiting_agreement', 0)
+        : waiting('none', 'motion', coverage);
+  const breathingCoverage = Math.max(0, i - 29) / (i + 1);
+  const breathingRate =
+    i >= 30 ? valid(16, breathingCoverage) : waiting('settling', i < 25 ? 'warming_up' : 'awaiting_agreement', 0);
+  return { t: iso(runningStart + i * 1000), heartRate, breathingRate };
+}
+
+export function runningReference(i: number): ReferenceReading {
+  const heartRate = 77 + Math.round(2 * Math.sin(i / 5 + 0.4));
+  return { t: iso(runningStart + i * 1000), heartRate, rrIntervalsMs: [Math.round(60_000 / heartRate)], source: 'chest_strap' };
+}
+
+const summaryValue = (value: number | null, coverage: number) => ({ value, coverage });
+
+function sittingOf(id: string, ticketNumber: number, kind: Sitting['kind'], source: Sitting['source'], endedMinAgo: number, heartRate: number | null, breathingRate: number | null): Sitting {
+  const endedAt = loadedAt - endedMinAgo * MINUTE;
+  return {
+    id,
+    ticketNumber,
+    deviceId: CAMERA_ID,
+    kind,
+    source,
+    startedAt: iso(endedAt - MINUTE),
+    endedAt: iso(endedAt),
+    clockOffsetMs: 12,
+    summary: {
+      durationSeconds: 60,
+      heartRate: summaryValue(heartRate, heartRate == null ? 0.08 : 0.86),
+      breathingRate: summaryValue(breathingRate, breathingRate == null ? 0 : 0.5),
+      rmssd: summaryValue(heartRate == null ? null : 34, heartRate == null ? 0 : 0.71),
+      sdnn: summaryValue(heartRate == null ? null : 41, heartRate == null ? 0 : 0.71),
+      timeToFirstReadingSeconds: heartRate == null ? null : 10,
+      longestDropoutSeconds: heartRate == null ? 55 : 4,
+      frameCount: 3588,
+      droppedFrames: 12,
+    },
+  };
+}
+
+export function runningSitting(now = Date.now()): Sitting {
+  const done = runningFinished(now);
+  const finished = sittingOf(runningSittingId, RUNNING_TICKET, 'check_in', 'camera', 0, 77, 16);
+  return {
+    ...finished,
+    startedAt: iso(runningStart),
+    endedAt: done ? iso(runningStart + RUNNING_SECONDS * 1000) : null,
+    summary: done ? finished.summary : null,
+  };
+}
+
+export function ticketDetail(number: number): TicketDetailResponse | null {
+  const ticket = tickets().find((candidate) => candidate.number === number);
+  if (!ticket) return null;
+  const isDischarged = ticket.status === 'discharged';
+
+  if (number === RUNNING_TICKET) {
+    const sitting = runningSitting();
+    const item = worklistItems().find((candidate) => candidate.ticketNumber === number);
+    const timeline: TimelineEntry[] = [{ type: 'created', at: ticket.createdAt }];
+    if (sitting.endedAt) {
+      timeline.unshift({ type: 'sitting', at: sitting.endedAt, sittingId: sitting.id, kind: 'check_in', source: 'camera', heartRate: 77, breathingRate: 16, score: 0 });
+    }
+    if (ticket.dischargedAt) timeline.unshift({ type: 'discharged', at: ticket.dischargedAt });
+    return {
+      ticket,
+      state: isDischarged ? null : 'observed',
+      baseline: sitting.endedAt ? sitting : null,
+      sittings: [sitting],
+      flags: [],
+      timeline,
+      handoff: item?.handoff ?? 'Ticket 17: pulse 77 at check-in; breathing 16.',
+    };
+  }
+
+  const seed = seeds.find((candidate) => candidate.number === number);
+  if (!seed) {
+    const baseline = sittingOf(uuid(3, number * 100), number, 'check_in', 'camera', 168, 71, 15);
+    return {
+      ticket,
+      state: null,
+      baseline,
+      sittings: [baseline],
+      flags: [],
+      timeline: [
+        { type: 'discharged', at: ticket.dischargedAt ?? ago(95) },
+        { type: 'sitting', at: baseline.endedAt!, sittingId: baseline.id, kind: 'check_in', source: 'camera', heartRate: 71, breathingRate: 15, score: 0 },
+        { type: 'created', at: ticket.createdAt },
+      ],
+      handoff: `Ticket ${number}: pulse 71 at check-in; breathing 15. Discharged.`,
+    };
+  }
+
+  const source = seed.source ?? 'camera';
+  const baseline = sittingOf(uuid(3, number * 100), number, 'check_in', source, seed.waitedMin - 2, seed.pulse[0], seed.breathing[0]);
+  const recheckAgo = seed.state === 'no-reading' ? 4 : (seed.observedMin ?? 0);
+  const recheck = sittingOf(uuid(3, number * 100 + 1), number, 'recheck', source, recheckAgo, seed.pulse[1], seed.breathing[1]);
+  const flag = flagFor(seed);
+  const timeline: TimelineEntry[] = [
+    { type: 'sitting', at: recheck.endedAt!, sittingId: recheck.id, kind: 'recheck', source, heartRate: seed.pulse[1], breathingRate: seed.breathing[1], score: seed.score },
+    { type: 'sitting', at: baseline.endedAt!, sittingId: baseline.id, kind: 'check_in', source, heartRate: seed.pulse[0], breathingRate: seed.breathing[0], score: seed.scoreAtCheckIn },
+    { type: 'created', at: ticket.createdAt },
+  ];
+  if (flag) {
+    const opened: TimelineEntry = { type: 'flag_opened', at: flag.openedAt, flagId: flag.id, rule: flag.rule, handoff: flag.handoff };
+    timeline.unshift(opened);
+    if (flag.acknowledgedAt) timeline.unshift({ type: 'flag_acknowledged', at: flag.acknowledgedAt, flagId: flag.id, by: user.email });
+    if (flag.closedAt) timeline.unshift({ type: 'flag_closed', at: flag.closedAt, flagId: flag.id, rule: flag.rule });
+  }
+  if (ticket.dischargedAt) timeline.unshift({ type: 'discharged', at: ticket.dischargedAt });
+  return {
+    ticket,
+    state: isDischarged ? null : seed.state,
+    baseline,
+    sittings: [baseline, recheck],
+    flags: flag ? [flag] : [],
+    timeline,
+    handoff: handoffFor(seed),
+  };
+}
+
+export function findFlag(id: string): Flag | null {
+  for (const seed of seeds) {
+    const flag = flagFor(seed);
+    if (flag?.id === id) return flag;
+  }
+  return null;
+}
+
+export function statistics(empty: boolean): Statistics {
+  const now = Date.now();
+  const range = { generatedAt: iso(now), from: iso(new Date(now).setHours(0, 0, 0, 0)), to: iso(now) };
+  if (empty) {
+    return {
+      ...range,
+      totals: { ticketsWaiting: 0, ticketsDischarged: 0, sittings: 0, sittingsWithReference: 0, openFlags: 0, personHours: 0 },
+      heartRate: { pairedReadings: 0, meanAbsoluteErrorBpm: null, biasBpm: null, within5BpmShare: null },
+      sittings: { attempted: 0, withReading: 0, accurateAcceptedShare: null, meanCoverage: null, medianTimeToFirstReadingSeconds: null, longestDropoutSeconds: null },
+      flags: { episodes: 0, episodesPerPersonHour: null, acknowledged: 0, medianMinutesToAcknowledge: null },
+      perTicket: [],
+    };
+  }
+  const row = (ticketNumber: number, pairedReadings: number, mae: number | null, bias: number | null, within: number | null, coverage: number | null) => ({
+    ticketNumber,
+    sittings: 2,
+    pairedReadings,
+    meanAbsoluteErrorBpm: mae,
+    biasBpm: bias,
+    within5BpmShare: within,
+    coverage,
+  });
+  return {
+    ...range,
+    totals: { ticketsWaiting: 6, ticketsDischarged: 1, sittings: 13, sittingsWithReference: 12, openFlags: 2, personHours: 4.6 },
+    heartRate: { pairedReadings: 508, meanAbsoluteErrorBpm: 2.9, biasBpm: 0.7, within5BpmShare: 0.87 },
+    sittings: { attempted: 13, withReading: 11, accurateAcceptedShare: 0.75, meanCoverage: 0.78, medianTimeToFirstReadingSeconds: 11.5, longestDropoutSeconds: 19 },
+    flags: { episodes: 3, episodesPerPersonHour: 0.65, acknowledged: 2, medianMinutesToAcknowledge: 4 },
+    perTicket: [
+      row(11, 96, 1.8, 0.4, 0.97, 0.88),
+      row(12, 91, 2.2, -1.1, 0.93, 0.84),
+      row(13, 88, 2.6, 1.9, 0.9, 0.81),
+      row(14, 102, 3.1, -0.6, 0.86, 0.9),
+      row(15, 41, 7.4, 6.2, 0.44, 0.37),
+      row(16, 90, 2.4, 0.9, 0.92, 0.8),
+      row(17, 0, null, null, null, 0.83),
+    ],
+  };
+}

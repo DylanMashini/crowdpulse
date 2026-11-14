@@ -1,0 +1,52 @@
+import type { Trend } from "@triagecam/contracts";
+
+export type HandoffInput = {
+  ticketNumber: number;
+  /** Check-in value against the latest observation. */
+  pulse: Trend;
+  breathing: Trend;
+  /** Whole minutes from check-in to the latest observation; null while check-in is the only observation. */
+  minutesLater: number | null;
+  /** Null when the ticket has never been observed. */
+  minutesSinceObserved: number | null;
+  minutesWaiting: number;
+  latestGaveNoReading: boolean;
+};
+
+const rate = (value: number) => String(Math.round(value));
+
+/**
+ * The fixed-template sentence a nurse reads, for example "Ticket 14: pulse 82 at check-in,
+ * 108 now (26 min later); breathing 16 to 24. Last observed 3 min ago." It states measured
+ * numbers and nothing else.
+ */
+export function handoffSentence(input: HandoffInput): string {
+  const noReading = input.latestGaveNoReading ? " The latest sitting gave no reading." : "";
+  if (input.minutesSinceObserved === null) {
+    return `Ticket ${input.ticketNumber}: not yet observed, waiting ${input.minutesWaiting} min.${noReading}`;
+  }
+
+  const body = input.minutesLater === null ? atCheckIn(input) : sinceCheckIn(input, input.minutesLater);
+  return `Ticket ${input.ticketNumber}: ${body}. Last observed ${input.minutesSinceObserved} min ago.${noReading}`;
+}
+
+function atCheckIn({ pulse, breathing }: HandoffInput): string {
+  const values = [
+    pulse.base === null ? null : `pulse ${rate(pulse.base)}`,
+    breathing.base === null ? null : `breathing ${rate(breathing.base)}`,
+  ].filter((value) => value !== null);
+  return `${values.join(", ")} at check-in`;
+}
+
+function sinceCheckIn({ pulse, breathing }: HandoffInput, minutesLater: number): string {
+  let elapsedStated = false;
+  const clause = (name: string, { base, now }: Trend): string | null => {
+    if (base === null && now === null) return null;
+    if (base === null) return `${name} ${rate(now as number)} now, not measured at check-in`;
+    if (now === null) return `${name} ${rate(base)} at check-in, no reading now`;
+    if (elapsedStated) return `${name} ${rate(base)} to ${rate(now)}`;
+    elapsedStated = true;
+    return `${name} ${rate(base)} at check-in, ${rate(now)} now (${minutesLater} min later)`;
+  };
+  return [clause("pulse", pulse), clause("breathing", breathing)].filter((part) => part !== null).join("; ");
+}

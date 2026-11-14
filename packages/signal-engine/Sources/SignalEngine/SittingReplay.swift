@@ -1,0 +1,146 @@
+import Foundation
+
+/// Runs a recorded sitting through the engine the way the capture module does: every frame
+/// in order, one reading per second of capture time, then the summary.
+public enum SittingReplay {
+  public struct Result: Sendable, Equatable {
+    public var readings: [Reading]
+    public var summary: SittingSummary
+  }
+
+  public static func run(
+    _ frames: [FrameRecord], configuration: EngineConfiguration = .default
+  ) -> Result {
+    let engine = SignalEngine(configuration: configuration)
+    var readings: [Reading] = []
+    guard let first = frames.first else {
+      return Result(readings: [], summary: engine.finish())
+    }
+    var nextReadingTime = first.t + 1
+    for frame in frames {
+      engine.ingest(frame)
+      while frame.t >= nextReadingTime {
+        readings.append(engine.reading(at: nextReadingTime))
+        nextReadingTime += 1
+      }
+    }
+    return Result(readings: readings, summary: engine.finish())
+  }
+}
+
+/// One sample from a reference device (chest strap, oximeter) or a manual count.
+public struct ReferenceSample: Sendable, Equatable {
+  /// Seconds since the first frame of the sitting.
+  public var elapsed: Double
+  public var heartRate: Double
+
+  public init(elapsed: Double, heartRate: Double) {
+    self.elapsed = elapsed
+    self.heartRate = heartRate
+  }
+}
+
+/// A reference file: JSON Lines, one `{"t": ..., "heartRate": ...}` per line. `t` is either a
+/// number, seconds since the sitting's first frame, or an ISO 8601 time, which is placed
+/// against the sitting file's `startedAt`.
+public enum ReferenceFile {
+  public enum ReadError: Error, Equatable {
+    case malformedLine(Int)
+    /// A line uses a wall-clock time but the sitting's `startedAt` could not be parsed.
+    case unknownSittingStart
+  }
+
+  private struct Line: Decodable {
+    enum Time: Decodable {
+      case elapsed(Double)
+      case wallClock(String)
+
+      init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let seconds = try? container.decode(Double.self) {
+          self = .elapsed(seconds)
+        } else {
+          self = .wallClock(try container.decode(String.self))
+        }
+      }
+    }
+
+    var t: Time
+    var heartRate: Double?
+  }
+
+  public static func decode(_ data: Data, sittingStartedAt: String) throws -> [ReferenceSample] {
+    let decoder = JSONDecoder()
+    let sittingStart = date(sittingStartedAt)
+    var samples: [ReferenceSample] = []
+    for (index, raw) in data.split(separator: 0x0A, omittingEmptySubsequences: true).enumerated() {
+      guard let line = try? decoder.decode(Line.self, from: raw) else {
+        throw ReadError.malformedLine(index + 1)
+      }
+      guard let heartRate = line.heartRate else { continue }
+      switch line.t {
+      case .elapsed(let seconds):
+        samples.append(ReferenceSample(elapsed: seconds, heartRate: heartRate))
+      case .wallClock(let text):
+        guard let time = date(text) else { throw ReadError.malformedLine(index + 1) }
+        guard let sittingStart else { throw ReadError.unknownSittingStart }
+        samples.append(
+          ReferenceSample(elapsed: time.timeIntervalSince(sittingStart), heartRate: heartRate))
+      }
+    }
+    return samples.sorted { $0.elapsed < $1.elapsed }
+  }
+
+  private static func date(_ text: String) -> Date? {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let date = formatter.date(from: text) { return date }
+    formatter.formatOptions = [.withInternetDateTime]
+    return formatter.date(from: text)
+  }
+}
+
+/// Agreement between a replayed sitting and its reference: the numbers plan section 9 reports.
+public struct ReferenceComparison: Codable, Sendable, Equatable {
+  /// Valid heart-rate readings that have a reference sample within `pairingSeconds`.
+  public var pairedReadings: Int
+  /// Mean of |estimate - reference| over the pairs, in bpm. Nil when nothing pairs.
+  public var meanAbsoluteErrorBpm: Double?
+  /// Mean of estimate - reference over the pairs, in bpm.
+  public var biasBpm: Double?
+  /// Share of the pairs within 5 bpm of the reference.
+  public var within5BpmShare: Double?
+  /// Share of the one-second readings that were valid.
+  public var coverage: Double
+  public var timeToFirstReadingSeconds: Double?
+  public var longestDropoutSeconds: Double
+  /// The sitting's summary heart rate and the mean of the reference, for the per-sitting check.
+  public var summaryHeartRateBpm: Double?
+  public var referenceMeanBpm: Double?
+
+  /// A reading pairs with the nearest reference sample no further away than this, in seconds.
+  public static let pairingSeconds = 1.5
+
+  public init(replay: SittingReplay.Result, reference: [ReferenceSample]) {
+    var errors: [Double] = []
+    for reading in replay.readings {
+      guard let estimate = reading.heartRate.value,
+        let nearest = reference.min(by: {
+          abs($0.elapsed - reading.elapsed) < abs($1.elapsed - reading.elapsed)
+        }),
+        abs(nearest.elapsed - reading.elapsed) <= ReferenceComparison.pairingSeconds
+      else { continue }
+      errors.append(estimate - nearest.heartRate)
+    }
+    let pairs = Double(errors.count)
+    pairedReadings = errors.count
+    meanAbsoluteErrorBpm = errors.isEmpty ? nil : errors.reduce(0) { $0 + abs($1) } / pairs
+    biasBpm = errors.isEmpty ? nil : errors.reduce(0, +) / pairs
+    within5BpmShare = errors.isEmpty ? nil : Double(errors.filter { abs($0) <= 5 }.count) / pairs
+    coverage = replay.summary.heartRate.coverage
+    timeToFirstReadingSeconds = replay.summary.timeToFirstReadingSeconds
+    longestDropoutSeconds = replay.summary.longestDropoutSeconds
+    summaryHeartRateBpm = replay.summary.heartRate.value
+    referenceMeanBpm = reference.isEmpty ? nil : reference.reduce(0) { $0 + $1.heartRate } / Double(reference.count)
+  }
+}
