@@ -532,7 +532,7 @@ done("patient detail: baseline, sittings, flags and a newest-first timeline");
   assert.equal(row.score, null);
   assert.equal(row.minutesSinceObserved, null);
   assert.match(row.handoff, /not yet observed.*read pulse 62 bpm with lower confidence; repeat it\.$/);
-  // Nine valid seconds of sixty is low; ten is normal; and what the phone says wins either way.
+  // Nine valid seconds of sixty is low; ten is normal; a stated low stands on any coverage.
   const nine = (await (await sit(old, "recheck", 70, null, 3, { heartRateCoverage: 9 / 60 })).finish()).sitting;
   assert.equal(nine.summary?.heartRateConfidence, "low");
   const stated = (await (await sit(old, "recheck", 70, null, 3, { heartRateCoverage: 0.87, heartRateConfidence: "low" })).finish()).sitting;
@@ -546,8 +546,16 @@ done("patient detail: baseline, sittings, flags and a newest-first timeline");
   assert.equal(row.pulse.lowConfidence, undefined);
   assert.ok(row.pulse.baseAt, "a baseline from a re-check says when it is from");
   assert.match(row.handoff, /pulse 74 bpm now, lower confidence at check-in/);
-  const vouched = (await (await sit(old, "recheck", 75, null, 3, { heartRateCoverage: 0, heartRateConfidence: "normal" })).finish()).sitting;
-  assert.equal(vouched.summary?.heartRateConfidence, "normal");
+  // A stated normal that the sitting's own numbers contradict is not believed (QA round 3, N2):
+  // it is stored low and the baseline stays where it was.
+  const overstated = (await (await sit(old, "recheck", 102, null, 3, { heartRateCoverage: 3 / 60, heartRateConfidence: "normal" })).finish()).sitting;
+  assert.equal(overstated.summary?.heartRateConfidence, "low", "a stated normal on three valid seconds is stored low");
+  row = (await worklistItem(old)).item;
+  assert.equal(row.pulse.base, 74);
+  assert.equal(row.pulse.lowConfidence, 102);
+  assert.equal(row.state, "no-reading");
+  const borneOut = (await (await sit(old, "recheck", 75, null, 3, { heartRateCoverage: 0.5, heartRateConfidence: "normal" })).finish()).sitting;
+  assert.equal(borneOut.summary?.heartRateConfidence, "normal");
   await ok(PatientResponse, 200, "POST", routes.patientDischarge(old), { auth: web });
   done("a finish without heartRateConfidence is stored low under ten valid seconds, and is no baseline");
 

@@ -116,8 +116,9 @@ export async function finishSitting(sittingId: string, request: FinishSittingReq
         durationSeconds: summary.durationSeconds,
         heartRate: summary.heartRate.value,
         heartRateCoverage: summary.heartRate.coverage,
-        // What the phone says, or, from a build from before the field existed, the engine's own
-        // rule applied here: a rate that rests on fewer than ten valid seconds is `low`.
+        // The lower of what the phone says and the engine's own rule applied here: a rate that
+        // rests on fewer than ten valid seconds is `low`, whether the phone left the field out
+        // (a build from before it existed) or stated `normal`.
         heartRateConfidence: summaryHeartRateConfidence(summary),
         breathingRate: summary.breathingRate.value,
         breathingRateCoverage: summary.breathingRate.coverage,
