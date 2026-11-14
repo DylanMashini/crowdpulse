@@ -125,6 +125,9 @@ test('the timeline is oldest first and keeps the sitting that failed', () => {
 
   // The failed sitting stays in the record, as "No reading".
   assert.equal(rows[2]!.state, 'no-reading');
+  assert.equal(rows[2]!.severity, 'none');
+  // The alert tripped both trend rules, so its one row is urgent whichever entry was kept.
+  assert.equal(rows[4]!.severity, 'urgent');
   assert.equal(rows[2]!.vitals, null);
   assert.ok(rows[2]!.note);
 
