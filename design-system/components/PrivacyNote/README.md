@@ -5,3 +5,4 @@ One plain sentence about what happens to a person's data, placed where the data 
 - State a fact the build can defend: "No video leaves this phone. Only numbers are sent."
 - One note per screen, next to the capture or consent control it describes. Not in a footer.
 - Do not use "secure", "private by design" or other claims that cannot be checked.
+- Plain `caption` text in `ink-faint` with a 16px icon. No fill and no outline.

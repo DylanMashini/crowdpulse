@@ -6,3 +6,4 @@ Camera estimate against the reference device over one sitting, with the running 
 - The estimate is a solid `series-estimate` line and the reference a dashed `series-reference` line, so they differ by dash and lightness, with a legend and end labels.
 - Gaps stay gaps. Do not interpolate across seconds without a reading.
 - Hover shows both values for that second; "Show table" gives the same data as rows.
+- Grid lines are `line`, axis labels are `caption` size in `ink-faint`. The estimate is 1.5px; nothing else in the chart is coloured.
