@@ -5,16 +5,16 @@ import { subscribe } from "@/server/events";
 import { readQuery, route } from "@/server/http";
 import { streamResponse } from "@/server/streaming";
 
-const StreamQuery = z.object({ ticket: z.coerce.number().int().positive().optional() });
+const StreamQuery = z.object({ patient: z.coerce.number().int().positive().optional() });
 const PING_MS = 15_000;
 
 export const GET = route(async (request: Request) => {
   await requireSession(request);
-  const { ticket } = readQuery(request, StreamQuery);
+  const { patient } = readQuery(request, StreamQuery);
   return streamResponse(request, "text/event-stream; charset=utf-8", (write) => {
     write(": connected\n\n");
     const unsubscribe = subscribe((event) => {
-      if (event.type === "reading" && ticket !== undefined && event.ticketNumber !== ticket) return;
+      if (event.type === "reading" && patient !== undefined && event.patientNumber !== patient) return;
       write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
     });
     const ping = setInterval(() => write(": ping\n\n"), PING_MS);

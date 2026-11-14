@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { type Rankable, rankTickets, tileState } from "./rank.ts";
+import { type Rankable, rankPatients, tileState } from "./rank.ts";
 
 const minutesAgo = (minutes: number) => new Date(Date.parse("2026-11-14T16:00:00.000Z") - minutes * 60_000);
 
-const item = (ticketNumber: number, values: Partial<Rankable>): Rankable => ({
-  ticketNumber,
+const item = (patientNumber: number, values: Partial<Rankable>): Rankable => ({
+  patientNumber,
   state: "observed",
   score: 0,
   flagOpenedAt: null,
@@ -26,8 +26,8 @@ describe("tileState", () => {
   });
 });
 
-describe("rankTickets", () => {
-  const order = (items: Rankable[]) => rankTickets(items).map((ranked) => ranked.ticketNumber);
+describe("rankPatients", () => {
+  const order = (items: Rankable[]) => rankPatients(items).map((ranked) => ranked.patientNumber);
 
   it("puts flags first, then overdue and no-reading, then observed", () => {
     const ranked = order([
@@ -48,7 +48,7 @@ describe("rankTickets", () => {
     assert.deepEqual(ranked, [2, 3, 1]);
   });
 
-  it("ranks a no-reading ticket as overdue: the two share one group, longest unobserved first", () => {
+  it("ranks a no-reading patient as overdue: the two share one group, longest unobserved first", () => {
     const ranked = order([
       item(1, { state: "overdue", unobservedSince: minutesAgo(33) }),
       item(2, { state: "no-reading", unobservedSince: minutesAgo(50) }),
@@ -57,7 +57,7 @@ describe("rankTickets", () => {
     assert.deepEqual(ranked, [2, 3, 1]);
   });
 
-  it("orders observed tickets by the longest time since the last observation", () => {
+  it("orders observed patients by the longest time since the last observation", () => {
     const ranked = order([
       item(1, { unobservedSince: minutesAgo(4) }),
       item(2, { unobservedSince: minutesAgo(22) }),
@@ -66,9 +66,9 @@ describe("rankTickets", () => {
     assert.deepEqual(ranked, [2, 3, 1]);
   });
 
-  it("breaks a full tie by ticket number and leaves its input untouched", () => {
+  it("breaks a full tie by patient number and leaves its input untouched", () => {
     const items = [item(9, {}), item(4, {})];
     assert.deepEqual(order(items), [4, 9]);
-    assert.equal(items[0]?.ticketNumber, 9);
+    assert.equal(items[0]?.patientNumber, 9);
   });
 });

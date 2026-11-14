@@ -5,7 +5,7 @@ import { trendText } from '@/lib/nurse/worklistFormat';
 
 import { useScopedTheme } from './ThemeScope';
 
-/** A value against the ticket's own check-in baseline: "108 from 82 (+26)", or "No reading". */
+/** A value against the patient's own check-in baseline: "108 from 82 (+26)", or "No reading". */
 export function TrendValue({ trend, unit }: { trend: Trend; unit: string }) {
   const theme = useScopedTheme();
   const { colors } = theme;

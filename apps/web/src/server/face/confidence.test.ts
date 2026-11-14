@@ -18,47 +18,47 @@ describe("confidenceFromCosine", () => {
 });
 
 describe("decideMatch", () => {
-  it("names the ticket when the best candidate is confident and clearly ahead", () => {
+  it("names the patient when the best candidate is confident and clearly ahead", () => {
     const result = decideMatch(
       [
-        { ticketNumber: 3, cosine: 0.1 },
-        { ticketNumber: 7, cosine: 0.71 },
+        { patientNumber: 3, cosine: 0.1 },
+        { patientNumber: 7, cosine: 0.71 },
       ],
       0.8,
     );
     assert.equal(result.outcome, "matched");
-    assert.equal(result.ticketNumber, 7);
+    assert.equal(result.patientNumber, 7);
     assert.ok(result.confidence !== null && result.confidence >= 0.8);
   });
 
   it("refuses below the threshold without naming the guess", () => {
-    const result = decideMatch([{ ticketNumber: 7, cosine: 0.3 }], 0.8);
+    const result = decideMatch([{ patientNumber: 7, cosine: 0.3 }], 0.8);
     assert.equal(result.outcome, "low_confidence");
-    assert.equal(result.ticketNumber, null);
+    assert.equal(result.patientNumber, null);
     assert.ok(result.confidence !== null && result.confidence < 0.8);
   });
 
-  it("refuses when two tickets are nearly as likely", () => {
+  it("refuses when two patients are nearly as likely", () => {
     const result = decideMatch(
       [
-        { ticketNumber: 7, cosine: 0.62 },
-        { ticketNumber: 9, cosine: 0.6 },
+        { patientNumber: 7, cosine: 0.62 },
+        { patientNumber: 9, cosine: 0.6 },
       ],
       0.8,
     );
     assert.equal(result.outcome, "low_confidence");
-    assert.equal(result.ticketNumber, null);
+    assert.equal(result.patientNumber, null);
   });
 
   it("is no_match when nobody resembles the crop or nobody is enrolled", () => {
-    const none = { outcome: "no_match", ticketNumber: null, confidence: null };
-    assert.deepEqual(decideMatch([{ ticketNumber: 7, cosine: 0.05 }], 0.8), none);
+    const none = { outcome: "no_match", patientNumber: null, confidence: null };
+    assert.deepEqual(decideMatch([{ patientNumber: 7, cosine: 0.05 }], 0.8), none);
     assert.deepEqual(decideMatch([], 0.8), none);
   });
 
   it("follows the configured threshold", () => {
-    assert.equal(decideMatch([{ ticketNumber: 7, cosine: 0.6 }], 0.95).outcome, "low_confidence");
-    assert.equal(decideMatch([{ ticketNumber: 7, cosine: 0.6 }], 0.8).outcome, "matched");
-    assert.equal(decideMatch([{ ticketNumber: 7, cosine: 0.4 }], 0.8).outcome, "low_confidence");
+    assert.equal(decideMatch([{ patientNumber: 7, cosine: 0.6 }], 0.95).outcome, "low_confidence");
+    assert.equal(decideMatch([{ patientNumber: 7, cosine: 0.6 }], 0.8).outcome, "matched");
+    assert.equal(decideMatch([{ patientNumber: 7, cosine: 0.4 }], 0.8).outcome, "low_confidence");
   });
 });

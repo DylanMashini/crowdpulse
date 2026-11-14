@@ -49,7 +49,7 @@ export default function Worklist() {
   };
 
   const open = (item: WorklistItem) =>
-    router.push({ pathname: '/nurse/ticket/[number]', params: { number: String(item.ticketNumber) } });
+    router.push({ pathname: '/nurse/patient/[number]', params: { number: String(item.patientNumber) } });
 
   const subtitle = worklist
     ? `${worklistSummary(worklist.items)}, updated ${clockTime(worklist.generatedAt)}`
@@ -64,7 +64,7 @@ export default function Worklist() {
     >
       <FlatList
         data={worklist?.items ?? []}
-        keyExtractor={(item) => String(item.ticketNumber)}
+        keyExtractor={(item) => String(item.patientNumber)}
         renderItem={({ item }) => <WorklistCard item={item} onPress={() => open(item)} />}
         ItemSeparatorComponent={() => <View style={{ height: space.space2 }} />}
         refreshControl={
@@ -96,7 +96,7 @@ export default function Worklist() {
           worklist ? (
             <Notice
               title="No one is waiting"
-              body="A ticket appears here as soon as it is created on the camera phone or the dashboard"
+              body="A patient appears here as soon as it is created on the camera phone or the dashboard"
             />
           ) : failure ? (
             <Notice title="The worklist did not load" body={failure}>

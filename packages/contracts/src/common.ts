@@ -7,9 +7,26 @@ export type Timestamp = z.infer<typeof Timestamp>;
 export const Id = z.uuid();
 export type Id = z.infer<typeof Id>;
 
-/** The public, sequential ticket number. The only patient identifier on the wire. */
-export const TicketNumber = z.int().positive();
-export type TicketNumber = z.infer<typeof TicketNumber>;
+/** The short, sequential visit number. Addresses a patient in every URL; the name leads on screen. */
+export const PatientNumber = z.int().positive();
+export type PatientNumber = z.infer<typeof PatientNumber>;
+
+/**
+ * Enough of a patient to show who a row is about: the name and the face. Carried by every
+ * payload that concerns one patient (worklist items, flags, stream events).
+ */
+export const PatientRef = z.object({
+  number: PatientNumber,
+  /** Null until staff have typed it at intake. Show patientLabel() instead of a blank. */
+  name: z.string().nullable(),
+  /** Null when there is no profile photo: show initials. Otherwise the `v` of the photo route. */
+  photoUpdatedAt: Timestamp.nullable(),
+});
+export type PatientRef = z.infer<typeof PatientRef>;
+
+/** What to call a patient: their name, or "Patient 14" until it has been entered. */
+export const patientLabel = (patient: { number: number; name: string | null }): string =>
+  patient.name?.trim() || `Patient ${patient.number}`;
 
 /** A share or score from 0 to 1. */
 export const Unit = z.number().min(0).max(1);
@@ -24,7 +41,7 @@ export const ErrorCode = z.enum([
   'conflict',
   'email_taken',
   'token_invalid',
-  'ticket_discharged',
+  'patient_discharged',
   'sitting_finished',
   'face_not_opted_in',
   'no_face_detected',
@@ -46,11 +63,11 @@ export const errorStatus: Record<ErrorCode, number> = {
   conflict: 409,
   email_taken: 409,
   token_invalid: 410,
-  ticket_discharged: 409,
+  patient_discharged: 409,
   sitting_finished: 409,
   face_not_opted_in: 403,
   no_face_detected: 422,
-  /** The face models are not installed on the server. Ask for the ticket number instead. */
+  /** The face models are not installed on the server. Choose the patient from the waiting-room list instead. */
   face_unavailable: 503,
   payload_too_large: 413,
   rate_limited: 429,

@@ -11,7 +11,7 @@ import { useScopedTheme } from './ThemeScope';
 
 type Props = {
   visible: boolean;
-  ticket: number;
+  patient: number;
   /** Disables both buttons while the choice is being saved. */
   busy?: boolean;
   onAccept: () => void;
@@ -20,7 +20,7 @@ type Props = {
 
 /**
  * The opt-in for face match at check-in. Both buttons are `secondary` and the same size, with
- * the ticket-number option first; neither is the default, and the sheet closes only by a choice.
+ * the patient-number option first; neither is the default, and the sheet closes only by a choice.
  */
 export function ConsentSheet(props: Props) {
   const reducedMotion = useReducedMotion();
@@ -39,14 +39,14 @@ export function ConsentSheet(props: Props) {
   );
 }
 
-function Sheet({ ticket, busy, onAccept, onDecline }: Props) {
+function Sheet({ patient, busy, onAccept, onDecline }: Props) {
   const theme = useScopedTheme();
   const { colors, space } = theme;
   const insets = useSafeAreaInsets();
   const facts: { icon: IconName; text: string }[] = [
-    { icon: 'scan', text: `Used only to match you to ticket ${ticket}` },
+    { icon: 'scan', text: 'Used only to find your record when you sit down again' },
     { icon: 'trash', text: 'Deleted when you are discharged' },
-    { icon: 'ticket', text: 'Your ticket number always works instead' },
+    { icon: 'user', text: 'Your name always works instead' },
   ];
   return (
     <View style={{ flex: 1, justifyContent: 'flex-end', alignItems: 'center', backgroundColor: colors.scrim }}>
@@ -68,7 +68,7 @@ function Sheet({ ticket, busy, onAccept, onDecline }: Props) {
           Use face match for re-checks?
         </Text>
         <Text style={[theme.type.bodyTouch, { color: colors.ink }]}>
-          Face match lets you sit down again without typing your ticket number. It is optional.
+          Face match lets you sit down again without giving your name. It is optional.
         </Text>
         <View style={{ gap: space.space3 }}>
           {facts.map((fact) => (
@@ -82,7 +82,7 @@ function Sheet({ ticket, busy, onAccept, onDecline }: Props) {
         </View>
         <PrivacyNote>{PRIVACY_FACE}</PrivacyNote>
         <View style={{ gap: space.space2 }}>
-          <Button variant="secondary" block label="Use my ticket number" onPress={onDecline} disabled={busy} />
+          <Button variant="secondary" block label="No, use my name" onPress={onDecline} disabled={busy} />
           <Button variant="secondary" block label="Turn on face match" onPress={onAccept} disabled={busy} />
         </View>
       </View>

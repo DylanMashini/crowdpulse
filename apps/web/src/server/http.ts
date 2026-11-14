@@ -1,4 +1,4 @@
-import { type ErrorCode, type ErrorResponse, errorStatus, Id, TicketNumber } from "@triagecam/contracts";
+import { type ErrorCode, type ErrorResponse, errorStatus, Id, PatientNumber } from "@triagecam/contracts";
 import * as z from "zod";
 
 /** Throw from anywhere in a route to answer with the standard error body. */
@@ -68,12 +68,12 @@ export function readQuery<Schema extends z.ZodType>(request: Request, schema: Sc
   return schema.parse(Object.fromEntries(new URL(request.url).searchParams));
 }
 
-const TicketNumberParam = z.string().regex(/^[1-9]\d{0,8}$/).transform(Number).pipe(TicketNumber);
+const PatientNumberParam = z.string().regex(/^[1-9]\d{0,8}$/).transform(Number).pipe(PatientNumber);
 
-/** A `:number` path segment. Anything that is not a ticket number cannot name a ticket. */
-export function ticketNumberParam(value: string): number {
-  const parsed = TicketNumberParam.safeParse(value);
-  if (!parsed.success) throw new ApiError("not_found", "There is no ticket with that number");
+/** A `:number` path segment. Anything that is not a patient number cannot name a patient. */
+export function patientNumberParam(value: string): number {
+  const parsed = PatientNumberParam.safeParse(value);
+  if (!parsed.success) throw new ApiError("not_found", "There is no patient with that number");
   return parsed.data;
 }
 

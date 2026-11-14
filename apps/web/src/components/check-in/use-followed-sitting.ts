@@ -53,8 +53,8 @@ function reduce(state: FollowedSitting, action: Action): FollowedSitting {
 async function findSitting(deviceId: string, currentId: string | null): Promise<SittingDetailResponse | null> {
   const { items } = await api.worklist();
   for (const item of items.filter((candidate) => candidate.sittingInProgress)) {
-    const ticket = await api.ticket(item.ticketNumber);
-    const running = ticket.sittings.find((sitting) => sitting.endedAt === null && sitting.deviceId === deviceId);
+    const patient = await api.patient(item.patientNumber);
+    const running = patient.sittings.find((sitting) => sitting.endedAt === null && sitting.deviceId === deviceId);
     if (running) return api.sitting(running.id);
   }
   // Nothing is running. If this page was following a sitting, it has ended: fetch how.

@@ -1,8 +1,9 @@
+import { patientLabel } from '@triagecam/contracts';
 import type {
   CaptureSource,
   FlagRule,
   Score,
-  TicketDetailResponse,
+  PatientDetailResponse,
   TileState,
   TimelineEntry,
   Trend,
@@ -31,7 +32,7 @@ export type TrendText =
   /** `base` is "from 82 (+26)", "from 82" when unchanged, or null when there is no baseline. */
   | { kind: 'value'; now: string; base: string | null };
 
-/** A value against the ticket's own check-in baseline. */
+/** A value against the patient's own check-in baseline. */
 export function trendText(trend: Trend): TrendText {
   if (trend.now == null) return { kind: 'none' };
   const now = Math.round(trend.now);
@@ -42,7 +43,7 @@ export function trendText(trend: Trend): TrendText {
   return { kind: 'value', now: String(now), base: `from ${base}${change}` };
 }
 
-/** The line under a card's badge: when the ticket was last observed, in words. */
+/** The line under a card's badge: when the patient was last observed, in words. */
 export function lastObservedText(item: Pick<WorklistItem, 'minutesSinceObserved' | 'sittingInProgress'>): string {
   const observed =
     item.minutesSinceObserved == null ? 'Not yet observed' : `Last observed ${ageText(item.minutesSinceObserved)}`;
@@ -68,8 +69,8 @@ export function sourceLabel(source: CaptureSource | null): string | null {
   }
 }
 
-export function flagTitle(rule: FlagRule, ticketNumber: number): string {
-  return rule === 'overdue' ? `Overdue, ticket ${ticketNumber}` : `Trend flag, ticket ${ticketNumber}`;
+export function flagTitle(rule: FlagRule, patient: { number: number; name: string | null }): string {
+  return `${rule === 'overdue' ? 'Overdue' : 'Trend flag'}: ${patientLabel(patient)}`;
 }
 
 /** "12 waiting, 2 flagged" for the worklist header. */
@@ -102,7 +103,7 @@ function timelineRow(entry: TimelineEntry, index: number): TimelineRow {
   };
   switch (entry.type) {
     case 'created':
-      return { ...base, title: 'Ticket created' };
+      return { ...base, title: 'Patient created' };
     case 'sitting': {
       const measured = entry.heartRate != null || entry.breathingRate != null;
       return {
@@ -133,7 +134,7 @@ function timelineRow(entry: TimelineEntry, index: number): TimelineRow {
   }
 }
 
-/** The ticket's history for TicketTimeline: oldest first, with failed sittings kept. */
-export function timelineRows(timeline: TicketDetailResponse['timeline']): TimelineRow[] {
+/** The patient's history for PatientTimeline: oldest first, with failed sittings kept. */
+export function timelineRows(timeline: PatientDetailResponse['timeline']): TimelineRow[] {
   return [...timeline].reverse().map(timelineRow);
 }

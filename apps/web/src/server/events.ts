@@ -1,4 +1,4 @@
-import type { StreamEvent } from "@triagecam/contracts";
+import type { PatientRef, StreamEvent } from "@triagecam/contracts";
 
 type Listener = (event: StreamEvent) => void;
 
@@ -18,5 +18,5 @@ export function subscribe(listener: Listener): () => void {
 
 export const worklistChanged = (): void => publish({ type: "worklist_changed", at: new Date().toISOString() });
 
-export const ticketChanged = (ticketNumber: number): void =>
-  publish({ type: "ticket_changed", ticketNumber, at: new Date().toISOString() });
+export const patientChanged = (patient: PatientRef): void =>
+  publish({ type: "patient_changed", patientNumber: patient.number, patient, at: new Date().toISOString() });

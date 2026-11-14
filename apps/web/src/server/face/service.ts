@@ -2,10 +2,11 @@ import type { EnrolFaceResponse, MatchFaceResponse } from "@triagecam/contracts"
 import { and, eq } from "drizzle-orm";
 
 import { db, schema } from "../../db/client.ts";
-import { ticketChanged } from "../events.ts";
+import { patientChanged } from "../events.ts";
 import { ApiError } from "../http.ts";
+import { toPatientRef } from "../serialize.ts";
 import { getSettings } from "../settings.ts";
-import { deleteFaceEmbeddings, findTicket, findWaitingTicket } from "../tickets.ts";
+import { deleteFaceEmbeddings, findPatient, findWaitingPatient } from "../patients.ts";
 import { decideMatch } from "./confidence.ts";
 import { detectFace } from "./detect.ts";
 import { embedFace } from "./embed.ts";
@@ -21,48 +22,50 @@ async function embeddingOf(jpegBase64: string): Promise<number[]> {
   return embedFace(image, landmarks, models);
 }
 
-/** Stores the embedding for an opted-in ticket, replacing an earlier one. */
-export async function enrolFace(ticketNumber: number, jpegBase64: string): Promise<EnrolFaceResponse> {
-  const ticket = await findWaitingTicket(ticketNumber);
-  if (!ticket.faceOptIn) {
-    throw new ApiError("face_not_opted_in", `Ticket ${ticketNumber} has not opted in to face match`);
+/** Stores the embedding for an opted-in patient, replacing an earlier one. */
+export async function enrolFace(patientNumber: number, jpegBase64: string): Promise<EnrolFaceResponse> {
+  const patient = await findWaitingPatient(patientNumber);
+  if (!patient.faceOptIn) {
+    throw new ApiError("face_not_opted_in", `Patient ${patientNumber} has not opted in to face match`);
   }
   const vector = await embeddingOf(jpegBase64);
   await db.transaction(async (tx) => {
-    await tx.delete(schema.faceEmbeddings).where(eq(schema.faceEmbeddings.ticketId, ticket.id));
-    await tx.insert(schema.faceEmbeddings).values({ ticketId: ticket.id, vector, model: FACE_MODEL });
+    await tx.delete(schema.faceEmbeddings).where(eq(schema.faceEmbeddings.patientId, patient.id));
+    await tx.insert(schema.faceEmbeddings).values({ patientId: patient.id, vector, model: FACE_MODEL });
   });
-  ticketChanged(ticketNumber);
-  return { ticketNumber, model: FACE_MODEL };
+  patientChanged(toPatientRef(patient));
+  return { patientNumber, model: FACE_MODEL };
 }
 
-/** Compares the crop with waiting, opted-in tickets enrolled with the same model. */
+/** Compares the crop with waiting, opted-in patients enrolled with the same model. */
 export async function matchFace(jpegBase64: string): Promise<MatchFaceResponse> {
   const probe = await embeddingOf(jpegBase64);
   const [enrolled, settings] = await Promise.all([
     db
-      .select({ ticketNumber: schema.tickets.number, vector: schema.faceEmbeddings.vector })
+      .select({ patient: schema.patients, vector: schema.faceEmbeddings.vector })
       .from(schema.faceEmbeddings)
-      .innerJoin(schema.tickets, eq(schema.tickets.id, schema.faceEmbeddings.ticketId))
+      .innerJoin(schema.patients, eq(schema.patients.id, schema.faceEmbeddings.patientId))
       .where(
         and(
-          eq(schema.tickets.status, "waiting"),
-          eq(schema.tickets.faceOptIn, true),
+          eq(schema.patients.status, "waiting"),
+          eq(schema.patients.faceOptIn, true),
           eq(schema.faceEmbeddings.model, FACE_MODEL),
         ),
       ),
     getSettings(),
   ]);
-  const candidates = enrolled.map(({ ticketNumber, vector }) => ({
-    ticketNumber,
+  const candidates = enrolled.map(({ patient, vector }) => ({
+    patientNumber: patient.number,
     // Both vectors are L2-normalised, so the dot product is the cosine similarity.
     cosine: vector.reduce((sum, value, index) => sum + value * (probe[index] ?? 0), 0),
   }));
-  return decideMatch(candidates, settings.faceMatchMinConfidence);
+  const decision = decideMatch(candidates, settings.faceMatchMinConfidence);
+  const matched = enrolled.find(({ patient }) => patient.number === decision.patientNumber);
+  return { ...decision, patient: matched ? toPatientRef(matched.patient) : null };
 }
 
-export async function deleteFace(ticketNumber: number): Promise<void> {
-  const ticket = await findTicket(ticketNumber);
-  await deleteFaceEmbeddings(ticket.id);
-  ticketChanged(ticketNumber);
+export async function deleteFace(patientNumber: number): Promise<void> {
+  const patient = await findPatient(patientNumber);
+  await deleteFaceEmbeddings(patient.id);
+  patientChanged(toPatientRef(patient));
 }

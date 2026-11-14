@@ -1,6 +1,6 @@
 import * as z from 'zod';
 
-import { Id, TicketNumber, Timestamp, Unit } from './common.ts';
+import { Id, PatientNumber, Timestamp, Unit } from './common.ts';
 import { BeatInterval, CaptureSource, Estimate, SittingSummary, SummaryValue } from './signal.ts';
 
 export const SittingKind = z.enum(['check_in', 'recheck']);
@@ -18,7 +18,7 @@ export const Reading = z.object({
 export type Reading = z.infer<typeof Reading>;
 
 export const StartSittingRequest = z.object({
-  ticketNumber: TicketNumber,
+  patientNumber: PatientNumber,
   deviceId: Id,
   kind: SittingKind,
   source: CaptureSource,
@@ -29,7 +29,7 @@ export type StartSittingRequest = z.infer<typeof StartSittingRequest>;
 
 export const Sitting = z.object({
   id: Id,
-  ticketNumber: TicketNumber,
+  patientNumber: PatientNumber,
   deviceId: Id,
   kind: SittingKind,
   source: CaptureSource,

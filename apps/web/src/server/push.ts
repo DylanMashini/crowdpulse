@@ -1,27 +1,27 @@
-import type { Flag } from "@triagecam/contracts";
+import { type Flag, patientLabel } from "@triagecam/contracts";
 import { and, eq, gt, inArray, isNotNull } from "drizzle-orm";
 
 import { db, schema } from "../db/client.ts";
 import { env } from "./env.ts";
 
-type PushTicket = { status: "ok" | "error"; message?: string; details?: { error?: string } };
+type PushReceipt = { status: "ok" | "error"; message?: string; details?: { error?: string } };
 
 const title = (flag: Flag) =>
-  flag.rule === "overdue" ? `Overdue, ticket ${flag.ticketNumber}` : `Trend flag, ticket ${flag.ticketNumber}`;
+  `${flag.rule === "overdue" ? "Overdue" : "Trend flag"}: ${patientLabel(flag.patient)}`;
 
 /**
  * One push per flag episode to every nurse device with a token, unless a push for the same
- * ticket went out inside the cool-down. Never throws: a failed push is logged, and the flag
+ * patient went out inside the cool-down. Never throws: a failed push is logged, and the flag
  * is in the worklist either way.
  */
-export async function notifyFlagOpened(flag: Flag, ticketId: string, cooldownMin: number): Promise<void> {
+export async function notifyFlagOpened(flag: Flag, patientId: string, cooldownMin: number): Promise<void> {
   try {
     const now = new Date();
     const cooldownStart = new Date(now.getTime() - cooldownMin * 60_000);
     const [recent] = await db
       .select({ id: schema.flags.id })
       .from(schema.flags)
-      .where(and(eq(schema.flags.ticketId, ticketId), gt(schema.flags.lastNotifiedAt, cooldownStart)))
+      .where(and(eq(schema.flags.patientId, patientId), gt(schema.flags.lastNotifiedAt, cooldownStart)))
       .limit(1);
     if (recent) return;
 
@@ -46,7 +46,7 @@ export async function notifyFlagOpened(flag: Flag, ticketId: string, cooldownMin
           to: device.token,
           title: title(flag),
           body: flag.handoff,
-          data: { flagId: flag.id, ticketNumber: flag.ticketNumber },
+          data: { flagId: flag.id, patientNumber: flag.patientNumber },
           sound: "default",
         })),
       ),
@@ -57,13 +57,13 @@ export async function notifyFlagOpened(flag: Flag, ticketId: string, cooldownMin
       return;
     }
 
-    const { data } = (await response.json()) as { data?: PushTicket[] };
+    const { data } = (await response.json()) as { data?: PushReceipt[] };
     const unregistered: string[] = [];
-    (data ?? []).forEach((ticket, index) => {
-      if (ticket.status === "ok") return;
-      console.error(`[push] Flag ${flag.id} was not delivered to a device: ${ticket.message ?? "unknown error"}`);
+    (data ?? []).forEach((receipt, index) => {
+      if (receipt.status === "ok") return;
+      console.error(`[push] Flag ${flag.id} was not delivered to a device: ${receipt.message ?? "unknown error"}`);
       const device = devices[index];
-      if (ticket.details?.error === "DeviceNotRegistered" && device) unregistered.push(device.id);
+      if (receipt.details?.error === "DeviceNotRegistered" && device) unregistered.push(device.id);
     });
     if (unregistered.length > 0) {
       await db.update(schema.devices).set({ expoPushToken: null }).where(inArray(schema.devices.id, unregistered));

@@ -80,12 +80,20 @@ export type SittingResult = {
 
 export type LivePreviewOptions = {
   enabled: boolean;
-  /** Frames per second, 1 to 5. Default 2. */
+  /** Frames per second, 1 to 30. Default 2. */
   fps?: number;
   /** Longest side of the JPEG in pixels, at most 640. Default 480. */
   maxLongSide?: number;
   /** JPEG quality, 0 to 1. Default 0.5. */
   quality?: number;
+  /**
+   * Where the module posts each frame itself (the live-view route, as an absolute URL), as a
+   * raw image/jpeg body. With it set, onLiveUpload reports once per second and onPreviewFrame
+   * is not sent. Without it, frames arrive as onPreviewFrame for JavaScript to post.
+   */
+  uploadUrl?: string;
+  /** Headers for those posts: the bearer token and anything the tunnel needs. */
+  uploadHeaders?: Record<string, string>;
 };
 
 export type FaceCrop = {
@@ -147,6 +155,16 @@ export type CaptureErrorCode =
   | 'ERR_NO_FACE'
   | 'ERR_FILE';
 
+/** Once per second while the module uploads live-view frames itself. */
+export type LiveUploadEvent = {
+  /** Frames the server accepted in the last second. */
+  delivered: number;
+  /** Frames that were refused or could not be sent. */
+  failed: number;
+  /** Dashboards watching, from the newest answer. Null when nothing was accepted. */
+  viewers: number | null;
+};
+
 /** Failures that happen outside a call, such as the camera being interrupted. */
 export type CaptureErrorEvent = { code: CaptureErrorCode; message: string };
 
@@ -155,6 +173,7 @@ export type TriageCaptureEvents = {
   onStatus: (event: CaptureStatusEvent) => void;
   onFaceRegions: (event: FaceRegionsEvent) => void;
   onPreviewFrame: (event: PreviewFrameEvent) => void;
+  onLiveUpload: (event: LiveUploadEvent) => void;
   onError: (event: CaptureErrorEvent) => void;
 };
 
@@ -187,10 +206,10 @@ export interface TriageCapture {
   /** Removes a sitting file once it has been uploaded or is not wanted. */
   deleteSittingFile(fileUri: string): Promise<void>;
 
-  /** Turns onPreviewFrame on or off. Off by default; frames are never written to disk. */
+  /** Turns the live view on or off. Off by default; frames are never written to disk. */
   setLivePreview(options: LivePreviewOptions): Promise<void>;
 
-  /** A crop of the tracked face from the current frame, for an opted-in ticket only. */
+  /** A crop of the tracked face from the current frame, for an opted-in patient only. */
   captureFaceCrop(): Promise<FaceCrop>;
 
   /**

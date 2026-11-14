@@ -8,10 +8,13 @@ export type RgbImage = { data: Uint8Array; width: number; height: number };
 const MAX_PIXELS = 2048 * 2048;
 
 /** Decodes a base64 JPEG. Anything that is not a readable JPEG is an invalid request. */
-export async function decodeJpeg(jpegBase64: string): Promise<RgbImage> {
-  const bytes = Buffer.from(jpegBase64, "base64");
+export function decodeJpeg(jpegBase64: string): Promise<RgbImage> {
+  return decodeJpegBytes(Buffer.from(jpegBase64, "base64"));
+}
+
+export async function decodeJpegBytes(bytes: Buffer): Promise<RgbImage> {
   if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) {
-    throw new ApiError("invalid_request", "jpegBase64 is not a JPEG image");
+    throw new ApiError("invalid_request", "The picture is not a JPEG image");
   }
   try {
     const { data, info } = await sharp(bytes, { limitInputPixels: MAX_PIXELS })
@@ -22,7 +25,7 @@ export async function decodeJpeg(jpegBase64: string): Promise<RgbImage> {
       .toBuffer({ resolveWithObject: true });
     return { data, width: info.width, height: info.height };
   } catch {
-    throw new ApiError("invalid_request", "jpegBase64 could not be read as a JPEG image");
+    throw new ApiError("invalid_request", "The picture could not be read as a JPEG image");
   }
 }
 

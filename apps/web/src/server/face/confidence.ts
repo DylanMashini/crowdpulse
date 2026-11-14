@@ -22,25 +22,25 @@ export function confidenceFromCosine(cosine: number): number {
   return CONFIDENCE_AT_MATCH + above * (1 - CONFIDENCE_AT_MATCH);
 }
 
-export type Candidate = { ticketNumber: number; cosine: number };
+export type Candidate = { patientNumber: number; cosine: number };
 export type MatchOutcome = {
   outcome: "matched" | "low_confidence" | "no_match";
-  ticketNumber: number | null;
+  patientNumber: number | null;
   confidence: number | null;
 };
 
 /**
- * Decides what a match discloses. A wrong-patient trend is worse than no trend, so a ticket
+ * Decides what a match discloses. A wrong-patient trend is worse than no trend, so a patient
  * number is returned only when the best candidate meets the configured confidence and is
  * clearly ahead of the next one. A low-confidence guess is never named.
  */
 export function decideMatch(candidates: Candidate[], minConfidence: number): MatchOutcome {
   const [best, runnerUp] = [...candidates].sort((a, b) => b.cosine - a.cosine);
-  if (!best || best.cosine < RESEMBLANCE_COSINE) return { outcome: "no_match", ticketNumber: null, confidence: null };
+  if (!best || best.cosine < RESEMBLANCE_COSINE) return { outcome: "no_match", patientNumber: null, confidence: null };
   const confidence = confidenceFromCosine(best.cosine);
   const ambiguous = runnerUp !== undefined && best.cosine - runnerUp.cosine < AMBIGUITY_MARGIN;
   if (confidence >= minConfidence && !ambiguous) {
-    return { outcome: "matched", ticketNumber: best.ticketNumber, confidence };
+    return { outcome: "matched", patientNumber: best.patientNumber, confidence };
   }
-  return { outcome: "low_confidence", ticketNumber: null, confidence };
+  return { outcome: "low_confidence", patientNumber: null, confidence };
 }

@@ -17,40 +17,41 @@ import { findDevice } from "./devices.ts";
 import { env, isProduction } from "./env.ts";
 import { publish, worklistChanged } from "./events.ts";
 import { ApiError } from "./http.ts";
+import { noteSittingEnded, noteSittingStarted } from "./intake.ts";
 import type { SittingRow } from "./serialize.ts";
-import { iso, toSitting, toStoredReading } from "./serialize.ts";
+import { iso, toPatientRef, toSitting, toStoredReading } from "./serialize.ts";
 import { agreement, pairReadings } from "./stats/agreement.ts";
-import { findWaitingTicket } from "./tickets.ts";
-import { syncTickets } from "./trend/engine.ts";
+import { findWaitingPatient } from "./patients.ts";
+import { syncPatients } from "./trend/engine.ts";
 
 export const SITTING_FILE_MAX_BYTES = 5 * 1024 * 1024;
 
-type SittingWithTicket = { sitting: SittingRow; ticket: typeof schema.tickets.$inferSelect };
+type SittingWithPatient = { sitting: SittingRow; patient: typeof schema.patients.$inferSelect };
 
-async function findSitting(id: string): Promise<SittingWithTicket> {
+async function findSitting(id: string): Promise<SittingWithPatient> {
   const [row] = await db
-    .select({ sitting: schema.sittings, ticket: schema.tickets })
+    .select({ sitting: schema.sittings, patient: schema.patients })
     .from(schema.sittings)
-    .innerJoin(schema.tickets, eq(schema.tickets.id, schema.sittings.ticketId))
+    .innerJoin(schema.patients, eq(schema.patients.id, schema.sittings.patientId))
     .where(eq(schema.sittings.id, id))
     .limit(1);
   if (!row) throw new ApiError("not_found", "There is no sitting with that id");
   return row;
 }
 
-/** Starts a sitting. An unfinished sitting of the same ticket is ended without a summary first. */
+/** Starts a sitting. An unfinished sitting of the same patient is ended without a summary first. */
 export async function startSitting(request: StartSittingRequest): Promise<{ sitting: Sitting; serverTime: string }> {
-  const ticket = await findWaitingTicket(request.ticketNumber);
+  const patient = await findWaitingPatient(request.patientNumber);
   await findDevice(request.deviceId);
   const now = new Date();
   await db
     .update(schema.sittings)
     .set({ endedAt: now })
-    .where(and(eq(schema.sittings.ticketId, ticket.id), isNull(schema.sittings.endedAt)));
+    .where(and(eq(schema.sittings.patientId, patient.id), isNull(schema.sittings.endedAt)));
   const [row] = await db
     .insert(schema.sittings)
     .values({
-      ticketId: ticket.id,
+      patientId: patient.id,
       deviceId: request.deviceId,
       kind: request.kind,
       source: request.source,
@@ -59,22 +60,23 @@ export async function startSitting(request: StartSittingRequest): Promise<{ sitt
     })
     .returning();
   if (!row) throw new Error("The sitting was not created");
-  const sitting = toSitting(row, ticket.number);
-  publish({ type: "sitting_started", sitting });
+  const sitting = toSitting(row, patient.number);
+  publish({ type: "sitting_started", sitting, patient: toPatientRef(patient) });
+  noteSittingStarted(row, patient);
   worklistChanged();
   return { sitting, serverTime: iso(now) };
 }
 
 /** Stores readings on the server clock. A reading whose time is already stored is skipped, so a retry is safe. */
 export async function postReadings(sittingId: string, readings: Reading[]): Promise<number> {
-  const { sitting, ticket } = await findSitting(sittingId);
+  const { sitting, patient } = await findSitting(sittingId);
   if (sitting.endedAt) throw new ApiError("sitting_finished", "This sitting has already finished");
   const stored = await db
     .insert(schema.readings)
     .values(
       readings.map((reading) => ({
         sittingId,
-        ticketId: ticket.id,
+        patientId: patient.id,
         t: new Date(Date.parse(reading.t) + sitting.clockOffsetMs),
         heartRate: reading.heartRate.value,
         state: reading.heartRate.state,
@@ -93,15 +95,15 @@ export async function postReadings(sittingId: string, readings: Reading[]): Prom
     .onConflictDoNothing()
     .returning();
   for (const row of stored) {
-    publish({ type: "reading", sittingId, ticketNumber: ticket.number, reading: toStoredReading(row) });
+    publish({ type: "reading", sittingId, patientNumber: patient.number, reading: toStoredReading(row) });
   }
   return stored.length;
 }
 
 /** Stores the summary and beat intervals, then runs the trend rules. Calling it again returns the stored sitting. */
 export async function finishSitting(sittingId: string, request: FinishSittingRequest): Promise<Sitting> {
-  const { sitting, ticket } = await findSitting(sittingId);
-  if (sitting.endedAt) return toSitting(sitting, ticket.number);
+  const { sitting, patient } = await findSitting(sittingId);
+  if (sitting.endedAt) return toSitting(sitting, patient.number);
 
   const { summary } = request;
   // On the server clock, and never before the start or in the future whatever the phone's clock says.
@@ -141,11 +143,12 @@ export async function finishSitting(sittingId: string, request: FinishSittingReq
     return row;
   });
   // Another request finished it between the read and the update: answer with what is stored.
-  if (!finished) return toSitting((await findSitting(sittingId)).sitting, ticket.number);
+  if (!finished) return toSitting((await findSitting(sittingId)).sitting, patient.number);
 
-  const wire = toSitting(finished, ticket.number);
+  noteSittingEnded(finished.deviceId, finished.id);
+  const wire = toSitting(finished, patient.number);
   publish({ type: "sitting_finished", sitting: wire });
-  if (ticket.status === "waiting") await syncTickets([ticket]);
+  if (patient.status === "waiting") await syncPatients([patient]);
   worklistChanged();
   return wire;
 }
@@ -170,7 +173,7 @@ export async function postReference(sittingId: string, readings: ReferenceReadin
 }
 
 export async function sittingDetail(sittingId: string): Promise<SittingDetailResponse> {
-  const { sitting, ticket } = await findSitting(sittingId);
+  const { sitting, patient } = await findSitting(sittingId);
   const [readings, references, [beats]] = await Promise.all([
     db.select().from(schema.readings).where(eq(schema.readings.sittingId, sittingId)).orderBy(asc(schema.readings.t)),
     db
@@ -188,7 +191,7 @@ export async function sittingDetail(sittingId: string): Promise<SittingDetailRes
   const { pairedReadings, meanAbsoluteErrorBpm, within5BpmShare } = agreement(pairs);
 
   return {
-    sitting: toSitting(sitting, ticket.number),
+    sitting: toSitting(sitting, patient.number),
     readings: readings.map(toStoredReading),
     referenceReadings: references.map((row) => ({
       t: iso(row.t),

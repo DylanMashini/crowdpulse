@@ -4,7 +4,7 @@ import { minutesAgo } from '@/lib/format';
 import { ProvenanceTag } from './ProvenanceTag';
 import { ScoreChip } from './ScoreChip';
 import { StatusBadge } from './StatusBadge';
-import { TicketNumber } from './TicketNumber';
+import { PatientIdentity, intakeSummary } from './PatientIdentity';
 import { TrendValue } from './TrendValue';
 import type { WorklistRow } from './types';
 
@@ -15,8 +15,9 @@ export const tableFrame = 'w-full overflow-x-auto rounded-lg border border-line 
 export interface WorklistTableProps {
   /** Already in rank order. The table does not sort. */
   rows: WorklistRow[];
+  /** Visit number of the selected patient. */
   selected?: number;
-  onSelect?: (ticket: number) => void;
+  onSelect?: (patientNumber: number) => void;
 }
 
 /** The ranked waiting-room worklist: who to walk to first. */
@@ -30,7 +31,7 @@ export function WorklistTable({ rows, selected, onSelect }: WorklistTableProps) 
               Rank
             </th>
             <th scope="col" className={tableHeadCell}>
-              Ticket
+              Patient
             </th>
             <th scope="col" className={tableHeadCell}>
               State
@@ -54,15 +55,15 @@ export function WorklistTable({ rows, selected, onSelect }: WorklistTableProps) 
         </thead>
         <tbody>
           {rows.map((row, index) => {
-            const isSelected = selected === row.ticket;
+            const isSelected = selected === row.patient.number;
             return (
               <tr
-                key={row.ticket}
+                key={row.patient.number}
                 tabIndex={0}
                 aria-selected={isSelected}
-                onClick={() => onSelect?.(row.ticket)}
+                onClick={() => onSelect?.(row.patient.number)}
                 onKeyDown={(event) => {
-                  if (event.key === 'Enter') onSelect?.(row.ticket);
+                  if (event.key === 'Enter') onSelect?.(row.patient.number);
                 }}
                 className={cx(
                   'group cursor-pointer focus-visible:-outline-offset-2',
@@ -70,8 +71,8 @@ export function WorklistTable({ rows, selected, onSelect }: WorklistTableProps) 
                 )}
               >
                 <td className={cx(tableCell, 'w-[40px] text-right font-mono text-ink-muted tabular-nums')}>{index + 1}</td>
-                <td className={tableCell}>
-                  <TicketNumber number={row.ticket} size="sm" />
+                <td className={cx(tableCell, 'max-w-[320px] min-w-[220px]')}>
+                  <PatientIdentity patient={row.patient} size="sm" detail={intakeSummary(row.ageYears, row.reason)} />
                 </td>
                 <td className={tableCell}>
                   <StatusBadge state={row.state} minutes={row.minutes} />

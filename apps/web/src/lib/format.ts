@@ -90,3 +90,26 @@ const RULES: Record<FlagRule, string> = {
 export function ruleText(rule: FlagRule): string {
   return RULES[rule];
 }
+
+/** Whole years since a YYYY-MM-DD date of birth, in the browser's zone. Null when it is not known. */
+export function ageInYears(dateOfBirth: string | null, now = new Date()): number | null {
+  if (!dateOfBirth) return null;
+  const [year = 0, month = 1, day = 1] = dateOfBirth.split('-').map(Number);
+  const hadBirthday = now.getMonth() + 1 > month || (now.getMonth() + 1 === month && now.getDate() >= day);
+  const age = now.getFullYear() - year - (hadBirthday ? 0 : 1);
+  // A date in the future has no age to show.
+  return age < 0 ? null : age;
+}
+
+/** "34 y", or null when the date of birth is not known. */
+export function ageText(dateOfBirth: string | null): string | null {
+  const age = ageInYears(dateOfBirth);
+  return age === null ? null : `${age} y`;
+}
+
+const longDate = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+
+/** A YYYY-MM-DD calendar date as "18 Apr 1991". */
+export function calendarDate(date: string): string {
+  return longDate.format(new Date(`${date}T00:00:00Z`));
+}

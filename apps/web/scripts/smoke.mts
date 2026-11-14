@@ -12,10 +12,10 @@
 //                      without it no push token is registered and nothing leaves the machine.
 //   SMOKE_FACE_SAME    Two JPEGs of one person, comma separated, and
 //   SMOKE_FACE_OTHER   one JPEG of someone else, to check enrol and match with real faces.
-//   SMOKE_OVERDUE=1    Also wait a minute for a ticket to go overdue. Changes the re-check
+//   SMOKE_OVERDUE=1    Also wait a minute for a patient to go overdue. Changes the re-check
 //                      interval while it runs, so use it on a database of your own.
 //
-// It creates one account, two devices and three tickets, and discharges the tickets it made.
+// It creates one account, two devices and three patients, and discharges the patients it made.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -43,9 +43,9 @@ import {
   StartSittingResponse,
   Statistics,
   StreamEvent,
-  TicketDetailResponse,
-  TicketListResponse,
-  TicketResponse,
+  PatientDetailResponse,
+  PatientListResponse,
+  PatientResponse,
   VerifyEmailResponse,
   WorklistResponse,
 } from "@triagecam/contracts";
@@ -112,7 +112,7 @@ const password = "correct horse battery";
 
 await refused(401, "unauthenticated", "GET", routes.worklist);
 await refused(401, "unauthenticated", "GET", routes.stream);
-await refused(401, "unauthenticated", "POST", routes.tickets, { body: {} });
+await refused(401, "unauthenticated", "POST", routes.patients, { body: {} });
 await refused(401, "unauthenticated", "GET", routes.auth.me, { auth: { bearer: "not-a-token" } });
 done("routes refuse a request with no session");
 
@@ -121,7 +121,7 @@ await refused(400, "invalid_request", "POST", routes.auth.signUp, { body: { emai
 const signedUp = await ok(SignUpResponse, 201, "POST", routes.auth.signUp, { body: { email: email.toUpperCase(), password } });
 assert.equal(signedUp.user.email, email);
 assert.equal(signedUp.user.emailVerified, false);
-const again = await ok(SignUpResponse, 201, "POST", routes.auth.signUp, { body: { email, password: "another password" } });
+const again = await ok(SignUpResponse, 201, "POST", routes.auth.signUp, { body: { email, password } });
 assert.deepEqual(Object.keys(again.user).sort(), Object.keys(signedUp.user).sort());
 done("sign-up answers 201 with the same shape for a new and for a registered address");
 
@@ -182,7 +182,7 @@ done("signed in both ways: httpOnly SameSite=Lax cookie for web, bearer token fo
 
 // --- devices, push sink, event stream -------------------------------------------------------
 
-const pushes: { to: string; title: string; body: string; data: { flagId: string; ticketNumber: number } }[] = [];
+const pushes: { to: string; title: string; body: string; data: { flagId: string; patientNumber: number } }[] = [];
 const sink = pushSinkPort
   ? createServer((request, response) => {
       let text = "";
@@ -196,9 +196,9 @@ const sink = pushSinkPort
     }).listen(pushSinkPort)
   : null;
 
-/** Pushes sent to this run's nurse device for one ticket. Other nurse devices in the database get them too. */
-const pushesFor = (ticketNumber: number) =>
-  pushes.filter((message) => message.to === pushToken && message.data.ticketNumber === ticketNumber);
+/** Pushes sent to this run's nurse device for one patient. Other nurse devices in the database get them too. */
+const pushesFor = (patientNumber: number) =>
+  pushes.filter((message) => message.to === pushToken && message.data.patientNumber === patientNumber);
 
 const camera = (await ok(DeviceResponse, 200, "POST", routes.devices, { auth: mobile, body: { role: "camera", label: "Smoke camera" } })).device;
 const pushToken = `ExponentPushToken[smoke-${Date.now()}]`;
@@ -251,17 +251,17 @@ const seen = <Type extends StreamEvent["type"]>(type: Type, matches: (event: Ext
     events.find((event): event is Extract<StreamEvent, { type: Type }> => event.type === type && matches(event as never)),
   );
 
-// --- one ticket: check-in, re-checks, flag ---------------------------------------------------
+// --- one patient: check-in, re-checks, flag ---------------------------------------------------
 
-const ticket = (await ok(TicketResponse, 201, "POST", routes.tickets, { auth: mobile, body: { faceOptIn: true } })).ticket;
-const number = ticket.number;
-assert.equal(ticket.status, "waiting");
-const second = (await ok(TicketResponse, 201, "POST", routes.tickets, { auth: web, body: {} })).ticket;
-assert.equal(second.number, number + 1, "ticket numbers are sequential");
+const patient = (await ok(PatientResponse, 201, "POST", routes.patients, { auth: mobile, body: { faceOptIn: true } })).patient;
+const number = patient.number;
+assert.equal(patient.status, "waiting");
+const second = (await ok(PatientResponse, 201, "POST", routes.patients, { auth: web, body: {} })).patient;
+assert.equal(second.number, number + 1, "patient numbers are sequential");
 assert.equal(second.faceOptIn, false);
-await seen("ticket_changed", (event) => event.ticketNumber === number);
-await refused(404, "not_found", "GET", routes.ticket(99_999_999), { auth: web });
-done(`created tickets ${number} and ${second.number}`);
+await seen("patient_changed", (event) => event.patientNumber === number);
+await refused(404, "not_found", "GET", routes.patient(99_999_999), { auth: web });
+done(`created patients ${number} and ${second.number}`);
 
 /** The phone's clock runs two seconds behind the server in this test. */
 const PHONE_SKEW_MS = -2000;
@@ -286,11 +286,11 @@ function summary(heartRate: number | null, breathingRate: number | null) {
 }
 
 /** A whole sitting compressed in time: start, `seconds` readings one per request, finish. */
-async function sit(ticketNumber: number, kind: "check_in" | "recheck", heartRate: number | null, breathingRate: number | null, seconds: number) {
+async function sit(patientNumber: number, kind: "check_in" | "recheck", heartRate: number | null, breathingRate: number | null, seconds: number) {
   const startedOnPhone = phoneNow();
   const started = await ok(StartSittingResponse, 201, "POST", routes.sittings, {
     auth: mobile,
-    body: { ticketNumber, deviceId: camera.id, kind, source: "simulated", clientTime: startedOnPhone.toISOString() },
+    body: { patientNumber, deviceId: camera.id, kind, source: "simulated", clientTime: startedOnPhone.toISOString() },
   });
   const id = started.sitting.id;
   assert.ok(Math.abs(started.sitting.clockOffsetMs + PHONE_SKEW_MS) < 1500, "clockOffsetMs is server minus phone");
@@ -312,16 +312,16 @@ async function sit(ticketNumber: number, kind: "check_in" | "recheck", heartRate
   return { id, started, readings, startedOnPhone, finish };
 }
 
-const worklistItem = async (ticketNumber: number) => {
+const worklistItem = async (patientNumber: number) => {
   const worklist = await ok(WorklistResponse, 200, "GET", routes.worklist, { auth: mobile });
   assert.deepEqual(worklist.items.map((item) => item.rank), worklist.items.map((_, index) => index + 1));
-  assert.equal(new Set(worklist.items.map((item) => item.ticketNumber)).size, worklist.items.length, "each ticket appears once");
-  const item = worklist.items.find((candidate) => candidate.ticketNumber === ticketNumber);
-  assert.ok(item, `ticket ${ticketNumber} is on the worklist`);
+  assert.equal(new Set(worklist.items.map((item) => item.patientNumber)).size, worklist.items.length, "each patient appears once");
+  const item = worklist.items.find((candidate) => candidate.patientNumber === patientNumber);
+  assert.ok(item, `patient ${patientNumber} is on the worklist`);
   return { item, worklist };
 };
-const openFlags = async (ticketNumber: number) =>
-  (await ok(FlagListResponse, 200, "GET", `${routes.flags}?ticket=${ticketNumber}`, { auth: web })).items;
+const openFlags = async (patientNumber: number) =>
+  (await ok(FlagListResponse, 200, "GET", `${routes.flags}?patient=${patientNumber}`, { auth: web })).items;
 
 assert.equal((await worklistItem(number)).item.state, "observed");
 assert.equal((await worklistItem(number)).item.lastObservedAt, null);
@@ -401,7 +401,7 @@ assert.deepEqual(item.pulse, { base: 72, now: 72 });
 assert.equal(item.score, 0);
 assert.equal(item.parametersMeasured, 2);
 assert.equal(item.source, "simulated");
-assert.equal(item.handoff, `Ticket ${number}: pulse 72, breathing 16 at check-in. Last observed 0 min ago.`);
+assert.equal(item.handoff, `Patient ${number}: pulse 72, breathing 16 at check-in. Last observed 0 min ago.`);
 
 await (await sit(number, "recheck", 104, 22, 3)).finish();
 item = (await worklistItem(number)).item;
@@ -419,10 +419,10 @@ assert.deepEqual(flagged.breathing, { base: 16, now: 24 });
 assert.deepEqual(flagged.flags.map((flag) => flag.rule), ["score_rise", "baseline_shift"]);
 assert.match(
   flagged.handoff,
-  new RegExp(`^Ticket ${number}: pulse 72 at check-in, 108 now \\(\\d+ min later\\); breathing 16 to 24\\. Last observed 0 min ago\\.$`),
+  new RegExp(`^Patient ${number}: pulse 72 at check-in, 108 now \\(\\d+ min later\\); breathing 16 to 24\\. Last observed 0 min ago\\.$`),
 );
 const firstUnflagged = worklist.items.findIndex((candidate) => candidate.state !== "flag");
-assert.ok(firstUnflagged === -1 || flagged.rank <= firstUnflagged, "flagged tickets lead the worklist");
+assert.ok(firstUnflagged === -1 || flagged.rank <= firstUnflagged, "flagged patients lead the worklist");
 const flags = await openFlags(number);
 assert.equal(flags.length, 2, "one episode per rule");
 const scoreRise = flags.find((flag) => flag.rule === "score_rise");
@@ -442,7 +442,7 @@ done("the event stream carried sitting_started, 60 readings, sitting_finished, f
 
 if (sink) {
   const push = await until("the push", () => pushesFor(number)[0]);
-  assert.equal(push.title, `Trend flag, ticket ${number}`);
+  assert.equal(push.title, `Trend flag: Patient ${number}`);
   assert.equal(push.body, flagged.handoff);
   await sleep(500);
   assert.equal(pushesFor(number).length, 1, "two flags, one push: the cool-down held");
@@ -471,10 +471,10 @@ await (await sit(number, "recheck", 75, 16, 3)).finish();
 item = (await worklistItem(number)).item;
 assert.equal(item.state, "observed");
 assert.equal((await openFlags(number)).length, 0);
-const closed = (await ok(FlagListResponse, 200, "GET", `${routes.flags}?ticket=${number}&status=closed&limit=1`, { auth: web }));
+const closed = (await ok(FlagListResponse, 200, "GET", `${routes.flags}?patient=${number}&status=closed&limit=1`, { auth: web }));
 assert.equal(closed.items.length, 1);
 assert.ok(closed.nextCursor, "a second page of closed flags follows");
-const nextPage = await ok(FlagListResponse, 200, "GET", `${routes.flags}?ticket=${number}&status=closed&limit=1&cursor=${closed.nextCursor}`, { auth: web });
+const nextPage = await ok(FlagListResponse, 200, "GET", `${routes.flags}?patient=${number}&status=closed&limit=1&cursor=${closed.nextCursor}`, { auth: web });
 assert.equal(nextPage.items.length, 1);
 assert.notEqual(nextPage.items[0]?.id, closed.items[0]?.id);
 assert.equal(nextPage.nextCursor, null);
@@ -489,18 +489,18 @@ const noReading = (await worklistItem(second.number)).item;
 assert.equal(noReading.state, "no-reading");
 assert.equal(noReading.minutesSinceObserved, null);
 assert.equal(noReading.score, null);
-done(`a sitting with no signal put ticket ${second.number} in the no-reading state`);
+done(`a sitting with no signal put patient ${second.number} in the no-reading state`);
 
-const ticketView = await ok(TicketDetailResponse, 200, "GET", routes.ticket(number), { auth: web });
-assert.equal(ticketView.sittings.length, 6);
-assert.equal(ticketView.baseline?.id, checkIn.id);
-assert.equal(ticketView.flags.length, 2);
-assert.equal(ticketView.state, "observed");
+const patientView = await ok(PatientDetailResponse, 200, "GET", routes.patient(number), { auth: web });
+assert.equal(patientView.sittings.length, 6);
+assert.equal(patientView.baseline?.id, checkIn.id);
+assert.equal(patientView.flags.length, 2);
+assert.equal(patientView.state, "observed");
 for (const type of ["created", "sitting", "flag_opened", "flag_acknowledged", "flag_closed"]) {
-  assert.ok(ticketView.timeline.some((entry) => entry.type === type), `the timeline has a ${type} entry`);
+  assert.ok(patientView.timeline.some((entry) => entry.type === type), `the timeline has a ${type} entry`);
 }
-assert.deepEqual(ticketView.timeline.map((entry) => entry.at), ticketView.timeline.map((entry) => entry.at).sort().reverse());
-done("ticket detail: baseline, sittings, flags and a newest-first timeline");
+assert.deepEqual(patientView.timeline.map((entry) => entry.at), patientView.timeline.map((entry) => entry.at).sort().reverse());
+done("patient detail: baseline, sittings, flags and a newest-first timeline");
 
 // --- settings and statistics --------------------------------------------------------------
 
@@ -521,7 +521,7 @@ assert.ok(stats.sittings.attempted >= 7 && stats.sittings.withReading < stats.si
 assert.ok(stats.sittings.accurateAcceptedShare !== null);
 assert.ok(stats.flags.episodes >= 2 && stats.flags.acknowledged >= 1);
 assert.ok(stats.flags.episodesPerPersonHour !== null && stats.totals.personHours > 0);
-const mine = stats.perTicket.find((row) => row.ticketNumber === number);
+const mine = stats.perPatient.find((row) => row.patientNumber === number);
 assert.equal(mine?.sittings, 6);
 assert.equal(mine?.pairedReadings, 52);
 assert.ok(stats.tileStates && stats.tileStates["no-reading"] >= 1);
@@ -593,29 +593,29 @@ if (probe.status === 503) {
 } else {
   assert.equal(probe.status, 422, await probe.clone().text());
   assert.equal(ErrorResponse.parse(await probe.json()).error.code, "no_face_detected");
-  await refused(422, "no_face_detected", "POST", routes.ticketFace(number), { auth: mobile, body: flat });
-  await refused(403, "face_not_opted_in", "POST", routes.ticketFace(second.number), { auth: mobile, body: flat });
+  await refused(422, "no_face_detected", "POST", routes.patientFace(number), { auth: mobile, body: flat });
+  await refused(403, "face_not_opted_in", "POST", routes.patientFace(second.number), { auth: mobile, body: flat });
   await refused(400, "invalid_request", "POST", routes.faceMatch, { auth: mobile, body: { jpegBase64: "AAAA" } });
-  done("face match answers no_face_detected for a picture with no face, and refuses a ticket that did not opt in");
+  done("face match answers no_face_detected for a picture with no face, and refuses a patient that did not opt in");
 
   const same = (process.env.SMOKE_FACE_SAME ?? "").split(",").filter(Boolean);
   const other = process.env.SMOKE_FACE_OTHER;
   if (same.length === 2 && other) {
     const crop = async (path: string) => ({ jpegBase64: (await readFile(path)).toString("base64") });
-    const enrolled = await ok(EnrolFaceResponse, 201, "POST", routes.ticketFace(number), { auth: mobile, body: await crop(same[0] as string) });
-    assert.equal(enrolled.ticketNumber, number);
-    assert.equal((await ok(TicketResponse, 200, "PATCH", routes.ticket(number), { auth: web, body: { faceOptIn: true } })).ticket.faceEnrolled, true);
+    const enrolled = await ok(EnrolFaceResponse, 201, "POST", routes.patientFace(number), { auth: mobile, body: await crop(same[0] as string) });
+    assert.equal(enrolled.patientNumber, number);
+    assert.equal((await ok(PatientResponse, 200, "PATCH", routes.patient(number), { auth: web, body: { faceOptIn: true } })).patient.faceEnrolled, true);
     const match = await ok(MatchFaceResponse, 200, "POST", routes.faceMatch, { auth: mobile, body: await crop(same[1] as string) });
     assert.equal(match.outcome, "matched", `a second picture of the same person: ${JSON.stringify(match)}`);
-    assert.equal(match.ticketNumber, number);
+    assert.equal(match.patientNumber, number);
     const stranger = await ok(MatchFaceResponse, 200, "POST", routes.faceMatch, { auth: mobile, body: await crop(other) });
     assert.notEqual(stranger.outcome, "matched", `someone else: ${JSON.stringify(stranger)}`);
-    assert.equal(stranger.ticketNumber, null, "a guess below the threshold is never named");
-    const removed = await call("DELETE", routes.ticketFace(number), { auth: mobile });
+    assert.equal(stranger.patientNumber, null, "a guess below the threshold is never named");
+    const removed = await call("DELETE", routes.patientFace(number), { auth: mobile });
     assert.equal(removed.status, 204);
     const after = await ok(MatchFaceResponse, 200, "POST", routes.faceMatch, { auth: mobile, body: await crop(same[1] as string) });
-    assert.notEqual(after.ticketNumber, number, "a deleted embedding no longer matches");
-    await ok(EnrolFaceResponse, 201, "POST", routes.ticketFace(number), { auth: mobile, body: await crop(same[0] as string) });
+    assert.notEqual(after.patientNumber, number, "a deleted embedding no longer matches");
+    await ok(EnrolFaceResponse, 201, "POST", routes.patientFace(number), { auth: mobile, body: await crop(same[0] as string) });
     done(`face enrolled with ${enrolled.model}; same person matched at confidence ${match.confidence?.toFixed(2)}, someone else was ${stranger.outcome} (${stranger.confidence?.toFixed(2) ?? "no confidence"})`);
   } else {
     skipped.push("face enrol and match with real faces (set SMOKE_FACE_SAME and SMOKE_FACE_OTHER)");
@@ -625,11 +625,11 @@ if (probe.status === 503) {
 // --- overdue (optional), discharge, sign out ------------------------------------------------------
 
 if (process.env.SMOKE_OVERDUE === "1") {
-  const waiting = (await ok(TicketResponse, 201, "POST", routes.tickets, { auth: web, body: {} })).ticket;
+  const waiting = (await ok(PatientResponse, 201, "POST", routes.patients, { auth: web, body: {} })).patient;
   await ok(SettingsResponse, 200, "PATCH", routes.settings, { auth: web, body: { recheckIntervalMin: 1 } });
   try {
     const overdue = await until(
-      `ticket ${waiting.number} to go overdue`,
+      `patient ${waiting.number} to go overdue`,
       async () => {
         const found = (await worklistItem(waiting.number)).item;
         return found.state === "overdue" ? found : undefined;
@@ -637,41 +637,41 @@ if (process.env.SMOKE_OVERDUE === "1") {
       75_000,
     );
     assert.deepEqual(overdue.flags.map((flag) => flag.rule), ["overdue"]);
-    assert.equal(overdue.handoff, `Ticket ${waiting.number}: not yet observed, waiting 1 min.`);
+    assert.equal(overdue.handoff, `Patient ${waiting.number}: not yet observed, waiting 1 min.`);
     const firstObserved = (await worklistItem(waiting.number)).worklist.items.findIndex((candidate) => candidate.state === "observed");
-    assert.ok(firstObserved === -1 || overdue.rank <= firstObserved, "overdue ranks above observed tickets");
+    assert.ok(firstObserved === -1 || overdue.rank <= firstObserved, "overdue ranks above observed patients");
     if (sink) {
       const push = await until("the overdue push", () => pushesFor(waiting.number)[0]);
-      assert.equal(push.title, `Overdue, ticket ${waiting.number}`);
+      assert.equal(push.title, `Overdue: Patient ${waiting.number}`);
     }
     await (await sit(waiting.number, "check_in", 70, 15, 3)).finish();
     assert.equal((await worklistItem(waiting.number)).item.state, "observed", "an observation closes the overdue flag");
-    done(`ticket ${waiting.number} went overdue after the re-check interval and cleared on an observation`);
+    done(`patient ${waiting.number} went overdue after the re-check interval and cleared on an observation`);
   } finally {
     await ok(SettingsResponse, 200, "PATCH", routes.settings, { auth: web, body: { recheckIntervalMin: settings.settings.recheckIntervalMin } });
-    await ok(TicketResponse, 200, "POST", routes.ticketDischarge(waiting.number), { auth: web });
+    await ok(PatientResponse, 200, "POST", routes.patientDischarge(waiting.number), { auth: web });
   }
 } else {
-  skipped.push("waiting for a ticket to go overdue (SMOKE_OVERDUE=1, on your own database)");
+  skipped.push("waiting for a patient to go overdue (SMOKE_OVERDUE=1, on your own database)");
 }
 
-const tickets = await ok(TicketListResponse, 200, "GET", `${routes.tickets}?limit=1`, { auth: web });
-assert.equal(tickets.items.length, 1);
-const discharged = (await ok(TicketResponse, 200, "POST", routes.ticketDischarge(number), { auth: web })).ticket;
+const patients = await ok(PatientListResponse, 200, "GET", `${routes.patients}?limit=1`, { auth: web });
+assert.equal(patients.items.length, 1);
+const discharged = (await ok(PatientResponse, 200, "POST", routes.patientDischarge(number), { auth: web })).patient;
 assert.equal(discharged.status, "discharged");
 assert.equal(discharged.faceEnrolled, false, "discharge deletes the face embedding");
-assert.deepEqual((await ok(TicketResponse, 200, "POST", routes.ticketDischarge(number), { auth: web })).ticket, discharged);
-await refused(409, "ticket_discharged", "POST", routes.sittings, {
+assert.deepEqual((await ok(PatientResponse, 200, "POST", routes.patientDischarge(number), { auth: web })).patient, discharged);
+await refused(409, "patient_discharged", "POST", routes.sittings, {
   auth: mobile,
-  body: { ticketNumber: number, deviceId: camera.id, kind: "recheck", source: "simulated", clientTime: phoneNow().toISOString() },
+  body: { patientNumber: number, deviceId: camera.id, kind: "recheck", source: "simulated", clientTime: phoneNow().toISOString() },
 });
-await refused(409, "ticket_discharged", "PATCH", routes.ticket(number), { auth: web, body: { faceOptIn: false } });
-await refused(409, "ticket_discharged", "POST", routes.ticketFace(number), { auth: mobile, body: flat });
+await refused(409, "patient_discharged", "PATCH", routes.patient(number), { auth: web, body: { faceOptIn: false } });
+await refused(409, "patient_discharged", "POST", routes.patientFace(number), { auth: mobile, body: flat });
 const after = await ok(WorklistResponse, 200, "GET", routes.worklist, { auth: web });
-assert.ok(!after.items.some((candidate) => candidate.ticketNumber === number), "a discharged ticket leaves the worklist");
-assert.equal((await ok(TicketDetailResponse, 200, "GET", routes.ticket(number), { auth: web })).state, null);
-await ok(TicketResponse, 200, "POST", routes.ticketDischarge(second.number), { auth: web });
-done("discharge closed the ticket, deleted its face embedding and took it off the worklist");
+assert.ok(!after.items.some((candidate) => candidate.patientNumber === number), "a discharged patient leaves the worklist");
+assert.equal((await ok(PatientDetailResponse, 200, "GET", routes.patient(number), { auth: web })).state, null);
+await ok(PatientResponse, 200, "POST", routes.patientDischarge(second.number), { auth: web });
+done("discharge closed the patient, deleted its face embedding and took it off the worklist");
 
 if (sink) {
   // Leave no push token behind for later runs to send to.

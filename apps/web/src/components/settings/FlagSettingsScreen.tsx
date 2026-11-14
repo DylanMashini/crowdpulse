@@ -34,14 +34,14 @@ const NUMBERS: Record<NumberKey, { label: string; unit: string; min: number; max
     unit: 'min',
     min: 1,
     max: 240,
-    hint: 'A ticket is overdue after this long without an observation. 1 to 240.',
+    hint: 'A patient is overdue after this long without an observation. 1 to 240.',
   },
   notifyCooldownMin: {
     label: 'Wait between notifications',
     unit: 'min',
     min: 0,
     max: 240,
-    hint: 'For one ticket, on the nurse phones. 0 to 240.',
+    hint: 'For one patient, on the nurse phones. 0 to 240.',
   },
 };
 
@@ -60,7 +60,7 @@ export function FlagSettingsScreen() {
 
   return (
     <>
-      <PageHeader title="Flag settings" description="When a waiting ticket is flagged for a person to check. A flag is a prompt to look, not a finding." />
+      <PageHeader title="Flag settings" description="When a waiting patient is flagged for a person to check. A flag is a prompt to look, not a finding." />
       {settings.loading ? <StateMessage kind="loading" title="Loading the flag rules" /> : null}
       {settings.error && !settings.data ? (
         <StateMessage kind="error" title="The flag rules could not be loaded" onRetry={settings.reload}>
@@ -144,7 +144,7 @@ function SettingsForm({ saved, savedAt, onSaved }: { saved: Settings; savedAt: s
 
       <Panel heading="Re-checks">
         <div className="flex flex-col gap-4">
-          {toggle('overdueEnabled', 'Flag overdue tickets', 'A waiting ticket has gone too long without an observation')}
+          {toggle('overdueEnabled', 'Flag overdue patients', 'A waiting patient has gone too long without an observation')}
           <div className="flex flex-wrap gap-x-5 gap-y-4 border-t border-line pt-4">
             {field('recheckIntervalMin')}
             {field('notifyCooldownMin')}

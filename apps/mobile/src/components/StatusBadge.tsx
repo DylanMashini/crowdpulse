@@ -21,7 +21,7 @@ type Props = {
   label?: string;
 };
 
-/** The state of one ticket. Four states, each told apart by shape and lightness as well as hue. */
+/** The state of one patient. Four states, each told apart by shape and lightness as well as hue. */
 export function StatusBadge({ state, minutes = null, label }: Props) {
   const theme = useScopedTheme();
   const { colors } = theme;

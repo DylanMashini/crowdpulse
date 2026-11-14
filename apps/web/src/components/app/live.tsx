@@ -28,7 +28,7 @@ const Context = createContext<LiveContext | null>(null);
 
 const WORKLIST_EVENTS: ReadonlySet<LiveEvent['type']> = new Set([
   'worklist_changed',
-  'ticket_changed',
+  'patient_changed',
   'flag_opened',
   'flag_acknowledged',
   'flag_closed',

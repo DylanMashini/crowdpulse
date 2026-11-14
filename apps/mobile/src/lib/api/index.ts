@@ -13,6 +13,11 @@ export function setAuthToken(next: string | null): void {
   token = next;
 }
 
+/** The headers of an authenticated request, for the places that do not go through `api`: images and the native live-view uploader. */
+export function authHeaders(): Record<string, string> {
+  return { 'ngrok-skip-browser-warning': '1', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+}
+
 /** Called when the server answers that the session is gone. */
 export function onUnauthenticated(handler: () => void): void {
   unauthenticated = handler;

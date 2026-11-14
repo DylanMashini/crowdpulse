@@ -11,14 +11,14 @@ import {
   pulseBand,
   scoreRise,
   type SittingFacts,
-  snapshotTicket,
+  snapshotPatient,
 } from "./rules.ts";
 
 const START = Date.parse("2026-11-14T15:00:00.000Z");
 const at = (minutes: number) => new Date(START + minutes * 60_000);
 
 let nextId = 0;
-/** A finished sitting that ended `minutes` after the ticket was created. */
+/** A finished sitting that ended `minutes` after the patient was created. */
 function sitting(minutes: number, heartRate: number | null, breathingRate: number | null): SittingFacts {
   nextId += 1;
   return {
@@ -33,7 +33,7 @@ function sitting(minutes: number, heartRate: number | null, breathingRate: numbe
 }
 
 const snapshot = (sittings: SittingFacts[], nowMinutes: number, settings: Settings = defaultSettings) =>
-  snapshotTicket(sittings, at(0), settings, at(nowMinutes));
+  snapshotPatient(sittings, at(0), settings, at(nowMinutes));
 
 describe("partial NEWS2 bands", () => {
   it("bands pulse as in the plan's table", () => {
@@ -56,7 +56,7 @@ describe("partial NEWS2 bands", () => {
     assert.equal(breathingBand(20.5), 2);
   });
 
-  it("scores a ticket as the higher band, never the sum", () => {
+  it("scores a patient as the higher band, never the sum", () => {
     assert.equal(partialScore(95, 22), 2);
     assert.equal(partialScore(135, 22), 3);
     assert.equal(partialScore(72, 16), 0);
@@ -154,8 +154,8 @@ describe("overdue", () => {
   });
 });
 
-describe("snapshotTicket", () => {
-  it("counts overdue from ticket creation when there has been no observation", () => {
+describe("snapshotPatient", () => {
+  it("counts overdue from patient creation when there has been no observation", () => {
     assert.equal(snapshot([], 29).rules.overdue.met, false);
     const late = snapshot([], 31);
     assert.equal(late.rules.overdue.met, true);

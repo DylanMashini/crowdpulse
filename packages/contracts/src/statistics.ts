@@ -1,6 +1,6 @@
 import * as z from 'zod';
 
-import { TicketNumber, Timestamp, Unit } from './common.ts';
+import { PatientNumber, Timestamp, Unit } from './common.ts';
 import { TileState } from './worklist.ts';
 
 export const StatisticsQuery = z.object({
@@ -22,28 +22,28 @@ export const Agreement = z.object({
 });
 export type Agreement = z.infer<typeof Agreement>;
 
-export const TicketStatistics = Agreement.extend({
-  ticketNumber: TicketNumber,
+export const PatientStatistics = Agreement.extend({
+  patientNumber: PatientNumber,
   sittings: z.int().nonnegative(),
-  /** Mean heart-rate coverage across the ticket's finished sittings. */
+  /** Mean heart-rate coverage across the patient's finished sittings. */
   coverage: Unit.nullable(),
 });
-export type TicketStatistics = z.infer<typeof TicketStatistics>;
+export type PatientStatistics = z.infer<typeof PatientStatistics>;
 
 export const Statistics = z.object({
   generatedAt: Timestamp,
   from: Timestamp,
   to: Timestamp,
   totals: z.object({
-    ticketsWaiting: z.int().nonnegative(),
-    ticketsDischarged: z.int().nonnegative(),
+    patientsWaiting: z.int().nonnegative(),
+    patientsDischarged: z.int().nonnegative(),
     sittings: z.int().nonnegative(),
     sittingsWithReference: z.int().nonnegative(),
     openFlags: z.int().nonnegative(),
-    /** Sum over tickets of time spent waiting inside the range, in hours. */
+    /** Sum over patients of time spent waiting inside the range, in hours. */
     personHours: z.number().nonnegative(),
   }),
-  /** Waiting tickets in each tile state at generatedAt. Not limited to the range. */
+  /** Waiting patients in each tile state at generatedAt. Not limited to the range. */
   tileStates: z.record(TileState, z.int().nonnegative()).optional(),
   heartRate: Agreement,
   sittings: z.object({
@@ -65,6 +65,6 @@ export const Statistics = z.object({
     acknowledged: z.int().nonnegative(),
     medianMinutesToAcknowledge: z.number().nonnegative().nullable(),
   }),
-  perTicket: z.array(TicketStatistics),
+  perPatient: z.array(PatientStatistics),
 });
 export type Statistics = z.infer<typeof Statistics>;

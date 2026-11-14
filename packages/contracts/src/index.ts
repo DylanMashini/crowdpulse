@@ -9,5 +9,5 @@ export * from './settings.ts';
 export * from './signal.ts';
 export * from './sittings.ts';
 export * from './statistics.ts';
-export * from './tickets.ts';
+export * from './patients.ts';
 export * from './worklist.ts';

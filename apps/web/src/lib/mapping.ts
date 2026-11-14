@@ -15,7 +15,9 @@ export function provenanceOf(source: CaptureSource): { kind: Provenance; label: 
 export function toWorklistRow(item: WorklistItem): WorklistRow & { measured: number } {
   const provenance = item.source ? provenanceOf(item.source) : null;
   return {
-    ticket: item.ticketNumber,
+    patient: item.patient,
+    reason: item.reasonForVisit,
+    ageYears: item.ageYears,
     state: item.state,
     minutes: item.minutesSinceObserved,
     pulse: item.pulse,
@@ -32,7 +34,7 @@ function toTimelineItem(entry: TimelineEntry): TimelineItem {
   const time = clockTime(entry.at);
   switch (entry.type) {
     case 'created':
-      return { time, title: 'Ticket created' };
+      return { time, title: 'Intake started' };
     case 'sitting': {
       const provenance = provenanceOf(entry.source);
       const noReading = entry.heartRate == null && entry.breathingRate == null;
@@ -54,10 +56,10 @@ function toTimelineItem(entry: TimelineEntry): TimelineItem {
       return {
         time,
         title: 'Flag closed',
-        note: entry.rule === 'overdue' ? 'The ticket is no longer overdue' : 'The trend rule no longer applies',
+        note: entry.rule === 'overdue' ? 'The patient is no longer overdue' : 'The trend rule no longer applies',
       };
     case 'discharged':
-      return { time, title: 'Discharged', note: 'Open flags closed and face data deleted' };
+      return { time, title: 'Discharged', note: 'Open flags closed and face-match data deleted' };
   }
 }
 

@@ -1,5 +1,5 @@
 // The trend rules of docs/CONTRACTS.md section 6 (plan section 5). Everything here is a pure
-// function of a ticket's sittings, the settings row and the clock, so the server, the seed
+// function of a patient's sittings, the settings row and the clock, so the server, the seed
 // script and the tests all get the same answer.
 import type { CaptureSource, FlagDetail, FlagRule, Score, Settings, Trend } from "@triagecam/contracts";
 
@@ -61,8 +61,8 @@ const isObservation = (sitting: SittingFacts) => sitting.heartRate !== null || s
 const scoreOf = (sitting: SittingFacts) => partialScore(sitting.heartRate, sitting.breathingRate);
 const wholeMinutes = (fromMs: number, toMs: number) => Math.max(0, Math.floor((toMs - fromMs) / MINUTE_MS));
 
-/** Everything derived from a ticket's sittings that the worklist, the flags and the handoff sentence use. */
-export type TicketSnapshot = {
+/** Everything derived from a patient's sittings that the worklist, the flags and the handoff sentence use. */
+export type PatientSnapshot = {
   /** The first observation: the sitting trends are measured against. */
   baseline: FinishedSitting | null;
   /** The newest finished sitting, observation or not. */
@@ -89,8 +89,8 @@ export type TicketSnapshot = {
   flagDetail: FlagDetail;
 };
 
-/** `sittings` in any order; `createdAt` is when the ticket was created. */
-export function snapshotTicket(sittings: SittingFacts[], createdAt: Date, settings: Settings, now: Date): TicketSnapshot {
+/** `sittings` in any order; `createdAt` is when the patient was created. */
+export function snapshotPatient(sittings: SittingFacts[], createdAt: Date, settings: Settings, now: Date): PatientSnapshot {
   const finished = sittings
     .filter((sitting): sitting is FinishedSitting => sitting.finished && sitting.endedAt !== null)
     .sort((a, b) => a.endedAt.getTime() - b.endedAt.getTime());

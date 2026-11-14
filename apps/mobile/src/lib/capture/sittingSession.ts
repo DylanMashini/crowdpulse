@@ -15,7 +15,7 @@ export type FaceEnrolment =
 /** Everything the summary screen shows about the sitting that just ended. */
 export type FinishedSitting = {
   sittingId: string;
-  ticketNumber: number;
+  patientNumber: number;
   kind: SittingKind;
   source: CaptureSource;
   summary: CaptureSittingSummary;

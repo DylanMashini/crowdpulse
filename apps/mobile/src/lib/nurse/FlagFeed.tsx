@@ -12,7 +12,7 @@ import { api, errorMessage } from '@/lib/api';
 import { clockTime } from '@/lib/format';
 import { useSession } from '@/lib/session/SessionProvider';
 
-import { type PushRegistration, registerForPush, showFlagsInApp, ticketOfNotification } from './push';
+import { type PushRegistration, registerForPush, showFlagsInApp, patientOfNotification } from './push';
 import { flagTitle } from './worklistFormat';
 
 /** With push working the poll is only a safety net; without it the poll is how flags arrive. */
@@ -24,7 +24,7 @@ type FlagFeed = {
   push: PushRegistration | null;
   /** Goes up whenever a flag arrives or is acknowledged, so lists know to refetch. */
   revision: number;
-  /** Lets the banner follow an acknowledgement made on the ticket screen. */
+  /** Lets the banner follow an acknowledgement made on the patient screen. */
   markAcknowledged: (flag: Flag) => void;
 };
 
@@ -113,20 +113,20 @@ export function FlagFeedProvider({ children }: { children: ReactNode }) {
   // A push that arrives while the app is open: show the same flag in the app.
   useEffect(() => {
     const subscription = Notifications.addNotificationReceivedListener((notification) => {
-      const target = ticketOfNotification(notification);
+      const target = patientOfNotification(notification);
       if (!target) return;
       void api
         .openFlags()
         .then(({ items }) => {
           seeded.current = true;
-          announce(items.filter((flag) => flag.id === target.flagId || flag.ticketNumber === target.ticketNumber));
+          announce(items.filter((flag) => flag.id === target.flagId || flag.patientNumber === target.patientNumber));
         })
         .catch((error: unknown) => console.warn('Could not load the flag for a notification', error));
     });
     return () => subscription.remove();
   }, [announce]);
 
-  // A tapped notification opens its ticket, also when the tap is what started the app.
+  // A tapped notification opens its patient, also when the tap is what started the app.
   const openedResponse = useRef<string | null>(null);
   useEffect(() => {
     const open = (response: Notifications.NotificationResponse): string | null => {
@@ -134,10 +134,10 @@ export function FlagFeedProvider({ children }: { children: ReactNode }) {
       if (openedResponse.current === id) return null;
       openedResponse.current = id;
       Notifications.clearLastNotificationResponse();
-      const target = ticketOfNotification(response.notification);
+      const target = patientOfNotification(response.notification);
       if (!target) return null;
       if (target.flagId) seen.current.add(target.flagId);
-      router.push({ pathname: '/nurse/ticket/[number]', params: { number: String(target.ticketNumber) } });
+      router.push({ pathname: '/nurse/patient/[number]', params: { number: String(target.patientNumber) } });
       return target.flagId;
     };
     const launch = Notifications.getLastNotificationResponse();
@@ -190,7 +190,7 @@ export function FlagFeedProvider({ children }: { children: ReactNode }) {
         >
           <View style={{ width: '100%', maxWidth: 528 }}>
             <PushBanner
-              title={flagTitle(banner.rule, banner.ticketNumber)}
+              title={flagTitle(banner.rule, banner.patient)}
               time={clockTime(banner.openedAt)}
               body={banner.handoff}
               acknowledged={banner.acknowledgedAt != null}
@@ -199,7 +199,7 @@ export function FlagFeedProvider({ children }: { children: ReactNode }) {
               onAcknowledge={() => void acknowledge(banner)}
               onOpen={() => {
                 dismiss();
-                router.push({ pathname: '/nurse/ticket/[number]', params: { number: String(banner.ticketNumber) } });
+                router.push({ pathname: '/nurse/patient/[number]', params: { number: String(banner.patientNumber) } });
               }}
               onDismiss={dismiss}
             />

@@ -190,13 +190,3 @@ export function summaryItems(
     },
   ];
 }
-
-/** The ticket number an operator typed, or the message to show under the field. */
-export function parseTicketNumber(text: string): { number: number } | { error: string } {
-  const trimmed = text.trim();
-  if (trimmed === '') return { error: 'Enter the ticket number, 1 or higher' };
-  if (!/^\d+$/.test(trimmed)) return { error: 'Use digits only: a whole number, 1 or higher' };
-  const number = Number(trimmed);
-  if (!Number.isSafeInteger(number) || number < 1) return { error: 'Enter a whole number, 1 or higher' };
-  return { number };
-}

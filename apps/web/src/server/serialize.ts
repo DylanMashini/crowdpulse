@@ -1,10 +1,10 @@
-import type { Device, Estimate, EstimateReason, Sitting, StoredReading, Ticket, User } from "@triagecam/contracts";
+import type { Device, Estimate, EstimateReason, Patient, PatientRef, Sitting, StoredReading, User } from "@triagecam/contracts";
 
 import type { schema } from "../db/client.ts";
 
 export type UserRow = typeof schema.users.$inferSelect;
 export type DeviceRow = typeof schema.devices.$inferSelect;
-export type TicketRow = typeof schema.tickets.$inferSelect;
+export type PatientRow = typeof schema.patients.$inferSelect;
 export type SittingRow = typeof schema.sittings.$inferSelect;
 export type ReadingRow = typeof schema.readings.$inferSelect;
 export type FlagRow = typeof schema.flags.$inferSelect;
@@ -28,21 +28,48 @@ export const toDevice = (row: DeviceRow, liveAt: Date | null): Device => ({
   liveAt: isoOrNull(liveAt),
 });
 
-export const toTicket = (row: TicketRow, faceEnrolled: boolean): Ticket => ({
+export const toPatientRef = (row: Pick<PatientRow, "number" | "name" | "photoUpdatedAt">): PatientRef => ({
+  number: row.number,
+  name: row.name,
+  photoUpdatedAt: isoOrNull(row.photoUpdatedAt),
+});
+
+export const toPatient = (row: PatientRow, faceEnrolled: boolean): Patient => ({
   number: row.number,
   status: row.status,
   createdAt: iso(row.createdAt),
   dischargedAt: isoOrNull(row.dischargedAt),
+  name: row.name,
+  dateOfBirth: row.dateOfBirth,
+  sex: row.sex,
+  reasonForVisit: row.reasonForVisit,
+  painScore: row.painScore,
+  allergies: row.allergies,
+  notes: row.notes,
+  intakeCompletedAt: isoOrNull(row.intakeCompletedAt),
+  photoUpdatedAt: isoOrNull(row.photoUpdatedAt),
   faceOptIn: row.faceOptIn,
   faceEnrolled,
 });
 
+/**
+ * Whole years between a YYYY-MM-DD date of birth and now; null when the date is not known, or
+ * lies in the future (a row saved before requests were checked).
+ */
+export function ageInYears(dateOfBirth: string | null, now = new Date()): number | null {
+  if (!dateOfBirth) return null;
+  const [year, month, day] = dateOfBirth.split("-").map(Number) as [number, number, number];
+  const hadBirthday = now.getMonth() + 1 > month || (now.getMonth() + 1 === month && now.getDate() >= day);
+  const age = now.getFullYear() - year - (hadBirthday ? 0 : 1);
+  return age < 0 ? null : age;
+}
+
 /** A sitting has a summary once it was finished by the phone; one that was abandoned has none. */
 export const hasSummary = (row: SittingRow): boolean => row.durationSeconds !== null;
 
-export const toSitting = (row: SittingRow, ticketNumber: number): Sitting => ({
+export const toSitting = (row: SittingRow, patientNumber: number): Sitting => ({
   id: row.id,
-  ticketNumber,
+  patientNumber,
   deviceId: row.deviceId,
   kind: row.kind,
   source: row.source,

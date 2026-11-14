@@ -4,19 +4,26 @@ import {
   bigserial,
   boolean,
   check,
+  customType,
+  date,
   index,
   integer,
   jsonb,
   pgEnum,
   pgTable,
   real,
+  smallint,
   text,
   timestamp,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
-// Numbers only. No table stores video, images or names; patients exist only as ticket numbers.
+// A patient is one visit to the waiting room: who they are, why they came, and the numbers
+// measured while they wait. No table stores video. The one stored picture per patient is the
+// profile photo taken at intake (patient_photos).
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
 
 const id = () => uuid().primaryKey().defaultRandom();
 const instant = (name: string) => timestamp(name, { withTimezone: true, mode: "date" });
@@ -24,11 +31,12 @@ const createdAt = () => instant("created_at").notNull().defaultNow();
 
 export const sessionKind = pgEnum("session_kind", ["web", "mobile"]);
 export const deviceRole = pgEnum("device_role", ["camera", "nurse"]);
-export const ticketStatus = pgEnum("ticket_status", ["waiting", "discharged"]);
+export const patientStatus = pgEnum("patient_status", ["waiting", "discharged"]);
 export const sittingKind = pgEnum("sitting_kind", ["check_in", "recheck"]);
 export const captureSource = pgEnum("capture_source", ["camera", "simulated", "stub", "recording"]);
 export const estimateState = pgEnum("estimate_state", ["settling", "valid", "none", "stale"]);
 export const referenceSource = pgEnum("reference_source", ["chest_strap", "oximeter", "manual"]);
+export const patientSex = pgEnum("patient_sex", ["female", "male", "other"]);
 export const flagRule = pgEnum("flag_rule", ["score_rise", "baseline_shift", "overdue"]);
 
 /** Staff accounts: operators and nurses. */
@@ -89,23 +97,59 @@ export const devices = pgTable(
   (table) => [index("devices_user_idx").on(table.userId), index("devices_role_idx").on(table.role)],
 );
 
-export const tickets = pgTable("tickets", {
+/**
+ * One patient visit. Created the moment intake starts on a camera phone, with nothing but a
+ * number; the name and the other intake details are filled in from the check-in page while
+ * the first sitting runs, so every one of them is nullable.
+ */
+export const patients = pgTable("patients", {
   id: id(),
-  /** The public ticket number: sequential, the only identifier shown anywhere. */
+  /** The short visit number: sequential, never reused. Addresses the patient in every URL. */
   number: integer().notNull().unique().generatedAlwaysAsIdentity(),
-  status: ticketStatus().notNull().default("waiting"),
+  status: patientStatus().notNull().default("waiting"),
   createdAt: createdAt(),
   dischargedAt: instant("discharged_at"),
   faceOptIn: boolean("face_opt_in").notNull().default(false),
+
+  // Intake, typed by staff on the check-in page.
+  name: text(),
+  /** Calendar date, YYYY-MM-DD. */
+  dateOfBirth: date("date_of_birth", { mode: "string" }),
+  sex: patientSex(),
+  /** The chief complaint, in the patient's or the nurse's words. */
+  reasonForVisit: text("reason_for_visit"),
+  /** 0 (none) to 10 (worst imaginable), as the patient reports it. */
+  painScore: smallint("pain_score"),
+  allergies: text(),
+  /** Symptoms, history, medication: anything else worth knowing. */
+  notes: text(),
+  /** When staff marked the intake form complete. Null while it is still being filled in. */
+  intakeCompletedAt: instant("intake_completed_at"),
+  /** When the profile photo was last stored. Null when there is none. Doubles as its cache key. */
+  photoUpdatedAt: instant("photo_updated_at"),
+});
+
+/**
+ * The profile photo: one square JPEG per patient, taken from the camera during the intake
+ * sitting. Kept apart from patients so listing patients never drags image bytes along.
+ */
+export const patientPhotos = pgTable("patient_photos", {
+  patientId: uuid("patient_id")
+    .primaryKey()
+    .references(() => patients.id, { onDelete: "cascade" }),
+  jpeg: bytea().notNull(),
+  width: integer().notNull(),
+  height: integer().notNull(),
+  createdAt: createdAt(),
 });
 
 export const sittings = pgTable(
   "sittings",
   {
     id: id(),
-    ticketId: uuid("ticket_id")
+    patientId: uuid("patient_id")
       .notNull()
-      .references(() => tickets.id, { onDelete: "cascade" }),
+      .references(() => patients.id, { onDelete: "cascade" }),
     deviceId: uuid("device_id")
       .notNull()
       .references(() => devices.id),
@@ -137,7 +181,7 @@ export const sittings = pgTable(
     frameCount: integer("frame_count"),
     droppedFrames: integer("dropped_frames"),
   },
-  (table) => [index("sittings_ticket_idx").on(table.ticketId, table.startedAt)],
+  (table) => [index("sittings_patient_idx").on(table.patientId, table.startedAt)],
 );
 
 /** One row per second of a sitting. Columns without a prefix describe the heart-rate estimate. */
@@ -148,9 +192,9 @@ export const readings = pgTable(
     sittingId: uuid("sitting_id")
       .notNull()
       .references(() => sittings.id, { onDelete: "cascade" }),
-    ticketId: uuid("ticket_id")
+    patientId: uuid("patient_id")
       .notNull()
-      .references(() => tickets.id, { onDelete: "cascade" }),
+      .references(() => patients.id, { onDelete: "cascade" }),
     /** Server clock: the phone's timestamp plus the sitting's clock offset. */
     t: instant("t").notNull(),
     /** bpm. Set only when state is valid. */
@@ -170,7 +214,7 @@ export const readings = pgTable(
   },
   (table) => [
     uniqueIndex("readings_sitting_t_idx").on(table.sittingId, table.t),
-    index("readings_ticket_t_idx").on(table.ticketId, table.t),
+    index("readings_patient_t_idx").on(table.patientId, table.t),
   ],
 );
 
@@ -210,9 +254,9 @@ export const flags = pgTable(
   "flags",
   {
     id: id(),
-    ticketId: uuid("ticket_id")
+    patientId: uuid("patient_id")
       .notNull()
-      .references(() => tickets.id, { onDelete: "cascade" }),
+      .references(() => patients.id, { onDelete: "cascade" }),
     rule: flagRule().notNull(),
     openedAt: instant("opened_at").notNull().defaultNow(),
     closedAt: instant("closed_at"),
@@ -222,8 +266,8 @@ export const flags = pgTable(
     lastNotifiedAt: instant("last_notified_at"),
   },
   (table) => [
-    index("flags_ticket_idx").on(table.ticketId, table.openedAt),
-    uniqueIndex("flags_one_open_per_rule_idx").on(table.ticketId, table.rule).where(sql`${table.closedAt} is null`),
+    index("flags_patient_idx").on(table.patientId, table.openedAt),
+    uniqueIndex("flags_one_open_per_rule_idx").on(table.patientId, table.rule).where(sql`${table.closedAt} is null`),
   ],
 );
 
@@ -242,21 +286,21 @@ export const acknowledgements = pgTable(
   (table) => [uniqueIndex("acknowledgements_flag_user_idx").on(table.flagId, table.userId)],
 );
 
-/** Face embeddings for opted-in tickets. Deleted at discharge and when the opt-in is withdrawn. */
+/** Face embeddings for opted-in patients. Deleted at discharge and when the opt-in is withdrawn. */
 export const faceEmbeddings = pgTable(
   "face_embeddings",
   {
     id: id(),
-    ticketId: uuid("ticket_id")
+    patientId: uuid("patient_id")
       .notNull()
-      .references(() => tickets.id, { onDelete: "cascade" }),
+      .references(() => patients.id, { onDelete: "cascade" }),
     /** L2-normalised embedding. */
     vector: real().array().notNull(),
     /** Name of the model that produced the vector; vectors from different models never compare. */
     model: text().notNull(),
     createdAt: createdAt(),
   },
-  (table) => [index("face_embeddings_ticket_idx").on(table.ticketId)],
+  (table) => [index("face_embeddings_patient_idx").on(table.patientId)],
 );
 
 /** A single row (id 1) of flag thresholds and the re-check interval. Defaults match defaultSettings in @triagecam/contracts. */

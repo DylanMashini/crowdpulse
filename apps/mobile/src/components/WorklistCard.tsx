@@ -1,4 +1,4 @@
-import type { WorklistItem } from '@triagecam/contracts';
+import { patientLabel, type WorklistItem } from '@triagecam/contracts';
 import { Text, View } from 'react-native';
 
 import { lastObservedText, sourceLabel, statusText } from '@/lib/nurse/worklistFormat';
@@ -9,11 +9,11 @@ import { ProvenanceTag } from './ProvenanceTag';
 import { ScoreChip } from './ScoreChip';
 import { StatusBadge } from './StatusBadge';
 import { useScopedTheme } from './ThemeScope';
-import { TicketNumber } from './TicketNumber';
+import { PatientIdentity } from './PatientIdentity';
 import { Touchable } from './Touchable';
 import { TrendValue } from './TrendValue';
 
-/** One ticket in the nurse worklist. The whole card is one touch target and opens the ticket. */
+/** One patient in the nurse worklist. The whole card is one touch target and opens the patient. */
 export function WorklistCard({ item, onPress }: { item: WorklistItem; onPress: () => void }) {
   const theme = useScopedTheme();
   const { colors, space } = theme;
@@ -24,15 +24,15 @@ export function WorklistCard({ item, onPress }: { item: WorklistItem; onPress: (
     'no-reading': { borderWidth: 1, borderColor: colors.lineStrong, borderStyle: 'dashed' as const },
   }[item.state];
   const source = sourceLabel(item.source);
-  // The badge already carries the age for observed and overdue tickets.
+  // The badge already carries the age for observed and overdue patients.
   const showsLastObserved = item.state === 'flag' || item.state === 'no-reading' || item.sittingInProgress;
 
   return (
     <Touchable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`Rank ${item.rank}, ticket ${item.ticketNumber}, ${statusText(item.state, item.minutesSinceObserved)}`}
-      accessibilityHint="Opens the ticket"
+      accessibilityLabel={`Rank ${item.rank}, ${patientLabel(item.patient)}, ${statusText(item.state, item.minutesSinceObserved)}`}
+      accessibilityHint="Opens the patient"
       style={({ pressed }) => [
         {
           flexDirection: 'row',
@@ -62,7 +62,7 @@ export function WorklistCard({ item, onPress }: { item: WorklistItem; onPress: (
             gap: space.space2,
           }}
         >
-          <TicketNumber number={item.ticketNumber} size="md" />
+          <PatientIdentity patient={item.patient} size="md" detail={item.reasonForVisit} />
           <StatusBadge state={item.state} minutes={item.minutesSinceObserved} />
         </View>
         <View>

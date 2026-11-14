@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import type { Estimate } from '@triagecam/contracts';
 import type { CaptureSittingSummary, VariabilityReason } from 'triage-capture';
 
-import { ReasonTally, STALE_BLANK_AFTER_MS, parseTicketNumber, readoutFor, summaryItems } from './readingFormat.ts';
+import { ReasonTally, STALE_BLANK_AFTER_MS, readoutFor, summaryItems } from './readingFormat.ts';
 
 const estimate = (patch: Partial<Estimate>): Estimate => ({
   value: null,
@@ -112,12 +112,4 @@ test('a withheld RMSSD or SDNN gives the reason the engine gave', () => {
   assert.deepEqual(reasonFor('too_few_beats', 72), Array(2).fill('Too few clean beats in this sitting to report'));
   assert.deepEqual(reasonFor('low_beat_coverage', 72), Array(2).fill('Clean beats covered too little of the sitting'));
   assert.deepEqual(reasonFor('no_heart_rate', null), Array(2).fill('Needs a pulse reading first'));
-});
-
-test('ticket numbers are whole numbers from 1, and the message says so', () => {
-  assert.deepEqual(parseTicketNumber(' 14 '), { number: 14 });
-  assert.deepEqual(parseTicketNumber(''), { error: 'Enter the ticket number, 1 or higher' });
-  assert.deepEqual(parseTicketNumber('0'), { error: 'Enter a whole number, 1 or higher' });
-  assert.deepEqual(parseTicketNumber('1.5'), { error: 'Use digits only: a whole number, 1 or higher' });
-  assert.deepEqual(parseTicketNumber('abc'), { error: 'Use digits only: a whole number, 1 or higher' });
 });

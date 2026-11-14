@@ -1,9 +1,9 @@
 import * as z from 'zod';
 
-import { TicketNumber, Timestamp } from './common.ts';
+import { PatientNumber, PatientRef, Timestamp } from './common.ts';
 import { CaptureSource } from './signal.ts';
 
-/** Every waiting ticket is in exactly one of these. There is no normal state. */
+/** Every waiting patient is in exactly one of these. There is no normal state. */
 export const TileState = z.enum(['observed', 'flag', 'overdue', 'no-reading']);
 export type TileState = z.infer<typeof TileState>;
 
@@ -11,7 +11,7 @@ export type TileState = z.infer<typeof TileState>;
 export const Score = z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]);
 export type Score = z.infer<typeof Score>;
 
-/** A value against the ticket's own check-in baseline. `now: null` means no reading. */
+/** A value against the patient's own check-in baseline. `now: null` means no reading. */
 export const Trend = z.object({
   base: z.number().nullable(),
   now: z.number().nullable(),
@@ -36,7 +36,9 @@ export type FlagDetail = z.infer<typeof FlagDetail>;
 
 export const Flag = z.object({
   id: z.uuid(),
-  ticketNumber: TicketNumber,
+  patientNumber: PatientNumber,
+  /** Who the flag is about, as they are now (not frozen with the flag). */
+  patient: PatientRef,
   rule: FlagRule,
   openedAt: Timestamp,
   /** Null while the episode is open. */
@@ -52,7 +54,7 @@ export type Flag = z.infer<typeof Flag>;
 
 export const FlagListQuery = z.object({
   status: z.enum(['open', 'closed', 'all']).default('open'),
-  ticket: z.coerce.number().int().positive().optional(),
+  patient: z.coerce.number().int().positive().optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   cursor: z.string().min(1).optional(),
 });
@@ -65,9 +67,14 @@ export type FlagResponse = z.infer<typeof FlagResponse>;
 export const WorklistItem = z.object({
   /** 1 is who to walk to first. Items arrive in rank order. */
   rank: z.int().positive(),
-  ticketNumber: TicketNumber,
+  patientNumber: PatientNumber,
+  patient: PatientRef,
+  /** The chief complaint from intake, if it has been entered. */
+  reasonForVisit: z.string().nullable(),
+  /** Whole years, from the date of birth; null when it is not known. */
+  ageYears: z.int().nonnegative().nullable(),
   state: TileState,
-  /** When the ticket was created. */
+  /** When the patient was created. */
   waitingSince: Timestamp,
   /** End of the last sitting that gave a valid heart or breathing rate. */
   lastObservedAt: Timestamp.nullable(),
@@ -84,9 +91,9 @@ export const WorklistItem = z.object({
   source: CaptureSource.nullable(),
   /** Open flags, trend rules first. Empty unless state is flag or overdue. */
   flags: z.array(Flag),
-  /** The templated handoff sentence for the ticket as it stands. */
+  /** The templated handoff sentence for the patient as it stands. */
   handoff: z.string(),
-  /** A sitting is running for this ticket now. */
+  /** A sitting is running for this patient now. */
   sittingInProgress: z.boolean(),
 });
 export type WorklistItem = z.infer<typeof WorklistItem>;

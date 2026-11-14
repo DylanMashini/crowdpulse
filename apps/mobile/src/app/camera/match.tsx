@@ -1,4 +1,4 @@
-import type { Ticket } from '@triagecam/contracts';
+import type { PatientRef } from '@triagecam/contracts';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Linking, Text, View } from 'react-native';
@@ -9,23 +9,23 @@ import { LiveViewfinder } from '@/components/LiveViewfinder';
 import { Notice } from '@/components/Notice';
 import { Screen } from '@/components/Screen';
 import { useScopedTheme } from '@/components/ThemeScope';
-import { TicketEntry } from '@/components/TicketEntry';
-import { TicketNumber } from '@/components/TicketNumber';
+import { PatientIdentity } from '@/components/PatientIdentity';
+import { PatientPicker } from '@/components/PatientPicker';
 import { api, errorMessage, isApiError } from '@/lib/api';
 import { sentences } from '@/lib/format';
 import { captureErrorCode, captureErrorMessage } from '@/lib/capture/captureErrors';
 
-/** How long to wait for a face before asking for the ticket number. */
+/** How long to wait for a face before offering the list of waiting patients. */
 const FACE_WAIT_MS = 15_000;
 
 type Match =
   | { step: 'looking' }
   | { step: 'matching' }
-  | { step: 'matched'; ticket: number }
-  /** No sure match: `reason` says why, and the screen asks for the ticket number. */
+  | { step: 'matched'; patient: PatientRef }
+  /** No sure match: `reason` says why, and the screen lists who is waiting. */
   | { step: 'fallback'; reason: string; cameraDenied?: boolean };
 
-/** Finds a waiting ticket from the patient's face, for patients who opted in at check-in. */
+/** Finds a waiting patient from the patient's face, for patients who opted in at check-in. */
 export default function FaceMatch() {
   const theme = useScopedTheme();
   const router = useRouter();
@@ -47,12 +47,12 @@ export default function FaceMatch() {
       try {
         const crop = await TriageCapture.captureFaceCrop();
         const result = await api.matchFace(crop.jpegBase64);
-        if (result.outcome === 'matched' && result.ticketNumber != null) {
-          settle({ step: 'matched', ticket: result.ticketNumber });
+        if (result.outcome === 'matched' && result.patient != null) {
+          settle({ step: 'matched', patient: result.patient });
         } else if (result.outcome === 'low_confidence') {
-          settle({ step: 'fallback', reason: 'Face match was not sure enough to pick a ticket' });
+          settle({ step: 'fallback', reason: 'Face match was not sure enough to pick a patient' });
         } else {
-          settle({ step: 'fallback', reason: 'No waiting ticket with face match turned on matches this face' });
+          settle({ step: 'fallback', reason: 'No waiting patient with face match turned on matches this face' });
         }
       } catch (error) {
         const noFace = captureErrorCode(error) === 'ERR_NO_FACE' || (isApiError(error) && error.code === 'no_face_detected');
@@ -102,18 +102,17 @@ export default function FaceMatch() {
     };
   }, []);
 
-  const recheck = (ticket: number, enrolFace: boolean) =>
-    router.replace({ pathname: '/camera/sitting', params: { ticket: String(ticket), kind: 'recheck', enrol: enrolFace ? '1' : '0' } });
-  const recheckFound = (ticket: Ticket) => recheck(ticket.number, ticket.faceOptIn && !ticket.faceEnrolled);
+  const recheck = (patient: number, enrolFace: boolean) =>
+    router.replace({ pathname: '/camera/sitting', params: { patient: String(patient), kind: 'recheck', enrol: enrolFace ? '1' : '0' } });
 
   return (
-    <Screen title="Find ticket by face" onBack={() => router.back()}>
+    <Screen title="Find patient by face" onBack={() => router.back()}>
       {match.step === 'looking' || match.step === 'matching' ? (
         <>
           <View style={{ height: 360 }}>
             <LiveViewfinder
               state={viewfinder}
-              message={match.step === 'matching' ? 'Checking for a matching ticket. Keep still.' : undefined}
+              message={match.step === 'matching' ? 'Checking for a matching patient. Keep still.' : undefined}
             />
           </View>
           <Text style={[theme.type.caption, { color: theme.colors.inkMuted }]}>
@@ -122,7 +121,7 @@ export default function FaceMatch() {
           <Button
             variant="secondary"
             block
-            label="Enter the ticket number instead"
+            label="Choose from the waiting room instead"
             onPress={() => {
               settled.current = true;
               setMatch({ step: 'fallback', reason: 'Face match was stopped' });
@@ -135,27 +134,27 @@ export default function FaceMatch() {
       {match.step === 'matched' ? (
         <>
           <View style={{ gap: theme.space.space2 }}>
-            <Text style={[theme.type.bodyTouch, { color: theme.colors.inkMuted }]}>Is this your ticket?</Text>
-            <TicketNumber number={match.ticket} size="xl" />
+            <Text style={[theme.type.bodyTouch, { color: theme.colors.inkMuted }]}>Is this you?</Text>
+            <PatientIdentity patient={match.patient} size="xl" />
           </View>
-          <Button variant="primary" block label="Start re-check" onPress={() => recheck(match.ticket, false)} />
+          <Button variant="primary" block label="Start re-check" onPress={() => recheck(match.patient.number, false)} />
           <Button
             variant="secondary"
             block
-            label="Use a different ticket number"
-            onPress={() => setMatch({ step: 'fallback', reason: 'The matched ticket was not used' })}
+            label="This is someone else"
+            onPress={() => setMatch({ step: 'fallback', reason: 'The matched patient was not used' })}
           />
         </>
       ) : null}
 
       {match.step === 'fallback' ? (
         <>
-          <Notice title="No ticket was matched" body={sentences(match.reason, 'Enter the ticket number to carry on')}>
+          <Notice title="No patient was matched" body={sentences(match.reason, 'Choose the patient from the waiting room to carry on')}>
             {match.cameraDenied ? (
               <Button variant="secondary" block label="Open the Settings app" onPress={() => void Linking.openSettings()} />
             ) : null}
           </Notice>
-          <TicketEntry variant="primary" onFound={recheckFound} />
+          <PatientPicker onPick={(item) => recheck(item.patientNumber, false)} />
         </>
       ) : null}
     </Screen>

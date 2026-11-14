@@ -10,7 +10,7 @@ export default function NurseLayout() {
     <FlagFeedProvider>
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colors.surface } }}>
         <Stack.Screen name="index" />
-        <Stack.Screen name="ticket/[number]" />
+        <Stack.Screen name="patient/[number]" />
       </Stack>
     </FlagFeedProvider>
   );

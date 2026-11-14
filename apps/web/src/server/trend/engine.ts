@@ -1,24 +1,24 @@
-import type { Flag, FlagRule, Settings } from "@triagecam/contracts";
+import { type Flag, type FlagRule, patientLabel, type Settings } from "@triagecam/contracts";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 
 import { db, schema } from "../../db/client.ts";
 import { publish, worklistChanged } from "../events.ts";
 import { flagToWire } from "../flags.ts";
 import { notifyFlagOpened } from "../push.ts";
-import type { FlagRow, SittingRow, TicketRow } from "../serialize.ts";
+import type { FlagRow, SittingRow, PatientRow } from "../serialize.ts";
 import { hasSummary } from "../serialize.ts";
 import { getSettings } from "../settings.ts";
 import { handoffSentence } from "./handoff.ts";
-import { type SittingFacts, snapshotTicket, type TicketSnapshot } from "./rules.ts";
+import { type SittingFacts, snapshotPatient, type PatientSnapshot } from "./rules.ts";
 
 /** Trend rules first: this is also the order flags are listed in. */
 const RULES: FlagRule[] = ["score_rise", "baseline_shift", "overdue"];
 
-export type TicketHistory = {
-  ticket: TicketRow;
+export type PatientHistory = {
+  patient: PatientRow;
   /** Oldest first. */
   sittings: SittingRow[];
-  snapshot: TicketSnapshot;
+  snapshot: PatientSnapshot;
   /** Open flags, in RULES order. */
   openFlags: FlagRow[];
 };
@@ -35,10 +35,10 @@ const sittingFacts = (row: SittingRow): SittingFacts => ({
   breathingRate: row.breathingRate,
 });
 
-/** The handoff sentence for a ticket as it stands: check-in against the latest observation. */
-export const ticketHandoff = (ticketNumber: number, snapshot: TicketSnapshot): string =>
+/** The handoff sentence for a patient as it stands: check-in against the latest observation. */
+export const patientHandoff = (patient: Pick<PatientRow, "number" | "name">, snapshot: PatientSnapshot): string =>
   handoffSentence({
-    ticketNumber,
+    label: patientLabel(patient),
     pulse: snapshot.flagDetail.pulse,
     breathing: snapshot.flagDetail.breathing,
     minutesLater: snapshot.minutesToLatestObservation,
@@ -47,36 +47,36 @@ export const ticketHandoff = (ticketNumber: number, snapshot: TicketSnapshot): s
     latestGaveNoReading: snapshot.latestGaveNoReading,
   });
 
-async function loadHistories(tickets: TicketRow[], settings: Settings, now: Date): Promise<TicketHistory[]> {
-  if (tickets.length === 0) return [];
-  const ticketIds = tickets.map((ticket) => ticket.id);
+async function loadHistories(patients: PatientRow[], settings: Settings, now: Date): Promise<PatientHistory[]> {
+  if (patients.length === 0) return [];
+  const patientIds = patients.map((patient) => patient.id);
   const [sittings, openFlags] = await Promise.all([
     db
       .select()
       .from(schema.sittings)
-      .where(inArray(schema.sittings.ticketId, ticketIds))
+      .where(inArray(schema.sittings.patientId, patientIds))
       .orderBy(asc(schema.sittings.startedAt)),
     db
       .select()
       .from(schema.flags)
-      .where(and(inArray(schema.flags.ticketId, ticketIds), isNull(schema.flags.closedAt))),
+      .where(and(inArray(schema.flags.patientId, patientIds), isNull(schema.flags.closedAt))),
   ]);
-  return tickets.map((ticket) => {
-    const own = sittings.filter((sitting) => sitting.ticketId === ticket.id);
+  return patients.map((patient) => {
+    const own = sittings.filter((sitting) => sitting.patientId === patient.id);
     return {
-      ticket,
+      patient,
       sittings: own,
-      snapshot: snapshotTicket(own.map(sittingFacts), ticket.createdAt, settings, now),
+      snapshot: snapshotPatient(own.map(sittingFacts), patient.createdAt, settings, now),
       openFlags: openFlags
-        .filter((flag) => flag.ticketId === ticket.id)
+        .filter((flag) => flag.patientId === patient.id)
         .sort((a, b) => RULES.indexOf(a.rule) - RULES.indexOf(b.rule)),
     };
   });
 }
 
-/** Opens and closes one ticket's flags to match its rules. Returns the flags that opened. */
-async function applyRules(history: TicketHistory, now: Date): Promise<{ opened: Flag[]; changed: boolean }> {
-  const { ticket, snapshot } = history;
+/** Opens and closes one patient's flags to match its rules. Returns the flags that opened. */
+async function applyRules(history: PatientHistory, now: Date): Promise<{ opened: Flag[]; changed: boolean }> {
+  const { patient, snapshot } = history;
   const opened: Flag[] = [];
   let changed = false;
 
@@ -85,21 +85,21 @@ async function applyRules(history: TicketHistory, now: Date): Promise<{ opened: 
     const open = history.openFlags.find((flag) => flag.rule === rule);
 
     if (!open && status.met) {
-      // The partial unique index allows one open flag per ticket and rule, so a concurrent
+      // The partial unique index allows one open flag per patient and rule, so a concurrent
       // request that got there first makes this insert a no-op.
       const [row] = await db
         .insert(schema.flags)
         .values({
-          ticketId: ticket.id,
+          patientId: patient.id,
           rule,
           openedAt: now,
-          detail: { ...snapshot.flagDetail, handoff: ticketHandoff(ticket.number, snapshot) },
+          detail: { ...snapshot.flagDetail, handoff: patientHandoff(patient, snapshot) },
         })
         .onConflictDoNothing()
         .returning();
       if (!row) continue;
       history.openFlags.push(row);
-      const flag = await flagToWire(row, ticket.number);
+      const flag = await flagToWire(row, patient);
       publish({ type: "flag_opened", flag });
       opened.push(flag);
       changed = true;
@@ -111,7 +111,7 @@ async function applyRules(history: TicketHistory, now: Date): Promise<{ opened: 
         .returning();
       history.openFlags = history.openFlags.filter((flag) => flag.id !== open.id);
       if (!row) continue;
-      publish({ type: "flag_closed", flag: await flagToWire(row, ticket.number) });
+      publish({ type: "flag_closed", flag: await flagToWire(row, patient) });
       changed = true;
     }
   }
@@ -120,38 +120,38 @@ async function applyRules(history: TicketHistory, now: Date): Promise<{ opened: 
 }
 
 /** One after another, so the cool-down sees the push that went out just before. */
-async function notifyInOrder(flags: Flag[], ticketId: string, cooldownMin: number): Promise<void> {
-  for (const flag of flags) await notifyFlagOpened(flag, ticketId, cooldownMin);
+async function notifyInOrder(flags: Flag[], patientId: string, cooldownMin: number): Promise<void> {
+  for (const flag of flags) await notifyFlagOpened(flag, patientId, cooldownMin);
 }
 
 /**
- * Runs the trend rules for the given waiting tickets, opens and closes flags to match, and
- * returns each ticket's history with its flags as they now stand.
+ * Runs the trend rules for the given waiting patients, opens and closes flags to match, and
+ * returns each patient's history with its flags as they now stand.
  */
-export async function syncTickets(tickets: TicketRow[], options: SyncOptions = {}): Promise<TicketHistory[]> {
+export async function syncPatients(patients: PatientRow[], options: SyncOptions = {}): Promise<PatientHistory[]> {
   const now = options.now ?? new Date();
   const settings = await getSettings();
-  const histories = await loadHistories(tickets, settings, now);
+  const histories = await loadHistories(patients, settings, now);
   let changed = false;
   for (const history of histories) {
-    if (history.ticket.status !== "waiting") continue;
+    if (history.patient.status !== "waiting") continue;
     const result = await applyRules(history, now);
     changed ||= result.changed;
     if (options.notify !== false && result.opened.length > 0) {
       // Not awaited: a slow or failed push must not hold up or fail the request.
-      void notifyInOrder(result.opened, history.ticket.id, settings.notifyCooldownMin);
+      void notifyInOrder(result.opened, history.patient.id, settings.notifyCooldownMin);
     }
   }
   if (changed) worklistChanged();
   return histories;
 }
 
-export async function syncWaitingTickets(options: SyncOptions = {}): Promise<TicketHistory[]> {
-  const tickets = await db.select().from(schema.tickets).where(eq(schema.tickets.status, "waiting"));
-  return syncTickets(tickets, options);
+export async function syncWaitingPatients(options: SyncOptions = {}): Promise<PatientHistory[]> {
+  const patients = await db.select().from(schema.patients).where(eq(schema.patients.status, "waiting"));
+  return syncPatients(patients, options);
 }
 
-export async function syncTicket(ticket: TicketRow, options: SyncOptions = {}): Promise<TicketHistory> {
-  const [history] = await syncTickets([ticket], options);
-  return history as TicketHistory;
+export async function syncPatient(patient: PatientRow, options: SyncOptions = {}): Promise<PatientHistory> {
+  const [history] = await syncPatients([patient], options);
+  return history as PatientHistory;
 }

@@ -3,7 +3,7 @@ import * as z from 'zod';
 import { Timestamp, Unit } from './common.ts';
 
 export const Settings = z.object({
-  /** A waiting ticket is overdue after this many minutes without a valid observation. */
+  /** A waiting patient is overdue after this many minutes without a valid observation. */
   recheckIntervalMin: z.number().min(1).max(240),
   /** Flag when pulse moves this many bpm from check-in on two consecutive observations. */
   pulseDeltaBpm: z.number().min(1).max(100),
@@ -12,9 +12,9 @@ export const Settings = z.object({
   scoreRiseEnabled: z.boolean(),
   baselineShiftEnabled: z.boolean(),
   overdueEnabled: z.boolean(),
-  /** Minimum minutes between two push notifications for the same ticket. */
+  /** Minimum minutes between two push notifications for the same patient. */
   notifyCooldownMin: z.number().min(0).max(240),
-  /** A face match below this confidence asks for the ticket number instead. */
+  /** A face match below this confidence asks for the patient number instead. */
   faceMatchMinConfidence: Unit,
 });
 export type Settings = z.infer<typeof Settings>;

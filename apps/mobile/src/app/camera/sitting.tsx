@@ -14,7 +14,8 @@ import { Readout } from '@/components/Readout';
 import { SittingTimer } from '@/components/SittingTimer';
 import { Switch } from '@/components/Switch';
 import { useScopedTheme } from '@/components/ThemeScope';
-import { TicketNumber } from '@/components/TicketNumber';
+import { PatientIdentity } from '@/components/PatientIdentity';
+import { usePatientRef } from '@/hooks/usePatientRef';
 import { readoutFor } from '@/lib/capture/readingFormat';
 import { type LiveViewState, useSittingController } from '@/lib/capture/useSittingController';
 import { tidy } from '@/lib/format';
@@ -22,13 +23,13 @@ import { sourceLabel } from '@/lib/nurse/worklistFormat';
 import { useDevice } from '@/lib/session/SessionProvider';
 
 export default function Sitting() {
-  const params = useLocalSearchParams<{ ticket: string; kind: string; enrol?: string }>();
+  const params = useLocalSearchParams<{ patient: string; kind: string; enrol?: string }>();
   const device = useDevice();
-  const ticketNumber = Number(params.ticket);
-  if (!device || !Number.isSafeInteger(ticketNumber) || ticketNumber < 1) return null;
+  const patientNumber = Number(params.patient);
+  if (!device || !Number.isSafeInteger(patientNumber) || patientNumber < 1) return null;
   return (
     <SittingScreen
-      ticketNumber={ticketNumber}
+      patientNumber={patientNumber}
       kind={params.kind === 'recheck' ? 'recheck' : 'check_in'}
       enrolFace={params.enrol === '1'}
       deviceId={device.id}
@@ -36,9 +37,9 @@ export default function Sitting() {
   );
 }
 
-type Props = { ticketNumber: number; kind: 'check_in' | 'recheck'; enrolFace: boolean; deviceId: string };
+type Props = { patientNumber: number; kind: 'check_in' | 'recheck'; enrolFace: boolean; deviceId: string };
 
-function SittingScreen({ ticketNumber, kind, enrolFace, deviceId }: Props) {
+function SittingScreen({ patientNumber, kind, enrolFace, deviceId }: Props) {
   useKeepAwake();
   // The phone sits on its mount in landscape while it captures.
   useEffect(() => {
@@ -55,7 +56,9 @@ function SittingScreen({ ticketNumber, kind, enrolFace, deviceId }: Props) {
     (sittingId: string) => router.replace({ pathname: '/camera/summary', params: { sitting: sittingId } }),
     [router],
   );
-  const sitting = useSittingController({ ticketNumber, kind, enrolFace, deviceId, onFinished });
+  const sitting = useSittingController({ patientNumber, kind, enrolFace, deviceId, onFinished });
+  // The name is typed on the dashboard while this sitting runs, and the photo is taken from it.
+  const patient = usePatientRef(patientNumber);
   const { phase, status, reading, source } = sitting;
   const running = phase === 'running' || phase === 'stopping';
   const sourceTag = sourceLabel(source);
@@ -66,7 +69,7 @@ function SittingScreen({ ticketNumber, kind, enrolFace, deviceId }: Props) {
 
   const leave = () => {
     if (!running) return router.back();
-    Alert.alert('Leave this sitting?', 'The sitting stops and no summary is saved for this ticket', [
+    Alert.alert('Leave this sitting?', 'The sitting stops and no summary is saved for this patient', [
       { text: 'Keep measuring', style: 'cancel' },
       { text: 'Leave', style: 'destructive', onPress: () => router.back() },
     ]);
@@ -108,7 +111,7 @@ function SittingScreen({ ticketNumber, kind, enrolFace, deviceId }: Props) {
   const patientPanel = (
     <View style={{ gap: space.space4 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.space3 }}>
-        <TicketNumber number={ticketNumber} size="md" />
+        <PatientIdentity patient={patient} size="md" />
         {sourceTag ? <ProvenanceTag kind="recording" label={sourceTag} /> : null}
       </View>
       <SittingTimer elapsed={sitting.elapsedSeconds} doneLabel="Sitting complete" />
@@ -212,7 +215,7 @@ function SittingScreen({ ticketNumber, kind, enrolFace, deviceId }: Props) {
 }
 
 function liveViewHint(live: LiveViewState): string {
-  if (!live.enabled) return 'Shows a low-rate picture to staff on the dashboard. Not stored.';
+  if (!live.enabled) return 'Off. Staff cannot see the camera and no profile photo is taken from it.';
   if (live.failing) return 'On, but the picture is not reaching the server';
   if (live.viewers == null) return 'On. Connecting to the dashboard.';
   if (live.viewers === 0) return 'On. No dashboard is watching.';

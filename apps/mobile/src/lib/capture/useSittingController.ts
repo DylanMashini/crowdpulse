@@ -1,8 +1,8 @@
-import type { CaptureSource, Reading, SittingKind } from '@triagecam/contracts';
+import { LIVE_VIEW, routes, type CaptureSource, type Reading, type SittingKind } from '@triagecam/contracts';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import TriageCapture, { type CaptureStatusEvent } from 'triage-capture';
 
-import { api, errorMessage, isApiError } from '@/lib/api';
+import { api, authHeaders, errorMessage, isApiError } from '@/lib/api';
 
 import { captureErrorCode, captureErrorMessage } from './captureErrors';
 import { type LastValid, ReasonTally, type Vital } from './readingFormat';
@@ -11,8 +11,7 @@ import type { SittingUploadQueue } from './uploadQueue';
 
 export const SITTING_MS = 60_000;
 const FACE_ENROL_ATTEMPTS = 3;
-const LIVE_FPS_WATCHED = 2;
-const LIVE_FPS_UNWATCHED = 1;
+const PHOTO_ATTEMPTS = 5;
 
 export type SittingPhase =
   /** Asking for the camera and starting capture. */
@@ -35,9 +34,9 @@ export type LiveViewState = {
 };
 
 type Options = {
-  ticketNumber: number;
+  patientNumber: number;
   kind: SittingKind;
-  /** The ticket opted in to face match and has no face stored yet. */
+  /** The patient opted in to face match and has no face stored yet. */
   enrolFace: boolean;
   deviceId: string;
   onFinished: (sittingId: string) => void;
@@ -48,6 +47,8 @@ type RunningSitting = {
   uploads: SittingUploadQueue;
   reasons: ReasonTally;
   face: FaceEnrolment | { status: 'pending'; attempts: number; busy: boolean };
+  /** The profile photo, sent once per intake sitting from the phone's own face crop. */
+  photo: { done: boolean; attempts: number; busy: boolean };
 };
 
 /**
@@ -55,20 +56,21 @@ type RunningSitting = {
  * to the summary. Uploads go through a queue and are never awaited here, so a dropped network
  * cannot hold up the sitting.
  */
-export function useSittingController({ ticketNumber, kind, enrolFace, deviceId, onFinished }: Options) {
+export function useSittingController({ patientNumber, kind, enrolFace, deviceId, onFinished }: Options) {
   const [phase, setPhase] = useState<SittingPhase>('preparing');
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<CaptureStatusEvent | null>(null);
   const [reading, setReading] = useState<Reading | null>(null);
   const [lastValid, setLastValid] = useState<Record<Vital, LastValid | null>>({ heartRate: null, breathingRate: null });
-  const [live, setLive] = useState<LiveViewState>({ enabled: false, viewers: null, failing: false });
+  const [live, setLive] = useState<LiveViewState>({ enabled: true, viewers: null, failing: false });
   const [source] = useState<CaptureSource>(() => TriageCapture.getSource());
   // Wall clock of the last status event: the screen renders once per second from it.
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   const sitting = useRef<RunningSitting | null>(null);
   const stopping = useRef(false);
-  const liveFps = useRef(LIVE_FPS_WATCHED);
+  const liveEnabled = useRef(true);
+  const liveFps = useRef<number>(LIVE_VIEW.fps);
   const postingFrame = useRef(false);
   const onFinishedRef = useRef(onFinished);
   useEffect(() => {
@@ -91,7 +93,7 @@ export function useSittingController({ ticketNumber, kind, enrolFace, deviceId, 
       void handOffSittingFile(current.id, result.fileUri);
       rememberFinishedSitting({
         sittingId: current.id,
-        ticketNumber,
+        patientNumber,
         kind,
         source,
         summary: result.summary,
@@ -113,14 +115,14 @@ export function useSittingController({ ticketNumber, kind, enrolFace, deviceId, 
       setError(`The sitting could not be finished. ${captureErrorMessage(failure)}`);
       setPhase('framing');
     }
-  }, [kind, source, ticketNumber]);
+  }, [kind, source, patientNumber]);
 
   const start = useCallback(async () => {
     setPhase('starting');
     setError(null);
     let sittingId: string;
     try {
-      sittingId = (await api.startSitting({ ticketNumber, deviceId, kind, source })).sitting.id;
+      sittingId = (await api.startSitting({ patientNumber, deviceId, kind, source })).sitting.id;
     } catch (failure) {
       setError(errorMessage(failure));
       return setPhase('framing');
@@ -130,6 +132,8 @@ export function useSittingController({ ticketNumber, kind, enrolFace, deviceId, 
       uploads: createUploadQueue(sittingId),
       reasons: new ReasonTally(),
       face: enrolFace ? { status: 'pending', attempts: 0, busy: false } : { status: 'not_needed' },
+      // A re-check keeps the photo from check-in; the server fills in a missing one by itself.
+      photo: { done: kind !== 'check_in', attempts: 0, busy: false },
     };
     stopping.current = false;
     setReading(null);
@@ -143,7 +147,7 @@ export function useSittingController({ ticketNumber, kind, enrolFace, deviceId, 
       setError(captureErrorMessage(failure));
       setPhase('framing');
     }
-  }, [deviceId, enrolFace, kind, source, ticketNumber]);
+  }, [deviceId, enrolFace, kind, source, patientNumber]);
 
   const enrol = useCallback(async () => {
     const current = sitting.current;
@@ -152,7 +156,7 @@ export function useSittingController({ ticketNumber, kind, enrolFace, deviceId, 
     pending.busy = true;
     try {
       const crop = await TriageCapture.captureFaceCrop();
-      await api.enrolFace(ticketNumber, crop.jpegBase64);
+      await api.enrolFace(patientNumber, crop.jpegBase64);
       current.face = { status: 'enrolled' };
     } catch (failure) {
       const noFace =
@@ -165,17 +169,70 @@ export function useSittingController({ ticketNumber, kind, enrolFace, deviceId, 
         current.face = { status: 'failed', reason: 'No face was found in the picture' };
       }
     }
-  }, [ticketNumber]);
+  }, [patientNumber]);
+
+  const sendPhoto = useCallback(async () => {
+    const current = sitting.current;
+    if (!current || current.photo.done || current.photo.busy || current.photo.attempts >= PHOTO_ATTEMPTS) return;
+    current.photo.busy = true;
+    current.photo.attempts += 1;
+    try {
+      const crop = await TriageCapture.captureFaceCrop();
+      await api.putPatientPhoto(patientNumber, crop.jpegBase64);
+      current.photo.done = true;
+    } catch {
+      // No face this second, or the network dropped: try again on a later status tick. The
+      // server also takes the photo from the live view; this crop only fills in when it has
+      // not, and never puts back a photo staff removed.
+    } finally {
+      current.photo.busy = false;
+    }
+  }, [patientNumber]);
+
+  /** Full rate while a sitting runs or a dashboard is watching; a trickle otherwise. */
+  const applyLiveView = useCallback(
+    async (fps: number) => {
+      liveFps.current = fps;
+      await TriageCapture.setLivePreview({
+        enabled: true,
+        fps,
+        maxLongSide: LIVE_VIEW.maxLongSidePx,
+        quality: LIVE_VIEW.jpegQuality,
+        // The camera and the simulator post frames themselves. The stub cannot, and hands
+        // them to the onPreviewFrame listener below instead.
+        ...(source === 'stub' ? {} : { uploadUrl: `${api.baseUrl}${routes.liveFrame(deviceId)}`, uploadHeaders: authHeaders() }),
+      });
+    },
+    [deviceId, source],
+  );
+
+  const tuneLiveView = useCallback(
+    (viewers: number | null) => {
+      if (!liveEnabled.current) return;
+      const wanted = sitting.current || (viewers ?? 0) > 0 ? LIVE_VIEW.fps : LIVE_VIEW.idleFps;
+      if (wanted !== liveFps.current) void applyLiveView(wanted).catch(() => {});
+    },
+    [applyLiveView],
+  );
 
   useEffect(() => {
-    void beginCapture().then(applyCapture);
+    void beginCapture()
+      .then((result) => {
+        applyCapture(result);
+        // The live view is part of intake: staff watch it and the profile photo is cut from it.
+        if (result.phase === 'framing' && liveEnabled.current) return applyLiveView(LIVE_VIEW.fps);
+      })
+      .catch(() => setLive({ enabled: false, viewers: null, failing: false }));
     const subscriptions = [
       TriageCapture.addListener('onStatus', (event) => {
         setStatus(event);
         setNowMs(Date.now());
         const current = sitting.current;
         if (!current || event.sittingId !== current.id) return;
-        if (event.viewfinder === 'measuring') void enrol();
+        if (event.viewfinder === 'measuring') {
+          void enrol();
+          void sendPhoto();
+        }
         if ((event.sittingElapsedMs ?? 0) >= SITTING_MS) void stop();
       }),
       TriageCapture.addListener('onReading', (event) => {
@@ -203,46 +260,60 @@ export function useSittingController({ ticketNumber, kind, enrolFace, deviceId, 
           .postLiveFrame(deviceId, frame)
           .then(({ viewers }) => {
             setLive((previous) => (previous.enabled ? { enabled: true, viewers, failing: false } : previous));
-            const fps = viewers > 0 ? LIVE_FPS_WATCHED : LIVE_FPS_UNWATCHED;
-            if (fps !== liveFps.current) {
-              liveFps.current = fps;
-              void TriageCapture.setLivePreview({ enabled: true, fps }).catch(() => {});
-            }
+            tuneLiveView(viewers);
           })
           .catch(() => setLive((previous) => (previous.enabled ? { ...previous, failing: true } : previous)))
           .finally(() => {
             postingFrame.current = false;
           });
       }),
+      TriageCapture.addListener('onLiveUpload', (event) => {
+        setLive((previous) =>
+          previous.enabled
+            ? { enabled: true, viewers: event.viewers ?? previous.viewers, failing: event.delivered === 0 && event.failed > 0 }
+            : previous,
+        );
+        tuneLiveView(event.viewers);
+      }),
       TriageCapture.addListener('onError', (event) => setError(captureErrorMessage(event))),
     ];
     return () => {
       for (const subscription of subscriptions) subscription.remove();
       // Leaving the screen ends the live view and the camera. A sitting that was still running
-      // is abandoned by the module; the server closes it when the ticket's next sitting starts.
+      // is abandoned by the module; the server closes it when the patient's next sitting starts.
       sitting.current?.uploads.dispose();
       sitting.current = null;
       void TriageCapture.setLivePreview({ enabled: false }).catch(() => {});
       void TriageCapture.stopCapture().catch(() => {});
     };
-  }, [applyCapture, deviceId, enrol, stop]);
+  }, [applyCapture, applyLiveView, deviceId, enrol, sendPhoto, stop, tuneLiveView]);
 
-  const setLiveView = useCallback(async (enabled: boolean) => {
-    liveFps.current = LIVE_FPS_WATCHED;
-    try {
-      await TriageCapture.setLivePreview({ enabled, fps: LIVE_FPS_WATCHED });
-      setLive({ enabled, viewers: null, failing: false });
-    } catch (failure) {
-      setLive({ enabled: false, viewers: null, failing: false });
-      setError(`Live view could not be turned ${enabled ? 'on' : 'off'}. ${captureErrorMessage(failure)}`);
-    }
-  }, []);
+  const setLiveView = useCallback(
+    async (enabled: boolean) => {
+      liveEnabled.current = enabled;
+      try {
+        if (enabled) await applyLiveView(LIVE_VIEW.fps);
+        else await TriageCapture.setLivePreview({ enabled: false });
+        setLive({ enabled, viewers: null, failing: false });
+      } catch (failure) {
+        liveEnabled.current = false;
+        setLive({ enabled: false, viewers: null, failing: false });
+        setError(`Live view could not be turned ${enabled ? 'on' : 'off'}. ${captureErrorMessage(failure)}`);
+      }
+    },
+    [applyLiveView],
+  );
 
   const retry = useCallback(() => {
     setPhase('preparing');
     setError(null);
-    void beginCapture().then(applyCapture);
-  }, [applyCapture]);
+    void beginCapture()
+      .then((result) => {
+        applyCapture(result);
+        if (result.phase === 'framing' && liveEnabled.current) return applyLiveView(LIVE_VIEW.fps);
+      })
+      .catch(() => setLive({ enabled: false, viewers: null, failing: false }));
+  }, [applyCapture, applyLiveView]);
 
   const elapsedMs = phase === 'running' || phase === 'stopping' ? Math.max(status?.sittingElapsedMs ?? 0, reading?.elapsedMs ?? 0) : 0;
 
