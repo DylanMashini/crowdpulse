@@ -14,7 +14,7 @@ let usage = """
         the window would have reported unrefused ("candidateBpm"). With a reference, each
         line also carries the nearest "referenceBpm". Same readings as run. --config is a
         JSON object of EngineConfiguration fields to change, such as
-        {"maximumMotionShare": 1}: what the sitting reads with a check moved or off.
+        {"maximumDisturbedShare": 1}: what the sitting reads with a check moved or off.
     engine-cli synth <out.jsonl> [options]
         --hr 72  --br 16  --seconds 60  --fps 60  --seed 1  --noise 0.25  --amplitude 0.35
         --subject person|wall|noise      --hr-change <at seconds> <to bpm>
