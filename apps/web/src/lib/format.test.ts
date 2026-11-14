@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import {
   ageInYears,
   breathingRate,
+  breathsPerMin,
   decimal,
   heartRate,
   milliseconds,
@@ -22,6 +23,7 @@ test('a rate is a whole number with its unit', () => {
   assert.equal(heartRate(71.763824), '72 bpm');
   assert.equal(heartRate(71.4), '71 bpm');
   assert.equal(breathingRate(15.5), '16 /min');
+  assert.equal(breathsPerMin(15.5), '16 breaths per min');
   assert.equal(rate(108), '108');
 });
 

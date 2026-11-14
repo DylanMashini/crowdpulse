@@ -18,6 +18,11 @@ export function breathingRate(value: number): string {
   return `${rate(value)} /min`;
 }
 
+/** "16 breaths per min", for sentences and wherever there is room for the words. */
+export function breathsPerMin(value: number): string {
+  return `${rate(value)} breaths per min`;
+}
+
 /**
  * How far a rate has moved from its baseline, as the difference of the two whole numbers on
  * screen: "+12", "\u22124". Null when they show the same number.
