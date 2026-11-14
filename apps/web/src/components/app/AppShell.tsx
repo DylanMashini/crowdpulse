@@ -8,7 +8,7 @@ import { BrandLockup, SideNav, type SideNavGroup, type SideNavStation } from '@/
 import { StateMessage } from '@/components/ui/StateMessage';
 import { api, errorMessage } from '@/lib/api';
 import { useNow } from '@/lib/clock';
-import { clockTime, dayTime } from '@/lib/format';
+import { minutesAgo } from '@/lib/format';
 import { useResource } from '@/lib/use-resource';
 
 import { LiveProvider, useLive, useLiveEvents, type LiveEvent } from './live';
@@ -42,7 +42,8 @@ const HOME = '/waiting-room';
 
 /** A camera phone that has not been heard from for this long is shown as offline. */
 const ONLINE_WITHIN_MS = 2 * 60_000;
-const DEVICES_REFRESH_MS = 30_000;
+/** Signing a phone in sends no live event, so the rail asks often enough to pick a new one up quickly. */
+const DEVICES_REFRESH_MS = 10_000;
 const DEVICE_EVENTS: ReadonlySet<LiveEvent['type']> = new Set(['live_changed', 'sitting_started', 'sitting_finished', 'reconnected']);
 
 /** Below this width the rail starts as icons, so the worklist keeps its columns. */
@@ -139,9 +140,8 @@ function stationDevice(devices: Device[] | undefined, serverNow: number): SideNa
   if (camera.liveAt !== null) return { label: camera.label, detail: 'Live view on', connected: true };
   const silentMs = Math.max(0, serverNow - new Date(camera.lastSeenAt).getTime());
   if (silentMs < ONLINE_WITHIN_MS) return { label: camera.label, detail: 'Online', connected: true };
-  // Within a day the clock time is the useful fact; after that only the date is.
-  const since = silentMs < 24 * 60 * 60_000 ? clockTime(camera.lastSeenAt) : dayTime(camera.lastSeenAt).split(',')[0];
-  return { label: camera.label, detail: `Offline since ${since}`, connected: false };
+  // The same words as the camera phone list on Check-in.
+  return { label: camera.label, detail: `Offline, last seen ${minutesAgo(Math.floor(silentMs / 60_000))}`, connected: false };
 }
 
 function Navigation({ pathname, email }: { pathname: string; email: string }) {

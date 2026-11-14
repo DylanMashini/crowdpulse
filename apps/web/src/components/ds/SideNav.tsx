@@ -50,7 +50,7 @@ export interface SideNavStation {
   statsHref: string;
   device: {
     label: string;
-    /** "Live view on", "Online", "Offline, seen 12 min ago". */
+    /** "Live view on", "Online", "Offline, last seen 12 min ago". */
     detail: string;
     connected: boolean;
   };
@@ -334,7 +334,7 @@ function StationCard({ station }: { station: SideNavStation }) {
       <Link href={station.deviceHref} className={cx('flex items-center gap-[10px] rounded-b-lg border-t border-line p-3', hoverSurface, colours)}>
         <Icon name="phone" size={18} className="text-ink-muted" />
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-[13px] leading-[16px] font-medium text-ink" title={device.label}>
+          <span className="line-clamp-2 text-[13px] leading-[16px] font-medium break-words text-ink" title={device.label}>
             {device.label}
           </span>
           <span className="text-[12px] leading-[16px] text-ink-muted">{device.detail}</span>
