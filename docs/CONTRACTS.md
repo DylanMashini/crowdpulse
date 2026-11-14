@@ -460,6 +460,8 @@ Every non-2xx response has this body (`ErrorResponse`), and nothing else:
 | 429 | `rate_limited` |
 | 500 | `internal` |
 
+Every 429 carries a `Retry-After` header in whole seconds: the time left in the limit's window for sign-in and the other counted limits, and 1 for the live view's frame rate. The message says the same in words.
+
 On the server, throw `new ApiError(code, message, details?)` and wrap each handler body in `try { … } catch (error) { return errorResponse(error) }` (`apps/web/src/server/http.ts`). `errorResponse` also turns a `ZodError` into `invalid_request` and anything else into `internal` without leaking its message.
 
 ### Pagination
