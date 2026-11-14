@@ -268,7 +268,7 @@ export default function PatientScreen() {
                       {row.running ? null : (
                         <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: space.space5, rowGap: space.space1 }}>
                           <Reading name="Pulse" value={row.pulse} unit="bpm" />
-                          <Reading name="Breathing" value={row.breathing} unit="per min" />
+                          <Reading name="Breathing" value={row.breathing} unit="breaths per min" />
                         </View>
                       )}
                       {row.detail ? <Text style={[theme.type.caption, { color: colors.inkMuted }]}>{row.detail}</Text> : null}
