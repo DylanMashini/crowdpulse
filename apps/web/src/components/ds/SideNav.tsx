@@ -393,9 +393,15 @@ function AccountMenu({ account, compact, placement }: { account: SideNavAccount;
   const firstItem = useRef<HTMLButtonElement>(null);
   const menuId = useId();
 
+  // The menu stays up while sign-out runs, so its answer has somewhere to appear if it fails.
+  const busy = account.busy === true;
+
   useEffect(() => {
-    if (!open) return;
-    firstItem.current?.focus();
+    if (open) firstItem.current?.focus();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || busy) return;
     const onPointerDown = (event: PointerEvent) => {
       if (!root.current?.contains(event.target as Node)) setOpen(false);
     };
@@ -410,14 +416,14 @@ function AccountMenu({ account, compact, placement }: { account: SideNavAccount;
       document.removeEventListener('pointerdown', onPointerDown);
       document.removeEventListener('keydown', onKeyDown);
     };
-  }, [open]);
+  }, [open, busy]);
 
   return (
     <div
       ref={root}
       className="relative"
       onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+        if (!busy && !event.currentTarget.contains(event.relatedTarget)) setOpen(false);
       }}
     >
       <button
@@ -427,7 +433,9 @@ function AccountMenu({ account, compact, placement }: { account: SideNavAccount;
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         aria-label={compact ? `Account, ${account.name}` : undefined}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          if (!busy) setOpen((value) => !value);
+        }}
         className={cx(
           'flex cursor-pointer items-center rounded-md text-left',
           compact ? 'size-[44px] justify-center' : 'h-[44px] w-full gap-[10px] px-2',
@@ -470,16 +478,19 @@ function AccountMenu({ account, compact, placement }: { account: SideNavAccount;
               ref={firstItem}
               type="button"
               role="menuitem"
-              onClick={account.onSignOut}
-              disabled={account.busy}
+              // Not `disabled`: a disabled button drops focus to the page, which would close the menu.
+              aria-disabled={busy || undefined}
+              onClick={() => {
+                if (!busy) account.onSignOut();
+              }}
               className={cx(
-                'flex h-control-md w-full cursor-pointer items-center gap-[10px] rounded-md px-2 text-[14px] leading-[20px] font-medium text-ink disabled:cursor-not-allowed disabled:opacity-45',
-                hoverSurface,
+                'flex h-control-md w-full items-center gap-[10px] rounded-md px-2 text-[14px] leading-[20px] font-medium text-ink',
+                busy ? 'cursor-not-allowed opacity-45' : cx('cursor-pointer', hoverSurface),
                 colours,
               )}
             >
               <Icon name="sign-out" size={18} className="text-ink-muted" />
-              {account.busy ? 'Signing out' : 'Sign out'}
+              {busy ? 'Signing out' : 'Sign out'}
             </button>
           </div>
           {account.error ? (
