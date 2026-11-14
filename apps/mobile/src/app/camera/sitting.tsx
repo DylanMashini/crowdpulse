@@ -136,8 +136,11 @@ function SittingScreen({ patientNumber, kind, enrolFace, deviceId }: Props) {
     );
   }
 
+  // In landscape the column is 350 points tall: the lines close up so the patient, the countdown,
+  // both readings and both traces are on screen for the whole sitting without a touch.
+  const cell = landscape ? space.space3 : space.space4;
   const patientPanel = (
-    <View style={{ gap: space.space4 }}>
+    <View style={{ gap: landscape ? space.space3 : space.space4 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.space3 }}>
         <PatientIdentity patient={patient} size="md" />
         {sourceTag ? <ProvenanceTag kind="recording" label={sourceTag} /> : null}
@@ -153,11 +156,12 @@ function SittingScreen({ patientNumber, kind, enrolFace, deviceId }: Props) {
           backgroundColor: colors.surface1,
         }}
       >
-        <View style={{ flex: 1, padding: space.space4, gap: space.space2 }}>
+        <View style={{ flex: 1, padding: cell, gap: space.space2 }}>
           <Readout
             label="Heart rate"
             icon="pulse"
             unit="bpm"
+            dense={landscape}
             size="lg"
             live={running}
             state={heart.state}
@@ -166,11 +170,13 @@ function SittingScreen({ patientNumber, kind, enrolFace, deviceId }: Props) {
           />
           <LiveTrace trace={traces.pulse} capacity={TRACE_SECONDS} minSpan={PULSE_SPAN_BPM} />
         </View>
-        <View style={{ flex: 1, padding: space.space4, gap: space.space2, borderLeftWidth: hairline, borderLeftColor: colors.line }}>
+        <View style={{ flex: 1, padding: cell, gap: space.space2, borderLeftWidth: hairline, borderLeftColor: colors.line }}>
           <Readout
             label="Breathing"
             icon="breath"
-            unit="breaths per min"
+            unit="per min"
+            unitSpoken="breaths per minute"
+            dense={landscape}
             size="lg"
             live={running}
             state={breathing.state}
@@ -188,6 +194,7 @@ function SittingScreen({ patientNumber, kind, enrolFace, deviceId }: Props) {
     </View>
   );
 
+  // What the operator checks now and then, under the readings.
   const operatorPanel = (
     <View style={{ gap: space.space4 }}>
       <CaptureStatus
@@ -203,28 +210,27 @@ function SittingScreen({ patientNumber, kind, enrolFace, deviceId }: Props) {
         onChange={(next) => void sitting.setLiveView(next)}
         disabled={phase === 'preparing'}
       />
-      <View style={{ gap: space.space2 }}>
-        {running ? (
-          <Button
-            variant="secondary"
-            block
-            label={phase === 'stopping' ? 'Saving the sitting' : 'End sitting now'}
-            disabled={phase === 'stopping'}
-            onPress={endEarly}
-          />
-        ) : (
-          <Button
-            variant="primary"
-            block
-            label={phase === 'starting' ? 'Starting' : phase === 'preparing' ? 'Starting the camera' : 'Start sitting'}
-            disabled={phase !== 'framing'}
-            onPress={() => void sitting.start()}
-          />
-        )}
-        <Button variant="quiet" block label="Back to check-in" disabled={phase === 'stopping'} onPress={leave} />
-      </View>
     </View>
   );
+
+  const mainAction = running ? (
+    <Button
+      variant="secondary"
+      block
+      label={phase === 'stopping' ? 'Saving the sitting' : 'End sitting now'}
+      disabled={phase === 'stopping'}
+      onPress={endEarly}
+    />
+  ) : (
+    <Button
+      variant="primary"
+      block
+      label={phase === 'starting' ? 'Starting' : phase === 'preparing' ? 'Starting the camera' : 'Start sitting'}
+      disabled={phase !== 'framing'}
+      onPress={() => void sitting.start()}
+    />
+  );
+  const backAction = <Button variant="quiet" block label="Back to check-in" disabled={phase === 'stopping'} onPress={leave} />;
 
   const viewfinder = (
     <LiveViewfinder
@@ -236,16 +242,24 @@ function SittingScreen({ patientNumber, kind, enrolFace, deviceId }: Props) {
   );
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface0 }}>
+    // A phone on its side has no status bar, so the top inset is left out there: the column keeps
+    // the full height for the readings.
+    <SafeAreaView edges={landscape ? ['left', 'right', 'bottom'] : undefined} style={{ flex: 1, backgroundColor: colors.surface0 }}>
       {landscape ? (
-        <View style={{ flex: 1, flexDirection: 'row', gap: space.space4, padding: space.space4 }}>
+        <View style={{ flex: 1, flexDirection: 'row', gap: space.space4, paddingHorizontal: space.space4, paddingVertical: space.space3 }}>
           {/* The picture gets the room; the readouts and controls share one column beside it. */}
           <View style={{ flex: 1 }}>{viewfinder}</View>
-          <View style={{ width: Math.min(360, Math.round(width * 0.42)) }}>
-            <ScrollView indicatorStyle="white" contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', gap: space.space6 }}>
+          <View style={{ width: Math.min(360, Math.round(width * 0.42)), gap: space.space3 }}>
+            {/* The readings open at the top and stay there; the checks scroll under them. */}
+            <ScrollView indicatorStyle="white" style={{ flex: 1 }} contentContainerStyle={{ gap: space.space5 }}>
               {patientPanel}
               {operatorPanel}
             </ScrollView>
+            {/* The two actions are always in reach, so starting a sitting never moves the column. */}
+            <View style={{ flexDirection: 'row', gap: space.space2 }}>
+              <View style={{ flex: 1 }}>{backAction}</View>
+              <View style={{ flex: 1 }}>{mainAction}</View>
+            </View>
           </View>
         </View>
       ) : (
@@ -253,6 +267,10 @@ function SittingScreen({ patientNumber, kind, enrolFace, deviceId }: Props) {
           <View style={{ height: Math.round(width * 0.9) }}>{viewfinder}</View>
           {patientPanel}
           {operatorPanel}
+          <View style={{ gap: space.space2 }}>
+            {mainAction}
+            {backAction}
+          </View>
         </ScrollView>
       )}
     </SafeAreaView>
