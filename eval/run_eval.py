@@ -20,8 +20,9 @@ Tune on the tuning set only (--split tuning). Every published figure comes from 
 
 Directories: --data and --out, or TRIAGECAM_EVAL_DATA and TRIAGECAM_EVAL_OUT, default eval/data
 and eval/out. A git worktree has neither, so point it at one shared data directory and at an
-output directory of its own. A download is refused when the data directory's disk has less than
---min-free-gb free (default 5).
+output directory of its own. Downloads are held back, and after 20 minutes refused, when they
+and the downloads in flight would leave the data directory's disk with less than --min-free-gb
+free (default 6). With 1.9 GB UBFC videos, --workers 2 needs about 10 GB free to make progress.
 """
 import argparse
 import concurrent.futures
@@ -44,7 +45,7 @@ import split
 ROOT = pathlib.Path(__file__).resolve().parent
 DATA = pathlib.Path(os.environ.get("TRIAGECAM_EVAL_DATA") or ROOT / "data").resolve()
 OUT = pathlib.Path(os.environ.get("TRIAGECAM_EVAL_OUT") or ROOT / "out").resolve()
-MIN_FREE_BYTES = 5 * 1024 ** 3  # a download is refused when the disk has less than this free
+MIN_FREE_BYTES = 6 * 1024 ** 3  # downloads wait, then are refused, rather than leave less than this free
 CONVERTER = ROOT / "video-to-sitting/.build/release/video-to-sitting"
 ENGINE = ROOT.parent / "packages/signal-engine/.build/release/engine-cli"
 
@@ -275,7 +276,7 @@ def main():
                         help="evaluate one set only; the other set's rows from the last run are kept")
     parser.add_argument("--data", default=None, help="dataset directory (default TRIAGECAM_EVAL_DATA, else eval/data)")
     parser.add_argument("--out", default=None, help="output directory (default TRIAGECAM_EVAL_OUT, else eval/out)")
-    parser.add_argument("--min-free-gb", type=float, default=None, help="refuse downloads below this much free disk (default 5)")
+    parser.add_argument("--min-free-gb", type=float, default=None, help="downloads never leave less than this much disk free (default 6)")
     arguments = parser.parse_args()
     set_directories(arguments.data, arguments.out, arguments.min_free_gb)
     found = split.problems()
