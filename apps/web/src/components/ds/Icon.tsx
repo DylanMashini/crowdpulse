@@ -36,6 +36,10 @@ const GLYPHS = {
   video: [['rect', { x: 3, y: 7, width: 12, height: 10, rx: 2 }], ['path', { d: 'M15 11l6-3v8l-6-3' }]],
   thermal: [['path', { d: 'M10 14V5a2 2 0 0 1 4 0v9a4 4 0 1 1-4 0z' }]],
   chevron: [['path', { d: 'M9 6l6 6-6 6' }]],
+  selector: [['path', { d: 'M8 9.5l4-4 4 4M8 14.5l4 4 4-4' }]],
+  panel: [['rect', { x: 3, y: 4.5, width: 18, height: 15, rx: 2.5 }], ['path', { d: 'M9 4.5v15' }]],
+  phone: [['rect', { x: 7, y: 3, width: 10, height: 18, rx: 2.5 }], ['path', { d: 'M11 17.5h2' }]],
+  'sign-out': [['path', { d: 'M10 4.5H6.5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2H10' }], ['path', { d: 'M15 8l4 4-4 4M19 12H9.5' }]],
   'eye-off': [
     ['path', { d: 'M3 3l18 18' }],
     ['path', { d: 'M10.6 6.1A9.6 9.6 0 0 1 12 6c5 0 8.5 4 9.5 6-.4.8-1.2 2-2.4 3.1' }],
