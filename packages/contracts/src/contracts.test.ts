@@ -127,9 +127,17 @@ test('a summary without a confidence gets the engine\'s rule: fewer than ten val
   assert.equal(summaryHeartRateConfidence(summary({ value: 72, coverage: 1 }, 8.4)), 'low');
   assert.equal(summaryHeartRateConfidence(summary({ value: 72, coverage: 1 }, 10)), 'normal');
 
-  // What the phone says always wins, either way.
-  assert.equal(summaryHeartRateConfidence(summary({ value: 72, coverage: 0 }, 60, 'normal')), 'normal');
+  // A stated confidence is believed only as far as the sitting's own numbers bear it out: the
+  // lower of what the phone says and what the rule makes of the summary (QA round 3, N2).
+  assert.equal(summaryHeartRateConfidence(summary({ value: 72, coverage: 0 }, 60, 'normal')), 'low');
+  assert.equal(summaryHeartRateConfidence(summary({ value: 102, coverage: 3 / 60 }, 60, 'normal')), 'low');
+  assert.equal(summaryHeartRateConfidence(summary({ value: 72, coverage: 9 / 59 }, 59.98, 'normal')), 'low');
+  assert.equal(summaryHeartRateConfidence(summary({ value: 72, coverage: 1 }, 8.4, 'normal')), 'low');
+  assert.equal(summaryHeartRateConfidence(summary({ value: 72, coverage: 10 / 59 }, 59.98, 'normal')), 'normal');
+  assert.equal(summaryHeartRateConfidence(summary({ value: 72, coverage: 0.87 }, 60, 'normal')), 'normal');
+  // The phone may always say less than the numbers would: the engine knows why.
   assert.equal(summaryHeartRateConfidence(summary({ value: 72, coverage: 0.9 }, 60, 'low')), 'low');
+  assert.equal(summaryHeartRateConfidence(summary({ value: 72, coverage: 0 }, 60, 'low')), 'low');
   // A null beside a heart rate says nothing, so the rule applies.
   assert.equal(summaryHeartRateConfidence(summary({ value: 72, coverage: 0 }, 60, null)), 'low');
   assert.equal(summaryHeartRateConfidence(summary({ value: 72, coverage: 0.9 }, 60, null)), 'normal');

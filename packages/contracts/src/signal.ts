@@ -138,17 +138,22 @@ export const isLowConfidence = (confidence: HeartRateConfidence | null | undefin
 export const MIN_READINGS_FOR_NORMAL_CONFIDENCE = 10;
 
 /**
- * The confidence of a summary's heart rate, whether or not the phone sent one. A stated
- * `heartRateConfidence` always wins. A build of the capture module from before the field
- * leaves it out, and then the engine's own rule is applied to what the summary does carry:
- * the engine makes one reading a second, so `coverage` times the whole seconds of the sitting
- * is how many readings were valid, and fewer than ten is `low`. Null when there is no heart rate.
+ * The confidence of a summary's heart rate, whether or not the phone sent one: the lower of
+ * what the phone states and what the engine's own rule makes of the numbers the summary
+ * carries. The engine makes one reading a second, so `coverage` times the whole seconds of the
+ * sitting is how many readings were valid, and fewer than ten is `low`.
+ *
+ * A build of the capture module from before the field leaves it out, and the rule alone
+ * decides. A stated `low` stands whatever the numbers are: the engine knows why. A stated
+ * `normal` on fewer than ten valid readings is not believed, because the engine never says
+ * that, and a rate taken for `normal` becomes the baseline every later sitting is compared
+ * with. Null when there is no heart rate.
  */
 export function summaryHeartRateConfidence(
   summary: Pick<SittingSummary, 'durationSeconds' | 'heartRate' | 'heartRateConfidence'>,
 ): HeartRateConfidence | null {
   if (summary.heartRate.value === null) return null;
-  if (summary.heartRateConfidence != null) return summary.heartRateConfidence;
+  if (summary.heartRateConfidence === 'low') return 'low';
   // 59.98 s of frames is 59 one-second readings; the small allowance is for a duration that lost digits on the way.
   const readings = Math.floor(summary.durationSeconds + 1e-6);
   const valid = Math.round(summary.heartRate.coverage * readings);
