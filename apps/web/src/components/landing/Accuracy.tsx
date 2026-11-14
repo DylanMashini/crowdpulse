@@ -1,4 +1,19 @@
-import { bpm, dataset, evaluatedOn, heldOut, longDate, pairing, percent, provenance, signedBpm, split, type EvalSummary } from './eval-data';
+import {
+  bpm,
+  dataset,
+  evaluatedOn,
+  heldOut,
+  heldOutWithoutSeen,
+  longDate,
+  pairing,
+  percent,
+  provenance,
+  referenceChecks,
+  seenInDevelopment,
+  signedBpm,
+  split,
+  type EvalSummary,
+} from './eval-data';
 
 function Figure({ value, unit, label }: { value: string; unit?: string; label: string }) {
   return (
@@ -16,9 +31,14 @@ function Figure({ value, unit, label }: { value: string; unit?: string; label: s
  * The accuracy section. Every figure is read from eval-data.json, which holds one thing: the
  * held-out set of UBFC-rPPG. Each group of figures carries its provenance line (dataset, set, n,
  * date), and the error figures say they are measured on the seconds that had a reading.
+ *
+ * The held-out figure is never shown without its disclosure: some held-out subjects had been
+ * used in engine checks before the split was drawn. They stay in the figure, and the figure
+ * without them is printed beside it.
  */
 export function Accuracy() {
   const s = heldOut;
+  const unseen = heldOutWithoutSeen;
   const date = longDate(evaluatedOn) ?? evaluatedOn;
 
   return (
@@ -86,6 +106,39 @@ export function Accuracy() {
           </dl>
         </div>
 
+        <div className="lp-silence">
+          <div>
+            <h3 className="lp-h3">How the test set was kept apart</h3>
+            <p>
+              Subjects were split into a tuning set and a held-out set by a fixed seed before the new recordings were scored. Every figure
+              here comes from the held-out set.
+            </p>
+          </div>
+          <dl className="lp-silence-facts">
+            {unseen ? (
+              <div>
+                <dt>
+                  {numberWord(seenInDevelopment)} of the {s.subjects} were not new to the engine
+                </dt>
+                <dd>
+                  {numberWord(seenInDevelopment)} of the {s.subjects} held-out subjects had been used to check the engine during earlier
+                  development. They stay in the figures above. Without them, the mean absolute error is {bpm(unseen.maeBpm)} bpm, with{' '}
+                  {percent(unseen.within5)} of readings within 5 bpm ({unseen.subjects} subjects,{' '}
+                  {unseen.pairedReadings.toLocaleString('en-US')} one-second readings, evaluated {date}).
+                </dd>
+              </div>
+            ) : null}
+            <div>
+              <dt>The reference</dt>
+              <dd>
+                The fingertip oximeter heart rate recorded with the dataset. For {referenceChecks.authorsFile} of the {s.subjects} subjects
+                the reference file was checked against the dataset authors&apos; copy; for the other {referenceChecks.otherCopies}, against
+                two other public copies of the dataset.
+              </dd>
+            </div>
+          </dl>
+        </div>
+
         <details className="lp-table-details">
           <summary>The figures as a table</summary>
           <div className="lp-table-scroll">
@@ -105,6 +158,7 @@ export function Accuracy() {
               </thead>
               <tbody>
                 <Row label={`${dataset.title}, held-out set, evaluated ${date}`} s={s} />
+                {unseen ? <Row label={`The same, without the ${seenInDevelopment} subjects used in earlier engine checks`} s={unseen} /> : null}
               </tbody>
             </table>
           </div>
@@ -141,5 +195,8 @@ function Row({ label, s }: { label: string; s: EvalSummary }) {
     </tr>
   );
 }
+
+/** "Four" for 4: counts that open a sentence are spelled out. */
+const numberWord = (n: number) => ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'][n] ?? String(n);
 
 const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
