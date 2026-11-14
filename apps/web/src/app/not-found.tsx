@@ -6,7 +6,7 @@ import { buttonClass } from '@/components/ds';
 export default function NotFound() {
   return (
     <AuthFrame title="There is no page at this address" lead="The address may be mistyped, or the page may have moved.">
-      <Link href="/waiting-room" className={buttonClass('secondary', 'md', true)}>
+      <Link href="/waiting-room" className={buttonClass('secondary', 'lg', true)}>
         Go to the waiting room
       </Link>
     </AuthFrame>

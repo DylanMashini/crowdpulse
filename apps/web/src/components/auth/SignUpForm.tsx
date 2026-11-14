@@ -44,6 +44,7 @@ export function SignUpForm() {
       {failure ? <FormError>{failure}</FormError> : null}
       <Field
         block
+        size="lg"
         label="Work email"
         type="email"
         name="email"
@@ -55,6 +56,7 @@ export function SignUpForm() {
       />
       <Field
         block
+        size="lg"
         label="Password"
         type="password"
         name="password"
@@ -64,10 +66,10 @@ export function SignUpForm() {
         error={passwordError ?? undefined}
         hint="8 characters or more"
       />
-      <Button type="submit" variant="primary" block disabled={busy}>
+      <Button type="submit" variant="primary" size="lg" block disabled={busy}>
         {busy ? 'Creating account' : 'Create account'}
       </Button>
-      <p className="text-ink-muted">
+      <p className="type-dense text-ink-muted">
         Already have an account?{' '}
         <Link href="/sign-in" className={textLink}>
           Sign in

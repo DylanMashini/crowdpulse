@@ -74,6 +74,7 @@ export function CheckEmail() {
         {pending ? null : (
           <Field
             block
+            size="lg"
             label="Email"
             type="email"
             name="email"
@@ -84,30 +85,30 @@ export function CheckEmail() {
           />
         )}
         {sentAt !== null ? (
-          <p role="status" className="text-ink">
+          <p role="status" className="type-dense text-ink-muted tabular-nums">
             {handedBack
               ? `New link made at ${clockTime(sentAt)}. The earlier link no longer needs to be used.`
               : `Sent at ${clockTime(sentAt)}. If nothing arrives in a few minutes, check the spam folder and that the address is right.`}
           </p>
         ) : null}
-        <Button type="submit" block disabled={busy || waitLeft > 0}>
+        <Button type="submit" size="lg" block disabled={busy || waitLeft > 0}>
           {sendLabel}
         </Button>
       </form>
 
       {pending?.devToken ? (
-        <div className="rounded-lg border border-dashed border-line-strong p-4">
-          <p className="type-subheading">No email was sent</p>
-          <p className="mt-1 text-ink-muted">
+        <div className="rounded-lg border border-line bg-surface-2 p-4">
+          <p className="type-label text-ink">No email was sent</p>
+          <p className="mt-1 type-dense text-ink-muted">
             This server has no mail key, so the verification link is here instead
           </p>
-          <Link href={`/verify-email?token=${encodeURIComponent(pending.devToken)}`} className={`${textLink} mt-2 inline-block`}>
+          <Link href={`/verify-email?token=${encodeURIComponent(pending.devToken)}`} className={`${textLink} mt-2 inline-block type-dense`}>
             Open the verification link
           </Link>
         </div>
       ) : null}
 
-      <p className="text-ink-muted">
+      <p className="type-dense text-ink-muted">
         Already verified?{' '}
         <Link href="/sign-in" className={textLink}>
           Sign in

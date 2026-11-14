@@ -28,7 +28,7 @@ export function VerifyEmail({ token }: { token?: string }) {
   if (!token) {
     return (
       <AuthFrame title="This link is incomplete" lead="The address is missing its verification code. Open the link from the email again, or ask for a new one.">
-        <Link href="/check-email" className={buttonClass('secondary', 'md', true)}>
+        <Link href="/check-email" className={buttonClass('secondary', 'lg', true)}>
           Send a new link
         </Link>
       </AuthFrame>
@@ -45,7 +45,7 @@ export function VerifyEmail({ token }: { token?: string }) {
           </>
         }
       >
-        <Link href="/sign-in" className={buttonClass('primary', 'md', true)}>
+        <Link href="/sign-in" className={buttonClass('primary', 'lg', true)}>
           Sign in
         </Link>
       </AuthFrame>
@@ -58,10 +58,10 @@ export function VerifyEmail({ token }: { token?: string }) {
         title="This link no longer works"
         lead="A verification link works once and expires after 24 hours. If the address is already verified, sign in. Otherwise ask for a new link."
       >
-        <Link href="/check-email" className={buttonClass('primary', 'md', true)}>
+        <Link href="/check-email" className={buttonClass('primary', 'lg', true)}>
           Send a new link
         </Link>
-        <Link href="/sign-in" className={textLink}>
+        <Link href="/sign-in" className={`${textLink} self-start type-dense`}>
           Sign in
         </Link>
       </AuthFrame>
@@ -74,6 +74,7 @@ export function VerifyEmail({ token }: { token?: string }) {
         <FormError>{result.error.message}</FormError>
         <Button
           block
+          size="lg"
           onClick={() => {
             attempts.delete(token);
             result.reload();
@@ -87,7 +88,7 @@ export function VerifyEmail({ token }: { token?: string }) {
 
   return (
     <AuthFrame title="Verifying your email">
-      <p role="status" className="text-ink-muted">
+      <p role="status" className="type-dense text-ink-muted">
         Checking the link with the server
       </p>
     </AuthFrame>
