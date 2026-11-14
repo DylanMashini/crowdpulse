@@ -15,7 +15,7 @@
 //   SMOKE_OVERDUE=1    Also wait a minute for a patient to go overdue. Changes the re-check
 //                      interval while it runs, so use it on a database of your own.
 //
-// It creates one account, two devices and three patients, and discharges the patients it made.
+// It creates one account, two devices and four patients, and discharges the patients it made.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -412,6 +412,7 @@ assert.ok(scoreRise);
 assert.deepEqual(scoreRise.detail.pulse, { base: 72, now: 108 });
 assert.equal(scoreRise.detail.scoreNow, 2);
 assert.equal(scoreRise.handoff, flagged.handoff);
+assert.equal(new Set(flags.map((flag) => flag.alertId)).size, 1, "the two trend flags one sitting raised are one alert");
 done(`the second raised re-check tripped the flag. ${flagged.handoff}`);
 
 await seen("sitting_started", (event) => event.sitting.id === checkIn.id);
@@ -500,6 +501,51 @@ const trippingAt = oldestFirst.findIndex((entry) => entry.type === "sitting" && 
 const firstOpened = oldestFirst.findIndex((entry) => entry.type === "flag_opened");
 assert.ok(trippingAt !== -1 && trippingAt < firstOpened, "the sitting comes before the flags it raised");
 done("patient detail: baseline, sittings, flags and a newest-first timeline");
+
+// --- two deteriorations, two alerts -----------------------------------------------------------
+
+{
+  // A pulse that moves from the baseline but stays in the same band opens baseline_shift alone.
+  const { pulseDeltaBpm } = (await ok(SettingsResponse, 200, "GET", routes.settings, { auth: web })).settings;
+  const shifted = 60 + pulseDeltaBpm + 4;
+  if (shifted > 90 || pulseDeltaBpm >= 40) {
+    done(`two alerts for two deteriorations: not run, the pulse threshold is ${pulseDeltaBpm} bpm`);
+  } else {
+    const stepwise = (await ok(PatientResponse, 201, "POST", routes.patients, { auth: web, body: {} })).patient.number;
+    await (await sit(stepwise, "check_in", 60, 16, 3)).finish();
+    await (await sit(stepwise, "recheck", shifted, 16, 3)).finish();
+    await (await sit(stepwise, "recheck", shifted, 16, 3)).finish();
+    const earlier = await openFlags(stepwise);
+    assert.deepEqual(earlier.map((flag) => flag.rule), ["baseline_shift"]);
+    // Then it climbs into a higher band: score_rise opens on a later sitting, with other numbers.
+    await (await sit(stepwise, "recheck", 100, 16, 3)).finish();
+    await (await sit(stepwise, "recheck", 100, 16, 3)).finish();
+    const both = await openFlags(stepwise);
+    const shift = both.find((flag) => flag.rule === "baseline_shift");
+    const rise = both.find((flag) => flag.rule === "score_rise");
+    assert.ok(shift && rise && both.length === 2);
+    assert.equal(shift.id, earlier[0]?.id, "the earlier flag is still the same episode");
+    assert.notEqual(shift.alertId, rise.alertId, "flags raised by different sittings are different alerts");
+    assert.deepEqual(shift.detail.pulse, { base: 60, now: shifted });
+    assert.deepEqual(rise.detail.pulse, { base: 60, now: 100 });
+    const { item: twoAlerts } = await worklistItem(stepwise);
+    assert.equal(new Set(twoAlerts.flags.map((flag) => flag.alertId)).size, 2);
+
+    await ok(FlagResponse, 200, "POST", routes.flagAcknowledge(rise.id), { auth: mobile });
+    const afterOne = await openFlags(stepwise);
+    assert.ok(afterOne.find((flag) => flag.id === rise.id)?.acknowledgedAt);
+    assert.equal(
+      afterOne.find((flag) => flag.id === shift.id)?.acknowledgedAt,
+      null,
+      "an acknowledgement covers its own alert and no other",
+    );
+    await ok(FlagResponse, 200, "POST", routes.flagAcknowledge(shift.id), { auth: web });
+    const stepwiseView = await ok(PatientDetailResponse, 200, "GET", routes.patient(stepwise), { auth: web });
+    assert.equal(stepwiseView.timeline.filter((entry) => entry.type === "flag_acknowledged").length, 2);
+    await ok(PatientResponse, 200, "POST", routes.patientDischarge(stepwise), { auth: web });
+    done("two deteriorations were two alerts, each acknowledged on its own");
+  }
+}
 
 // --- settings and statistics --------------------------------------------------------------
 
