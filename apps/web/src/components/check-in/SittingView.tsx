@@ -177,14 +177,14 @@ export function SittingView({ sitting, patient, readings, serverNow }: SittingVi
               unit="s"
               value={summary.timeToFirstReadingSeconds == null ? undefined : rate(summary.timeToFirstReadingSeconds)}
               state={summary.timeToFirstReadingSeconds == null ? 'none' : 'valid'}
-              reason="No heart rate was accepted"
+              reason="No live heart rate"
             />
             <Readout size="md" label="Longest dropout" unit="s" value={rate(summary.longestDropoutSeconds)} />
           </div>
         ) : null}
       </Panel>
 
-      <SittingChart values={heartRates} minSeconds={60} />
+      <SittingChart values={heartRates} minSeconds={60} ended={summary != null} />
     </div>
   );
 }

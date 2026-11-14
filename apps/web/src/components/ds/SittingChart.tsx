@@ -14,6 +14,8 @@ export interface SittingChartProps {
   height?: number;
   /** The x axis covers at least this many seconds, so a running sitting draws left to right instead of rescaling. */
   minSeconds?: number;
+  /** The sitting is over: with no reading in it, the caption says so instead of waiting for one. */
+  ended?: boolean;
   className?: string;
 }
 
@@ -31,7 +33,7 @@ function lastValue(values: Array<number | null>): { index: number; value: number
  * The camera's heart rate over one sitting, second by second. Gaps stay gaps: nothing is
  * drawn across a second without a reading.
  */
-export function SittingChart({ values, title = 'Heart rate over the sitting', width = 640, height = 240, minSeconds = 0, className }: SittingChartProps) {
+export function SittingChart({ values, title = 'Heart rate over the sitting', width = 640, height = 240, minSeconds = 0, ended = false, className }: SittingChartProps) {
   const [hover, setHover] = useState<number | null>(null);
   const [asTable, setAsTable] = useState(false);
 
@@ -83,7 +85,7 @@ export function SittingChart({ values, title = 'Heart rate over the sitting', wi
         <div>
           <div className="font-semibold">{title}</div>
           <div className="type-caption text-ink-muted tabular-nums">
-            {present.length ? `${present.length} of ${count} seconds gave a reading` : 'Waiting for the first reading'}
+            {present.length ? `${present.length} of ${count} seconds gave a reading` : ended ? 'No second gave a live reading' : 'Waiting for the first reading'}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-4 text-[13px]">
