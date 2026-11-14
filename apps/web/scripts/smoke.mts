@@ -151,13 +151,13 @@ async function tokenFromLog(path: string): Promise<string> {
   });
 }
 const verificationToken = process.env.SMOKE_SERVER_LOG
-  ? await tokenFromLog(process.env.SMOKE_SERVER_LOG)
+  ? await tokenFromLog(process.env.SMOKE_SERVER_LOG).catch(() => undefined)
   : resent.devVerificationToken;
 assert.ok(
   verificationToken,
   "No verification link came back. Either the server runs with NODE_ENV=production, where it never returns or logs one " +
     "(start it with NODE_ENV=test instead, the build is the same), or it has RESEND_API_KEY set and sent a real email " +
-    "(unset it, or read the link from the log with SMOKE_SERVER_LOG).",
+    "(unset it), or SMOKE_SERVER_LOG is not the log of the server at SMOKE_URL.",
 );
 if (signedUp.devVerificationToken && again.devVerificationToken) {
   // Each new link replaces the one before it.
