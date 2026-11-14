@@ -15,6 +15,13 @@
       "when": 1794641052320,
       "tag": "0001_patients",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794645609717,
+      "tag": "0002_drop_reference_readings",
+      "breakpoints": true
     }
   ]
 }

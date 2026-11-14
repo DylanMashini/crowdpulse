@@ -35,7 +35,6 @@ export const patientStatus = pgEnum("patient_status", ["waiting", "discharged"])
 export const sittingKind = pgEnum("sitting_kind", ["check_in", "recheck"]);
 export const captureSource = pgEnum("capture_source", ["camera", "simulated", "stub", "recording"]);
 export const estimateState = pgEnum("estimate_state", ["settling", "valid", "none", "stale"]);
-export const referenceSource = pgEnum("reference_source", ["chest_strap", "oximeter", "manual"]);
 export const patientSex = pgEnum("patient_sex", ["female", "male", "other"]);
 export const flagRule = pgEnum("flag_rule", ["score_rise", "baseline_shift", "overdue"]);
 
@@ -228,26 +227,6 @@ export const beatIntervals = pgTable("beat_intervals", {
   /** For each interval, ms from the first frame of the sitting to the beat that ends it. */
   beatTimesMs: real("beat_times_ms").array().notNull(),
 });
-
-export const referenceReadings = pgTable(
-  "reference_readings",
-  {
-    id: bigserial({ mode: "number" }).primaryKey(),
-    sittingId: uuid("sitting_id")
-      .notNull()
-      .references(() => sittings.id, { onDelete: "cascade" }),
-    /** Server clock. */
-    t: instant("t").notNull(),
-    /** bpm. */
-    heartRate: real("heart_rate"),
-    /** Beat intervals in ms reported with this sample. */
-    rrIntervalsMs: real("rr_intervals_ms").array().notNull().default(sql`'{}'::real[]`),
-    /** Breaths per minute from a manual count. */
-    breathingRate: real("breathing_rate"),
-    source: referenceSource().notNull(),
-  },
-  (table) => [index("reference_readings_sitting_t_idx").on(table.sittingId, table.t)],
-);
 
 /** One row per flag episode. Open while closed_at is null. */
 export const flags = pgTable(
