@@ -233,6 +233,7 @@ All routes are under `/api` on the Next.js server. Bodies are JSON (`Content-Typ
 - Passwords: 8 characters or more and at most 72 bytes, hashed with bcrypt (cost 12).
 - Email verification: the server emails `${APP_URL}/verify-email?token=<token>` through Resend. The token is 32 random bytes, stored as SHA-256, valid for 24 hours, single use. The dashboard page `/verify-email` posts the token to the verify route. **Without `RESEND_API_KEY` and outside production**, nothing is sent: the server logs the link and returns the raw token as `devVerificationToken`, so development and tests need no mailbox.
 - Accounts are staff only. An unverified account cannot sign in.
+- **When a session ends under the dashboard** (any request answers 401 `unauthenticated` while it is open), the app shell goes to `/sign-in?next=<page>&reason=<why>`. `reason` is `expired`, or `unsaved` when the refused request was a change (anything but a `GET`), which was therefore not made; the sign-in form says so in one sentence (`apps/web/src/lib/session-ended.ts`) and ignores any other value. Opening the dashboard signed out, and signing out on purpose, carry no `reason`.
 
 "Auth" below: **public** needs no session; **staff** needs a session of a verified user, else 401 `unauthenticated`.
 
@@ -336,9 +337,9 @@ Every waiting patient appears once, in rank order (`rank` 1 first). Clients do n
 | Method and path | Auth | Request | Response |
 |---|---|---|---|
 | `GET /api/flags` | staff | Query `FlagListQuery`: `status=open\|closed\|all` (default `open`), `patient=<number>`, `limit`, `cursor` | 200 `FlagListResponse` `{ items, nextCursor }`, newest first |
-| `POST /api/flags/:id/acknowledge` | staff | none | 200 `FlagResponse` `{ flag }`. Records who and when. Acknowledging twice changes nothing. Acknowledging does not close the flag. Acknowledging an open trend flag also acknowledges the patient's other open trend flag if nobody has yet (section 6, Flag rules); each one gets its own `flag_acknowledged` event. |
+| `POST /api/flags/:id/acknowledge` | staff | none | 200 `FlagResponse` `{ flag }`. Records who and when. Acknowledging twice changes nothing. Acknowledging does not close the flag. Acknowledging an open flag also acknowledges the other open flags of the same alert (same `alertId`) that nobody has acknowledged yet, and no flag of any other alert (section 6, Flag rules); each one gets its own `flag_acknowledged` event. The response carries the flag that was named. |
 
-`Flag`: `{ id, patientNumber, rule: 'score_rise' \| 'baseline_shift' \| 'overdue', openedAt, closedAt, detail, acknowledgedAt, acknowledgedBy, handoff }`. `detail` (`FlagDetail`) holds the numbers the flag was raised on: `{ pulse: Trend, breathing: Trend, scoreAtCheckIn, scoreNow, minutesSinceCheckIn, minutesSinceObserved }`. `acknowledgedBy` is the staff member's email (the first to acknowledge).
+`Flag`: `{ id, patientNumber, rule: 'score_rise' \| 'baseline_shift' \| 'overdue', openedAt, closedAt, detail, acknowledgedAt, acknowledgedBy, handoff, alertId }`. `detail` (`FlagDetail`) holds the numbers the flag was raised on: `{ pulse: Trend, breathing: Trend, scoreAtCheckIn, scoreNow, minutesSinceCheckIn, minutesSinceObserved }`. `acknowledgedBy` is the staff member's email (the first to acknowledge). `alertId` says which alert the flag belongs to (section 6, Flag rules): an opaque string, compared for equality only. `flagAlerts(flags)` in `@triagecam/contracts` gathers a list of flags into `FlagAlert`s `{ id, flags, lead, waiting, acknowledgedAt, acknowledgedBy, closedAt }`; both apps use it and neither groups flags any other way.
 
 ### Settings
 
@@ -514,13 +515,20 @@ A flag is one episode: it opens once, may be acknowledged, and closes. At most o
 
 Trend rules run when a sitting is finished. Overdue is checked by the server on a timer of at most 30 seconds and whenever the worklist is computed.
 
-One deterioration usually opens both trend flags (`score_rise` and `baseline_shift`) in the same request, with the same numbers. They stay two flags, one per rule, but they are one alert to the nurse:
+**Alerts: what counts as one deterioration.** A nurse is told about, counts and acknowledges alerts, not rules. The server decides which flags are one alert and says so in `Flag.alertId`; the dashboard and the nurse app group by it (`flagAlerts`) and by nothing else.
 
-- One push goes out (the cool-down below).
-- One acknowledgement covers both: acknowledging either open trend flag also acknowledges the other when it is open and unacknowledged. An `overdue` flag is acknowledged on its own.
-- A client that lists a patient's open flags may show trend flags with the same `detail` as one alert. The dashboard's patient page does.
+- The trend flags (`score_rise`, `baseline_shift`) that **one sitting** raises for a patient are one alert. They open in the same request with the same `openedAt`, the same numbers and the same handoff sentence. With the default settings one deterioration usually trips both rules, so this is the normal case.
+- A trend flag that opens on a **later sitting** is another alert, even while the earlier flag is still open: it was raised on other numbers, and a nurse who acknowledged the earlier ones has not seen these.
+- An `overdue` flag is always an alert on its own.
 
-The patient timeline (`PatientDetailResponse.timeline`) is newest first. Entries at the same instant are in causal order: read oldest first, a sitting comes before the flags it closed and opened, and those before an acknowledgement. An acknowledgement that covered both trend flags is one `flag_acknowledged` entry, carrying the id of one of them.
+They stay separate flags in the database, one per rule, each with its own episode; what follows from the grouping:
+
+- One push goes out per deterioration (the cool-down below).
+- One acknowledgement covers the alert and nothing else: acknowledging any open flag also acknowledges the other open, unacknowledged flags with the same `alertId`. A flag of another alert is never acknowledged by it.
+- Every screen shows an alert once: one card naming each rule it tripped with one Acknowledge (dashboard patient page, nurse Flags tab and patient screen), one banner in the nurse app, and "to acknowledge" counts (nurse Flags tab and its badge, nurse worklist card) count alerts. An alert is acknowledged when all of its flags are (`FlagAlert.acknowledgedAt`).
+- Statistics are the exception, on purpose: `flags.raised`, `byRule`, `openNow` and `unacknowledgedNow` count flags, one per rule, because they report which rules fire.
+
+The patient timeline (`PatientDetailResponse.timeline`) is newest first. Entries at the same instant are in causal order: read oldest first, a sitting comes before the flags it closed and opened, and those before an acknowledgement. An acknowledgement that covered several flags of an alert is one `flag_acknowledged` entry, carrying the id of one of them. `flag_opened` and `flag_closed` entries are one per flag and carry the flag's `alertId`; clients pass the timeline through `timelineByAlert`, which keeps one entry where flags of an alert opened (or closed) in the same instant, so a deterioration reads as one "Flag opened" row.
 
 ### Tile state and rank
 
@@ -537,7 +545,7 @@ Rank order: all `flag` patients first (higher `score` first, then the flag that 
 
 - The handoff sentence is built on the server from a fixed template and sent as a string; clients show it as it is. It opens with `patientLabel(patient)`. Every number carries its unit and times use the dashboard's form ("26 min", "1 h 15 min", "just now"). Example: "Maya Chen: pulse 82 bpm at check-in, 108 bpm now (26 min later); breathing 16 to 24 breaths per min. Last observed 3 min ago." A flag keeps the numbers it was raised on, but its opening words follow the patient's current name.
 - When a flag opens, the server sends one push through Expo's push service to every `nurse` device that has a token, unless a push for the same patient went out within `notifyCooldownMin`. Title: "Trend flag: Maya Chen" (or "Overdue: Maya Chen"). Body: the handoff sentence. `data`: `{ flagId, patientNumber }`.
-- The nurse role shows the same flag in the app whether or not the push arrives.
+- The nurse role shows the same alert in the app whether or not the push arrives: one banner per alert, however many rules it tripped, and not for alerts that were already open when the app started or that were opened from a tapped push.
 
 ### Not in this pass
 
