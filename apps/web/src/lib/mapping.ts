@@ -7,7 +7,7 @@ import { severityOf } from './severity';
 
 /**
  * The design system's "Live" tag marks a camera measurement. On a row that describes a finished
- * sitting the word is "Camera"; every other source keeps its dashed tag and its own word.
+ * sitting the word is "Camera"; every other source keeps its outlined tag and its own word.
  */
 export function provenanceOf(source: CaptureSource): { kind: Provenance; label: string } {
   return { kind: source === 'camera' ? 'live' : 'recording', label: sourceText(source) };

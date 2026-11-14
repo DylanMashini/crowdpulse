@@ -4,10 +4,12 @@ import { cx } from '@/lib/cx';
 
 import type { Provenance } from './types';
 
+// A solid hairline for anything that is not a live camera reading. The dashed outline belongs to
+// "No reading" alone, so a simulated value never looks like a missing one.
 const KINDS: Record<Provenance, { word: string; className: string }> = {
   live: { word: 'Live', className: 'bg-signal-soft text-signal' },
-  recording: { word: 'Recording', className: 'border border-dashed border-line-strong text-ink-muted' },
-  experimental: { word: 'Experimental', className: 'border border-dashed border-line-strong text-ink-faint' },
+  recording: { word: 'Recording', className: 'border border-line-strong text-ink-muted' },
+  experimental: { word: 'Experimental', className: 'border border-line-strong text-ink-faint' },
   'ai-draft': { word: 'AI draft', className: 'bg-surface-3 text-ink-muted' },
 };
 
