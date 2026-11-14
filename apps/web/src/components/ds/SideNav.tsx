@@ -155,7 +155,7 @@ export function SideNav({ groups, active, homeHref = '/', station, account, coll
           <Link
             href={homeHref}
             className={cx('flex h-control-md min-w-0 items-center rounded-md', collapsed ? 'w-control-md justify-center' : 'px-2')}
-            aria-label={collapsed ? 'Triage Cam' : undefined}
+            aria-label={collapsed ? 'Crowdpulse' : undefined}
           >
             {collapsed ? <BrandMark /> : <BrandLockup />}
           </Link>

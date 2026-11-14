@@ -21,7 +21,7 @@ export function AuthFrame({ title, lead, children, notice = false }: AuthFramePr
   return (
     <div className="flex min-h-screen flex-col px-5 py-5">
       <Link href="/" className="self-start rounded-md">
-        <BrandLockup />
+        <BrandLockup size="md" />
       </Link>
       <main className="mx-auto flex w-full max-w-[360px] flex-1 flex-col justify-center gap-6 pt-8 pb-16">
         <div className="flex flex-col gap-2">

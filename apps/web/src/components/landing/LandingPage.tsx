@@ -38,7 +38,7 @@ export function LandingPage({ signedIn }: { signedIn: boolean }) {
 
       <header className="lp-wrap lp-nav">
         <Link href="/" className="lp-brand">
-          <BrandLockup />
+          <BrandLockup size="md" />
         </Link>
         <nav className="lp-nav-links" aria-label="Sections">
           <a href="#how">How it works</a>

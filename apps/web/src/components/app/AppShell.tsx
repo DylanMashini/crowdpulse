@@ -108,7 +108,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <main className="min-h-screen bg-surface-1">
-      <BrandLockup className="px-5 pt-5" />
+      <div className="px-5 pt-5">
+        <BrandLockup />
+      </div>
       {session.error && !signedOut ? (
         <StateMessage kind="error" title="The session could not be checked" onRetry={session.reload}>
           {session.error.message}
