@@ -1,4 +1,4 @@
-import { type Flag, type FlagRule, patientLabel, type Settings } from "@triagecam/contracts";
+import { byFlagRule, FLAG_RULE_ORDER, type Flag, patientLabel, type Settings } from "@triagecam/contracts";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 
 import { db, schema } from "../../db/client.ts";
@@ -11,15 +11,12 @@ import { getSettings } from "../settings.ts";
 import { handoffSentence } from "./handoff.ts";
 import { type SittingFacts, snapshotPatient, type PatientSnapshot } from "./rules.ts";
 
-/** Trend rules first: this is also the order flags are listed in. */
-const RULES: FlagRule[] = ["score_rise", "baseline_shift", "overdue"];
-
 export type PatientHistory = {
   patient: PatientRow;
   /** Oldest first. */
   sittings: SittingRow[];
   snapshot: PatientSnapshot;
-  /** Open flags, in RULES order. */
+  /** Open flags, in rule order (`FLAG_RULE_ORDER`). */
   openFlags: FlagRow[];
 };
 
@@ -69,7 +66,7 @@ async function loadHistories(patients: PatientRow[], settings: Settings, now: Da
       snapshot: snapshotPatient(own.map(sittingFacts), patient.createdAt, settings, now),
       openFlags: openFlags
         .filter((flag) => flag.patientId === patient.id)
-        .sort((a, b) => RULES.indexOf(a.rule) - RULES.indexOf(b.rule)),
+        .sort(byFlagRule),
     };
   });
 }
@@ -80,7 +77,7 @@ async function applyRules(history: PatientHistory, now: Date): Promise<{ opened:
   const opened: Flag[] = [];
   let changed = false;
 
-  for (const rule of RULES) {
+  for (const rule of FLAG_RULE_ORDER) {
     const status = snapshot.rules[rule];
     const open = history.openFlags.find((flag) => flag.rule === rule);
 
@@ -115,7 +112,7 @@ async function applyRules(history: PatientHistory, now: Date): Promise<{ opened:
       changed = true;
     }
   }
-  history.openFlags.sort((a, b) => RULES.indexOf(a.rule) - RULES.indexOf(b.rule));
+  history.openFlags.sort(byFlagRule);
   return { opened, changed };
 }
 

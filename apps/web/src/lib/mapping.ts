@@ -1,4 +1,4 @@
-import { timelineByAlert, type CaptureSource, type FlagRule, type TimelineEntry, type WorklistItem } from '@triagecam/contracts';
+import { byFlagRule, timelineByAlert, type CaptureSource, type FlagRule, type TimelineEntry, type WorklistItem } from '@triagecam/contracts';
 
 import type { Provenance, TimelineItem, WorklistRow } from '@/components/ds';
 
@@ -29,9 +29,6 @@ export function toWorklistRow(item: WorklistItem): WorklistRow & { measured: num
     measured: item.parametersMeasured,
   };
 }
-
-/** Trend rules in the order the alert card names them. */
-const RULE_ORDER: FlagRule[] = ['score_rise', 'baseline_shift', 'overdue'];
 
 function toTimelineItem(entry: TimelineEntry, rules: Map<string, FlagRule>, alertRules: Map<string, FlagRule[]>): TimelineItem {
   const time = clockTime(entry.at);
@@ -85,7 +82,8 @@ export function toTimelineItems(entries: TimelineEntry[]): TimelineItem[] {
     rules.set(entry.flagId, entry.rule);
     alertRules.set(entry.alertId, [...(alertRules.get(entry.alertId) ?? []), entry.rule]);
   }
-  for (const tripped of alertRules.values()) tripped.sort((a, b) => RULE_ORDER.indexOf(a) - RULE_ORDER.indexOf(b));
+  // The order the alert's card names them in.
+  for (const tripped of alertRules.values()) tripped.sort(byFlagRule);
   return timelineByAlert(entries)
     .map((entry) => toTimelineItem(entry, rules, alertRules))
     .reverse();
