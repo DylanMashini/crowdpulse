@@ -54,6 +54,23 @@ if ! [[ "$registry" =~ ^[0-9]{12}$ ]]; then
 fi
 image="$registry.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$tag"
 
+# One deploy at a time. The workflow queues its own runs, but nothing else stops a deploy by
+# hand from racing one: two would each register a task definition and move the service, and
+# the later one would win whatever its commit. So this refuses while ECS is still deploying.
+in_progress() {
+  aws ecs list-service-deployments --cluster "$CLUSTER" --service "$SERVICE" \
+    --status PENDING IN_PROGRESS ROLLBACK_REQUESTED ROLLBACK_IN_PROGRESS \
+    --query 'serviceDeployments[0].serviceDeploymentArn' --output text
+}
+refuse_if_deploying() {
+  local running
+  running=$(in_progress)
+  if [ -n "$running" ] && [ "$running" != "None" ]; then
+    fail "A deployment of $SERVICE is already under way (${running##*/}). Wait for it to finish, then run this again."
+  fi
+}
+refuse_if_deploying
+
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
@@ -122,6 +139,7 @@ fi
 # to it at once and stops the old one after the bake time. A task that never becomes healthy
 # is rolled back, and this script fails.
 
+refuse_if_deploying # again: the migrations may have taken a while
 started=$(($(date +%s) - 5))
 aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" --task-definition "$task_definition" > /dev/null
 
