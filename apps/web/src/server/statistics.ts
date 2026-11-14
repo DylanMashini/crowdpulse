@@ -80,6 +80,9 @@ export async function statistics(range: { from?: string; to?: string }): Promise
   const stateNow = new Map<string, TileState>(histories.map((history) => [history.patient.id, historyState(history)]));
   const byState: Record<TileState, number> = { observed: 0, flag: 0, overdue: 0, "no-reading": 0 };
   for (const state of stateNow.values()) byState[state] += 1;
+  const lowConfidenceNow = histories.filter(
+    (history) => stateNow.get(history.patient.id) === "no-reading" && history.snapshot.latestLowConfidencePulse !== null,
+  ).length;
   const minutesWaiting = histories.map((history) => minutesBetween(history.patient.createdAt, now));
   const minutesSinceObserved = histories.map((history) =>
     minutesBetween(history.snapshot.lastObservedAt ?? history.patient.createdAt, now),
@@ -142,6 +145,7 @@ export async function statistics(range: { from?: string; to?: string }): Promise
     waitingNow: {
       patients: histories.length,
       byState,
+      lowConfidence: lowConfidenceNow,
       medianMinutesWaiting: median(minutesWaiting),
       longestMinutesWaiting: highest(minutesWaiting),
       medianMinutesSinceObserved: median(minutesSinceObserved),

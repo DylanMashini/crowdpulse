@@ -1,6 +1,6 @@
 'use client';
 
-import { patientLabel, type FlagRule, type PatientStatistics, type Statistics, type TileState } from '@triagecam/contracts';
+import { LOWER_CONFIDENCE_REPEAT, patientLabel, type FlagRule, type PatientStatistics, type Statistics, type TileState } from '@triagecam/contracts';
 import Link from 'next/link';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
@@ -62,8 +62,13 @@ const STATES: Array<{ state: TileState; label: string; swatch: string }> = [
   { state: 'observed', label: 'Observed', swatch: 'bg-signal' },
 ];
 
-/** Who is in the room now, by state: one bar split in the order a nurse would walk it. */
-function StateBar({ byState, total }: { byState: Record<TileState, number>; total: number }) {
+/**
+ * Who is in the room now, by state: one bar split in the order a nurse would walk it. A
+ * patient whose latest sitting gave a lower-confidence pulse is in the no-reading state and
+ * its part of the bar, and is counted under its own words in the legend.
+ */
+function StateBar({ byState, lowConfidence, total }: { byState: Record<TileState, number>; lowConfidence: number; total: number }) {
+  const shown = (state: TileState) => (state === 'no-reading' ? byState[state] - lowConfidence : byState[state]);
   return (
     <div className="flex flex-col gap-3">
       <div aria-hidden className="flex h-[12px] gap-[2px]">
@@ -75,8 +80,14 @@ function StateBar({ byState, total }: { byState: Record<TileState, number>; tota
         {STATES.map(({ state, label, swatch }) => (
           <li key={state} className="flex items-center gap-2">
             <span aria-hidden className={cx('size-[10px] rounded-[2px]', swatch)} />
-            <span className="font-semibold tabular-nums">{byState[state]}</span>
+            <span className="font-semibold tabular-nums">{shown(state)}</span>
             <span className="text-ink-muted">{label}</span>
+            {state === 'no-reading' && lowConfidence > 0 ? (
+              <>
+                <span className="font-semibold tabular-nums">{lowConfidence}</span>
+                <span className="text-ink-muted">{LOWER_CONFIDENCE_REPEAT}</span>
+              </>
+            ) : null}
           </li>
         ))}
       </ul>
@@ -209,7 +220,7 @@ function Results({ data }: { data: Statistics }) {
             <p className="text-ink-muted">Nobody is waiting. Patients appear here when a check-in starts.</p>
           ) : (
             <div className="flex flex-col gap-4">
-              <StateBar byState={waitingNow.byState} total={waitingNow.patients} />
+              <StateBar byState={waitingNow.byState} lowConfidence={waitingNow.lowConfidence ?? 0} total={waitingNow.patients} />
               <dl>
                 <Line label="Median wait">{orNone(waitingNow.medianMinutesWaiting, minutes, 'Nobody waiting')}</Line>
                 <Line label="Longest wait">{orNone(waitingNow.longestMinutesWaiting, minutes, 'Nobody waiting')}</Line>
