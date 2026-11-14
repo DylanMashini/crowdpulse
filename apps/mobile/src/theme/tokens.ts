@@ -71,9 +71,9 @@ export const fonts = {
     "600": "System"
   },
   "mono": {
-    "400": "ui-monospace",
-    "500": "ui-monospace",
-    "600": "ui-monospace"
+    "400": "Menlo",
+    "500": "Menlo",
+    "600": "Menlo"
   }
 } as const;
 
@@ -87,7 +87,7 @@ export const weight = {
 /** Type styles, in points. Spread one into a Text style. */
 export const type = {
   "readoutXl": {
-    "fontFamily": "ui-monospace",
+    "fontFamily": "Menlo",
     "fontWeight": "400",
     "fontSize": 72,
     "lineHeight": 72,
@@ -97,7 +97,7 @@ export const type = {
     ]
   },
   "readoutLg": {
-    "fontFamily": "ui-monospace",
+    "fontFamily": "Menlo",
     "fontWeight": "400",
     "fontSize": 48,
     "lineHeight": 48,
@@ -107,7 +107,7 @@ export const type = {
     ]
   },
   "readoutMd": {
-    "fontFamily": "ui-monospace",
+    "fontFamily": "Menlo",
     "fontWeight": "400",
     "fontSize": 28,
     "lineHeight": 32,
@@ -117,7 +117,7 @@ export const type = {
     ]
   },
   "readoutSm": {
-    "fontFamily": "ui-monospace",
+    "fontFamily": "Menlo",
     "fontWeight": "400",
     "fontSize": 13,
     "lineHeight": 20,
