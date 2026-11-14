@@ -130,12 +130,12 @@ public enum EstimateState: String { case settling, valid, none, stale }
 | `reason` | When |
 |---|---|
 | `warming_up` | Not enough history for a first window (`settling`) |
-| `awaiting_agreement` | Windows exist but three consecutive ones have not agreed yet (`settling`) |
+| `awaiting_agreement` | Fewer than three of the newest five windows, this one among them, agree within 5 bpm (`settling` until the first reading). Breathing still needs three in a row |
 | `no_face` | No face in the frame |
 | `face_changed` | `faceTrackId` changed and history was reset |
 | `exposure_adjusting` | Exposure is not locked |
-| `low_quality` | Quality at the reported frequency is under the threshold |
-| `motion` | Motion made part of the analysis window unusable |
+| `low_quality` | Quality at the reported frequency is under the threshold, or the newest 4 s of the window do not hold the rhythm by themselves |
+| `motion` | More than 30% of the heart-rate window had to be cut out around jumps in the regions' colour balance or fast chest movement; for breathing, more than 5% of the frames are in motion. A change in brightness alone is not motion |
 | `gaps` | The window has gaps or too few samples |
 | `band_edge` | The peak is at the edge of the search band |
 | `no_chest` | The chest region is not tracked (breathing only) |
@@ -144,7 +144,7 @@ public enum EstimateState: String { case settling, valid, none, stale }
 ```swift
 public struct SittingSummary {
   var durationSeconds: Double; var frameCount: Int; var droppedFrames: Int
-  var heartRate: SummaryValue       // bpm, median of valid one-second readings
+  var heartRate: SummaryValue       // bpm, median of valid one-second readings, or the whole-sitting estimate (below)
   var breathingRate: SummaryValue   // breaths per minute, likewise
   var rmssd: SummaryValue           // ms, experimental
   var sdnn: SummaryValue            // ms, experimental
@@ -156,6 +156,8 @@ public struct SummaryValue { var value: Double?; var coverage: Double }  // valu
 public struct BeatInterval { var tMs: Double; var ms: Double }           // tMs: ms from first frame to the beat ending the interval
 ```
 
+**The sitting's heart rate.** `heartRate.value` is the median of the valid one-second readings when there are at least ten of them. With three to nine, it is their median only if the whole-sitting estimate was accepted and is within 5 bpm of it; otherwise it is nil with reason `too_few_readings`. With fewer than three, it is the whole-sitting estimate when that was accepted, else nil. The whole-sitting estimate (`WholeSittingEstimate`) is the strongest peak of the spectra of every full-length window added together, accepted only at 55 bpm or more and when the peak is clear and enough separate stretches of the sitting agree with it; it never feeds a one-second reading. `coverage` is the share of valid one-second readings in every case, so a sitting can have a heart rate with a coverage near zero. Two engine-side fields say which path was taken and are **not on the wire**: `SittingSummary.heartRateSource` (`readings` or `whole_sitting`, nil without a heart rate) and `SittingSummary.wholeSitting` (the estimate with its `quality`, `prominence`, `support`, `supportingStretches`, `windows` and `accepted`). The wire `SittingSummary` and `SummaryValue` are unchanged. Thresholds and how they were set: `docs/research/engine-reliability-results.md`.
+
 For heart and breathing rate, `coverage` is the share of one-second readings that were valid. For RMSSD and SDNN it is the share of the sitting spanned by accepted beat intervals; the engine sets `value` to nil when that share is too low to report.
 
 `EngineConfiguration` carries the plan's numbers as defaults: `nominalFrameRate` 60, `heartRateBandHz` 0.7...3.0, `heartRateSearchBpm` 42...180, `breathingBandHz` 0.1...0.7, `qualityThreshold` 0.5 (to be calibrated on negative controls), `agreeingWindows` 3, `agreementToleranceBpm` 5, `staleAfterSeconds` 2. Fields may be added; these keep their names.
@@ -165,7 +167,7 @@ Also in the package, already implemented:
 - `SittingFile.read(from:)`, `.write(_:to:)`, `.encode`, `.decode`, and `SittingFileWriter(url:header:)` with `append(_:)` and `close()`.
 - `SyntheticSitting`: deterministic frame records for a chosen heart rate, breathing rate, duration and seed (`frames()`, `contents(sittingId:startedAt:)`). The engine's tests and the simulated capture source both use it.
 - `engine-cli run <sitting.jsonl>` prints one `Reading` per second as JSON Lines, then the `SittingSummary`. `engine-cli synth <out.jsonl> [--hr 72] [--br 16] [--seconds 60] [--fps 60] [--seed 1]` writes a synthetic sitting file.
-- **Diagnostics, for tuning and field debugging only.** Nothing on the wire carries them and they change no reading. `SignalEngine.collectsDiagnostics` (set before the first frame) fills `SignalEngine.diagnostics` with one `PulseDiagnostic` per whole second; `SittingReplay.run(_:configuration:diagnostics:)` returns them in `Result.diagnostics`. A `PulseDiagnostic` names the check that refused the heart-rate reading (`gate`, a `PulseGate`: `no_frames`, `no_face`, `exposure_adjusting`, `warming_up`, `recent_gap`, `too_few_samples`, `motion`, `incomplete_regions`, `flat`, `band_edge`, `flicker`, `illumination`, `quality`, `agreement`, in the order the engine applies them; `reason` folds these into the wire strings above), the numbers that check compared (`motionShare` split into `brightnessMotionShare` and `chestMotionShare`, `sampleShare`, `framesPerSecond`, `projectionYield`, `passingWindows`, `agreementSpreadBpm`), and what the window would have reported had nothing refused it (`candidateBpm`, `candidateQuality`). `engine-cli diagnose <sitting.jsonl> [reference.jsonl] [--config <overrides.json>]` prints them as JSON Lines with the nearest `referenceBpm`, then the summary; `--config` is a JSON object of `EngineConfiguration` fields to change for that replay. `eval/refusals.py` tabulates them over a folder of sittings.
+- **Diagnostics, for tuning and field debugging only.** Nothing on the wire carries them and they change no reading. `SignalEngine.collectsDiagnostics` (set before the first frame) fills `SignalEngine.diagnostics` with one `PulseDiagnostic` per whole second; `SittingReplay.run(_:configuration:diagnostics:)` returns them in `Result.diagnostics`. A `PulseDiagnostic` names the check that refused the heart-rate reading (`gate`, a `PulseGate`: `no_frames`, `no_face`, `exposure_adjusting`, `warming_up`, `recent_gap`, `too_few_samples`, `motion`, `incomplete_regions`, `flat`, `band_edge`, `flicker`, `illumination`, `quality`, `agreement`, in the order the engine applies them; `reason` folds these into the wire strings above), the numbers that check compared (`motionShare`, the share of the window cut out, with `colourJumpShare` and `chestMotionShare` for the frames each check asked to cut; `sampleShare`, `framesPerSecond`, `projectionYield`, `recentQuality`, `passingWindows`, `agreementSpreadBpm`), and what the window would have reported had nothing refused it (`candidateBpm`, `candidateQuality`). `engine-cli diagnose <sitting.jsonl> [reference.jsonl] [--config <overrides.json>]` prints them as JSON Lines with the nearest `referenceBpm`, then the summary; `--config` is a JSON object of `EngineConfiguration` fields to change for that replay. `eval/refusals.py` tabulates them over a folder of sittings, and `packages/signal-engine/Scripts/reliability.py` scores a set, builds negative controls and counts false accepts.
 
 **Linking into the app.** `packages/signal-engine/SignalEngine.podspec` builds the same sources as a pod. `apps/mobile/app.json` adds it to the Podfile through `expo-build-properties` (`ios.extraPods`, path `../../../packages/signal-engine` relative to `apps/mobile/ios`), and `TriageCapture.podspec` depends on it, so the module's Swift files `import SignalEngine`. Keep every engine source file directly in `Sources/SignalEngine` (no subfolders): the podspec globs that one directory.
 
