@@ -17,8 +17,10 @@ export type SittingFacts = {
   endedAt: Date | null;
   /** The phone finished it and sent a summary. An abandoned sitting has none and is ignored. */
   finished: boolean;
-  /** bpm from the summary; null is "No reading". */
+  /** bpm from the summary; null is "No reading", and so is a lower-confidence rate (`lowConfidenceHeartRate`). */
   heartRate: number | null;
+  /** bpm the sitting gave with lower confidence. Stated in the handoff; never a baseline, a score or a flag. */
+  lowConfidenceHeartRate?: number | null;
   /** Breaths per minute from the summary; null is "No reading". */
   breathingRate: number | null;
 };
@@ -71,6 +73,8 @@ export type PatientSnapshot = {
   latestObservation: FinishedSitting | null;
   /** The newest finished sitting gave neither rate. */
   latestGaveNoReading: boolean;
+  /** bpm the newest finished sitting gave with lower confidence, when it did. */
+  latestLowConfidencePulse: number | null;
   lastObservedAt: Date | null;
   minutesSinceObserved: number | null;
   /** Whole minutes from the baseline to the latest observation; null while the baseline is the only one. */
@@ -112,6 +116,7 @@ export function snapshotPatient(sittings: SittingFacts[], createdAt: Date, setti
     latest,
     latestObservation,
     latestGaveNoReading: latest !== null && !isObservation(latest),
+    latestLowConfidencePulse: latest?.lowConfidenceHeartRate ?? null,
     lastObservedAt,
     minutesSinceObserved,
     minutesToLatestObservation,

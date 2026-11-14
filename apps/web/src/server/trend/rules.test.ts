@@ -188,6 +188,33 @@ describe("snapshotPatient", () => {
     assert.equal(result.minutesToLatestObservation, 15);
   });
 
+  it("does not take a lower-confidence heart rate for the baseline, a score or a flag", () => {
+    // What the server makes of a sitting whose rate rests on the whole-sitting estimate:
+    // the trusted heart rate is null and the rate itself travels beside it.
+    const weak = (minutes: number, bpm: number): SittingFacts => ({ ...sitting(minutes, null, null), lowConfidenceHeartRate: bpm });
+
+    const checkIn = snapshot([weak(2, 62)], 3);
+    assert.equal(checkIn.baseline, null);
+    assert.equal(checkIn.minutesSinceObserved, null);
+    assert.equal(checkIn.latestGaveNoReading, true);
+    assert.equal(checkIn.latestLowConfidencePulse, 62);
+    assert.deepEqual(checkIn.pulse, { base: null, now: null });
+    assert.equal(checkIn.score, null);
+
+    // The next sitting with a rate that stands is the baseline, and the weak one is not compared with it.
+    const later = snapshot([weak(2, 62), sitting(6, 84, 16), sitting(20, 86, 16)], 21);
+    assert.equal(later.baseline?.heartRate, 84);
+    assert.equal(later.latestLowConfidencePulse, null);
+    assert.equal(later.rules.baseline_shift.met, false);
+
+    // A weak rate 40 bpm above the baseline, twice, raises nothing; the patient becomes overdue instead.
+    const noFlag = snapshot([sitting(2, 72, null), weak(20, 112), weak(34, 114)], 35);
+    assert.equal(noFlag.rules.baseline_shift.met, false);
+    assert.equal(noFlag.rules.score_rise.met, false);
+    assert.equal(noFlag.rules.overdue.met, true);
+    assert.equal(noFlag.latestLowConfidencePulse, 114);
+  });
+
   it("ignores a sitting that was abandoned without a summary", () => {
     const abandoned: SittingFacts = { ...sitting(10, null, null), finished: false };
     const result = snapshot([sitting(2, 72, 16), abandoned], 12);

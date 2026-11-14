@@ -14,6 +14,8 @@ export type HandoffInput = {
   minutesSinceObserved: number | null;
   minutesWaiting: number;
   latestGaveNoReading: boolean;
+  /** bpm the latest sitting gave with lower confidence; such a rate is in neither `pulse` value. */
+  latestLowConfidencePulse?: number | null;
 };
 
 /** One rate with its unit, from the formatters every screen uses. */
@@ -25,7 +27,13 @@ type WithUnit = (value: number) => string;
  * states measured numbers and nothing else, each with its unit.
  */
 export function handoffSentence(input: HandoffInput): string {
-  const noReading = input.latestGaveNoReading ? " The latest sitting gave no reading." : "";
+  const lowConfidence = input.latestLowConfidencePulse ?? null;
+  const noReading =
+    lowConfidence !== null
+      ? ` The latest sitting read pulse ${heartRate(lowConfidence)} with lower confidence; repeat it.`
+      : input.latestGaveNoReading
+        ? " The latest sitting gave no reading."
+        : "";
   if (input.minutesSinceObserved === null) {
     return `${input.label}: not yet observed, waiting ${minutes(input.minutesWaiting)}.${noReading}`;
   }

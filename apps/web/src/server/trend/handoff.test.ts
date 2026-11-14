@@ -80,6 +80,17 @@ describe("handoffSentence", () => {
     );
   });
 
+  it("states a lower-confidence pulse as such, apart from the trend", () => {
+    assert.equal(
+      handoffSentence(input({ minutesSinceObserved: null, minutesWaiting: 6, latestGaveNoReading: true, latestLowConfidencePulse: 61.5 })),
+      "Maya Chen: not yet observed, waiting 6 min. The latest sitting read pulse 62 bpm with lower confidence; repeat it.",
+    );
+    assert.equal(
+      handoffSentence(input({ minutesSinceObserved: 41, latestGaveNoReading: true, latestLowConfidencePulse: 101.5 })),
+      "Maya Chen: pulse 82 bpm at check-in, 108 bpm now (26 min later); breathing 16 to 24 breaths per min. Last observed 41 min ago. The latest sitting read pulse 102 bpm with lower confidence; repeat it.",
+    );
+  });
+
   it("adds that the latest sitting gave no reading", () => {
     assert.equal(
       handoffSentence(input({ minutesSinceObserved: 41, latestGaveNoReading: true })),

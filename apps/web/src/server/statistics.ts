@@ -3,7 +3,7 @@ import { and, asc, eq, gte, inArray, isNull, lt, ne, or } from "drizzle-orm";
 
 import { db, schema } from "../db/client.ts";
 import { flagsToWire } from "./flags.ts";
-import { hasSummary, iso, isoOrNull, type SittingRow, toPatientRef } from "./serialize.ts";
+import { hasSummary, iso, isoOrNull, type SittingRow, toPatientRef, trustedHeartRate } from "./serialize.ts";
 import { getSettings } from "./settings.ts";
 import {
   BREATHING_RATE_BINS,
@@ -31,7 +31,7 @@ const minutesBetween = (from: Date, to: Date) => Math.max(0, to.getTime() - from
 
 type FinishedSitting = SittingRow & { endedAt: Date };
 const isFinished = (sitting: SittingRow): sitting is FinishedSitting => hasSummary(sitting) && sitting.endedAt !== null;
-const isObservation = (sitting: SittingRow) => sitting.heartRate !== null || sitting.breathingRate !== null;
+const isObservation = (sitting: SittingRow) => trustedHeartRate(sitting) !== null || sitting.breathingRate !== null;
 
 /**
  * What the waiting room did in [from, to): who came and went, how often they were observed,
@@ -118,7 +118,7 @@ export async function statistics(range: { from?: string; to?: string }): Promise
       observations: counted.filter(isObservation).length,
       pulse: snapshot.pulse,
       breathing: snapshot.breathing,
-      heartRates: observations.flatMap((sitting) => sitting.heartRate ?? []),
+      heartRates: observations.flatMap((sitting) => trustedHeartRate(sitting) ?? []),
       score: snapshot.score,
       flags: flagAlerts(raised.filter((flag) => flag.patientNumber === patient.number)).length,
     };
@@ -159,7 +159,7 @@ export async function statistics(range: { from?: string; to?: string }): Promise
       medianTimeToFirstReadingSeconds: median(finishedInRange.flatMap((sitting) => sitting.timeToFirstReadingSeconds ?? [])),
     },
     heartRate: distribution(
-      finishedInRange.flatMap((sitting) => sitting.heartRate ?? []),
+      finishedInRange.flatMap((sitting) => trustedHeartRate(sitting) ?? []),
       HEART_RATE_BINS,
     ),
     breathingRate: distribution(

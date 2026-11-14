@@ -16,7 +16,7 @@ import { flagsToWire, patientFlags } from "./flags.ts";
 import { ApiError } from "./http.ts";
 import { decodeCursor, encodeCursor, takePage } from "./pagination.ts";
 import type { PatientRow } from "./serialize.ts";
-import { hasSummary, iso, toPatient, toPatientRef, toSitting } from "./serialize.ts";
+import { hasSummary, heartRateConfidence, iso, toPatient, toPatientRef, toSitting, trustedHeartRate } from "./serialize.ts";
 import { lockPatientFlags, patientHandoff, syncPatient } from "./trend/engine.ts";
 import { partialScore } from "./trend/rules.ts";
 import { distinctAcknowledgements, orderTimeline } from "./trend/timeline.ts";
@@ -182,8 +182,9 @@ export async function patientDetail(number: number): Promise<PatientDetailRespon
       kind: sitting.kind,
       source: sitting.source,
       heartRate: sitting.heartRate,
+      heartRateConfidence: heartRateConfidence(sitting),
       breathingRate: sitting.breathingRate,
-      score: partialScore(sitting.heartRate, sitting.breathingRate),
+      score: partialScore(trustedHeartRate(sitting), sitting.breathingRate),
     });
   }
   for (const flag of flags) {

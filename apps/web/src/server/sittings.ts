@@ -115,6 +115,8 @@ export async function finishSitting(sittingId: string, request: FinishSittingReq
         durationSeconds: summary.durationSeconds,
         heartRate: summary.heartRate.value,
         heartRateCoverage: summary.heartRate.coverage,
+        // A phone build from before the field existed leaves it out: normal.
+        heartRateConfidence: summary.heartRate.value === null ? null : (summary.heartRateConfidence ?? "normal"),
         breathingRate: summary.breathingRate.value,
         breathingRateCoverage: summary.breathingRate.coverage,
         rmssd: summary.rmssd.value,
