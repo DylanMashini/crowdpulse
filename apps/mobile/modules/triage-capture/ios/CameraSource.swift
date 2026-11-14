@@ -30,6 +30,7 @@ final class CameraSource: NSObject, FrameSource, AVCaptureVideoDataOutputSampleB
 
   // Used on the session queue only.
   private var device: AVCaptureDevice?
+  private var settings = CaptureSettings()
   private var rotationObservation: NSKeyValueObservation?
   private var rotationCoordinator: AnyObject?
   private var notificationTokens: [NSObjectProtocol] = []
@@ -49,6 +50,8 @@ final class CameraSource: NSObject, FrameSource, AVCaptureVideoDataOutputSampleB
   private var currentFrameRate = 60.0
   private var rateHeld = false
   private var rotationAngle: CGFloat = 0
+  private var position = CameraPosition.back
+  private var activeDevice: AVCaptureDevice?
   private var aspectRatio = 16.0 / 9.0
   private var preview: PreviewSettings?
   private var pendingCrops: [(Result<EncodedImage, CaptureError>) -> Void] = []
@@ -59,6 +62,12 @@ final class CameraSource: NSObject, FrameSource, AVCaptureVideoDataOutputSampleB
     get { lock.withLock { rateHeld } }
     set { lock.withLock { rateHeld = newValue } }
   }
+
+  var camera: CameraPosition { lock.withLock { position } }
+
+  var previewSession: AVCaptureSession? { session }
+
+  var previewDevice: AVCaptureDevice? { lock.withLock { activeDevice } }
 
   // MARK: Permission
 
@@ -84,13 +93,36 @@ final class CameraSource: NSObject, FrameSource, AVCaptureVideoDataOutputSampleB
     }
     try sessionQueue.sync {
       if session.isRunning { return }
-      try configure(settings)
+      try configure(settings, restartsCounters: true)
       session.startRunning()
       guard session.isRunning else {
         throw CaptureError(.cameraUnavailable, "The camera did not start")
       }
       adoptRunningFrameRate()
     }
+    CapturePreviewHub.changed()
+  }
+
+  /// Swaps the input of the running session. The frame clock, the dropped-frame count and a
+  /// running sitting carry on; the face is found again on the new camera under a new track id,
+  /// and exposure is metered afresh.
+  func switchCamera(to position: CameraPosition) throws {
+    try sessionQueue.sync {
+      guard session.isRunning, position != camera else { return }
+      var next = settings
+      next.camera = position
+      let previous = settings
+      do {
+        try configure(next, restartsCounters: false)
+      } catch {
+        // Put the camera that was working back, so a phone without the other one keeps going.
+        try? configure(previous, restartsCounters: false)
+        throw error
+      }
+      adoptRunningFrameRate()
+    }
+    tracker.reset()
+    CapturePreviewHub.changed()
   }
 
   func stop() {
@@ -110,8 +142,9 @@ final class CameraSource: NSObject, FrameSource, AVCaptureVideoDataOutputSampleB
     waiting.forEach { $0(.failure(CaptureError(.notCapturing, "Capture stopped"))) }
   }
 
-  /// Runs on the session queue.
-  private func configure(_ settings: CaptureSettings) throws {
+  /// Runs on the session queue. `restartsCounters` is false when the camera changes under a
+  /// running capture, where the dropped-frame count must not go back to zero.
+  private func configure(_ settings: CaptureSettings, restartsCounters: Bool) throws {
     let position: AVCaptureDevice.Position = settings.camera == .front ? .front : .back
     guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position) else {
       throw CaptureError(.cameraUnavailable, "This device has no \(settings.camera.rawValue) camera")
@@ -172,19 +205,28 @@ final class CameraSource: NSObject, FrameSource, AVCaptureVideoDataOutputSampleB
 
     if let connection = output.connection(with: .video) {
       if connection.isVideoStabilizationSupported { connection.preferredVideoStabilizationMode = .off }
+      // The preview mirrors the front camera the way a person expects. The frames that are
+      // measured are never mirrored: left and right in a frame record mean the image as captured.
+      if connection.isVideoMirroringSupported {
+        connection.automaticallyAdjustsVideoMirroring = false
+        connection.isVideoMirrored = false
+      }
       followRotation(of: device, on: connection)
     }
 
     let exposure = ExposureController(device: device, queue: sessionQueue)
     exposure.reset()
     self.device = device
+    self.settings = settings
     lock.withLock {
       self.exposure = exposure
       currentFrameRate = rate
+      self.position = settings.camera
+      activeDevice = device
     }
     observeSession()
     captureQueue.async { [self] in
-      droppedFrames = 0
+      if restartsCounters { droppedFrames = 0 }
       framesThisSecond = 0
       slowSeconds = 0
       secondStartedAt = 0
@@ -255,6 +297,7 @@ final class CameraSource: NSObject, FrameSource, AVCaptureVideoDataOutputSampleB
 
   private func observeSession() {
     let center = NotificationCenter.default
+    notificationTokens.forEach(center.removeObserver)
     notificationTokens = [
       center.addObserver(forName: AVCaptureSession.wasInterruptedNotification, object: session, queue: nil) { [weak self] _ in
         self?.fail(.captureInterrupted, "The camera was interrupted")
