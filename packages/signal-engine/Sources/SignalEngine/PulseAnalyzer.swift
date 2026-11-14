@@ -57,6 +57,75 @@ struct PulseAnalyzer {
     /// Nil when there is no candidate to report or the window is too short to have a
     /// newest part.
     var recentQuality: Double?
+    /// How many times stronger the regions' brightness is than their pulse signal at the
+    /// candidate, in the same mix of regions (`maximumBrightnessRatio`). Nil when the
+    /// check did not run.
+    var brightnessRatio: Double?
+    /// Size of the pulse signal's swing at the candidate, as a fraction of the regions'
+    /// colour (`maximumPulseAmplitude`). Nil when the check did not run.
+    var pulseAmplitude: Double?
+  }
+
+  /// Brightness of one region, treated as `project` treats its colour: in each sliding
+  /// window the three channels are divided by their own means and averaged, the windows
+  /// are overlap-added, and every stretch of usable samples stands on its own. What comes
+  /// out is the part of the region's change that is common to the three channels, which is
+  /// what the projection throws away: a head moving towards the light, a lamp dimming.
+  func brightness(_ region: RegionSeries, rate: Double, usable: [Bool]? = nil) -> [Double] {
+    let count = region.r.count
+    let length = Int((PulseAnalyzer.projectionWindowSeconds * rate).rounded())
+    var output = [Double](repeating: 0, count: count)
+    guard count >= length, length > 1 else { return output }
+    for run in runs(count: count, length: length, usable: usable) {
+      var sumR = 0.0
+      var sumG = 0.0
+      var sumB = 0.0
+      for index in run.lowerBound..<(run.lowerBound + length) {
+        sumR += region.r[index]
+        sumG += region.g[index]
+        sumB += region.b[index]
+      }
+      for start in run.lowerBound...(run.upperBound - length) {
+        if start > run.lowerBound {
+          sumR += region.r[start + length - 1] - region.r[start - 1]
+          sumG += region.g[start + length - 1] - region.g[start - 1]
+          sumB += region.b[start + length - 1] - region.b[start - 1]
+        }
+        guard sumR > 0, sumG > 0, sumB > 0 else { continue }
+        let scaleR = Double(length) / (3 * sumR)
+        let scaleG = Double(length) / (3 * sumG)
+        let scaleB = Double(length) / (3 * sumB)
+        for index in start..<(start + length) {
+          output[index] += region.r[index] * scaleR + region.g[index] * scaleG + region.b[index] * scaleB - 1
+        }
+      }
+      let windows = run.count - length + 1
+      var mean = 0.0
+      for index in run {
+        let covering = min(index - run.lowerBound + 1, run.upperBound - index, length, windows)
+        output[index] /= Double(covering)
+        mean += output[index]
+      }
+      mean /= Double(run.count)
+      for index in run { output[index] -= mean }
+    }
+    return output
+  }
+
+  /// The stretches of usable samples long enough to hold one projection window.
+  private func runs(count: Int, length: Int, usable: [Bool]?) -> [Range<Int>] {
+    guard let usable else { return [0..<count] }
+    var runs: [Range<Int>] = []
+    var runStart: Int?
+    for index in 0...count {
+      let open = index < count && usable[index]
+      if open, runStart == nil { runStart = index }
+      if !open, let from = runStart {
+        if index - from >= length { runs.append(from..<index) }
+        runStart = nil
+      }
+    }
+    return runs
   }
 
   /// POS (plane orthogonal to skin) projection with overlap-add. Each window is normalised
@@ -77,20 +146,7 @@ struct PulseAnalyzer {
     let s2 = scratch + length
     let n = vDSP_Length(length)
 
-    var runs: [Range<Int>] = []
-    if let usable {
-      var runStart: Int?
-      for index in 0...count {
-        let open = index < count && usable[index]
-        if open, runStart == nil { runStart = index }
-        if !open, let from = runStart {
-          if index - from >= length { runs.append(from..<index) }
-          runStart = nil
-        }
-      }
-    } else {
-      runs = [0..<count]
-    }
+    let runs = runs(count: count, length: length, usable: usable)
 
     region.r.withUnsafeBufferPointer { r in
       region.g.withUnsafeBufferPointer { g in
@@ -272,6 +328,28 @@ struct PulseAnalyzer {
         return finished(.illumination)
       }
       detail.recentQuality = recentQuality(combined, usable: usable, at: reportedHz, rate: rate)
+
+      // The same mix of regions, of their brightness instead of their pulse signal.
+      let bright = mix(
+        regions.map {
+          cut(
+            fourier.bandPass(
+              DSP.detrend(brightness($0, rate: rate, usable: usable)), rate: rate, band: band,
+              transitionHz: PulseAnalyzer.transitionHz))
+        }, scales: scales)
+      let window = DSP.hann(count)
+      func size(_ signal: [Double]) -> Double {
+        let part = DSP.component(of: vDSP.multiply(signal, window), at: reportedHz, rate: rate)
+        return (part.re * part.re + part.im * part.im).squareRoot()
+      }
+      let pulse = size(combined)
+      if pulse > 0 {
+        detail.brightnessRatio = size(bright) / pulse
+        // `combined` is in units of the regions' own deviation; undo that for a fraction
+        // of the colour. Twice the coefficient over the window's sum is a sine's amplitude.
+        let scale = scales.reduce(0, +)
+        if scale > 0 { detail.pulseAmplitude = 2 * pulse / (scale * window.reduce(0, +)) }
+      }
     }
     return finished(reported)
   }

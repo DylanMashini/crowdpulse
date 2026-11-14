@@ -36,6 +36,10 @@ public enum PulseGate: String, Codable, Sendable, CaseIterable {
   /// Under `minimumProjectionYield` of the colour signal at the peak survives the
   /// projection. Reason `low_quality`.
   case illumination
+  /// At the peak the regions' brightness swings more than `maximumBrightnessRatio` times
+  /// as far as their pulse signal, or the pulse signal swings further than
+  /// `maximumPulseAmplitude`: the rhythm is the subject moving. Reason `motion`.
+  case rhythmicMovement = "rhythmic_movement"
   /// Quality at the peak is under `qualityThreshold`, or under `minimumRecentQuality` in
   /// the newest seconds of the window. Reason `low_quality`.
   case quality
@@ -97,6 +101,13 @@ public struct PulseDiagnostic: Codable, Sendable, Equatable {
   /// Quality at the candidate in the newest `recentEvidenceSeconds` of the window alone
   /// (`minimumRecentQuality`). Nil when the check did not run.
   public var recentQuality: Double?
+  /// How many times stronger the regions' brightness is than their pulse signal at the
+  /// candidate (`maximumBrightnessRatio`). Blood gives about 1; a head moving in a rhythm
+  /// gives many times that. Nil when the check did not run.
+  public var brightnessRatio: Double?
+  /// Size of the pulse signal's swing at the candidate, as a fraction of the regions'
+  /// colour (`maximumPulseAmplitude`). Nil when the check did not run.
+  public var pulseAmplitude: Double?
   /// How many of the newest `agreementSpanWindows` windows passed every check before
   /// agreement, this one included.
   public var passingWindows: Int?
@@ -119,5 +130,7 @@ extension PulseDiagnostic {
     flickerAlias = detail.flickerAlias
     projectionYield = detail.projectionYield
     recentQuality = detail.recentQuality
+    brightnessRatio = detail.brightnessRatio
+    pulseAmplitude = detail.pulseAmplitude
   }
 }

@@ -106,6 +106,18 @@ public struct EngineConfiguration: Codable, Sendable, Equatable {
   /// the rest is analysed. The window is rejected as motion only when more than this share
   /// of it is cut.
   public var maximumDisturbedShare: Double = 0.3
+  /// A window is rejected as motion when, at the rate it would report, the regions'
+  /// brightness swings more than this many times as far as their pulse signal. Blood alone
+  /// gives about 1 (median 0.9 on the UBFC tuning set, 95% of valid windows under 2.2); a
+  /// head bobbing with no pulse gave 3.7 and up, typically 14.
+  public var maximumBrightnessRatio: Double = 3
+  /// And when the pulse signal's swing at that rate is more than this fraction of the
+  /// regions' colour. The largest seen from a real pulse is 0.3% (UBFC tuning set) and
+  /// 0.26% (iPhone); this is three times that.
+  public var maximumPulseAmplitude: Double = 0.01
+  /// A window those two would reject is kept when a window they did not reject gave a valid
+  /// reading within `agreementToleranceBpm` of its rate no longer ago than this, in seconds.
+  public var steadyRateSeconds: Double = 15
   /// A breathing window is rejected when more than this share of its frames are in motion.
   public var maximumMotionShare: Double = 0.05
 

@@ -346,6 +346,9 @@ struct PulseTracker {
   private var chestTrackedCount = 0
   private var gate: AgreementGate
   private var acceptedSinceReset = false
+  /// The newest valid reading from a window whose rhythm could not be movement
+  /// (`movesInRhythm`), and when it was read.
+  private var steadyRate: (bpm: Double, time: Double)?
 
   /// When true, every `tick` and `missedTick` leaves a `lastDiagnostic`, and a window that a
   /// check refuses before the analysis is analysed all the same, for the diagnostic only.
@@ -429,6 +432,7 @@ struct PulseTracker {
     segmentStart = nil
     colourChange.reset()
     acceptedSinceReset = false
+    steadyRate = nil
     gate.reset()
   }
 
@@ -521,6 +525,7 @@ struct PulseTracker {
       // projection left of a change in the light, is evidence of the lamp, not of a pulse.
       switch outcome.peak {
       case .flicker, .illumination, .flat, .drift: break
+      case .peak where movesInRhythm(outcome.detail): break
       case .peak, .bandEdge:
         evidence.append(
           WindowEvidence(
@@ -544,6 +549,10 @@ struct PulseTracker {
       gate.push(nil)
       diagnostic.gate = .bandEdge
       return .withheld(.none, .bandEdge, quality: quality)
+    case .peak(let hz, let quality) where movesInRhythm(outcome.detail) && !vouchedFor(hz * 60, at: now):
+      gate.push(nil)
+      diagnostic.gate = .rhythmicMovement
+      return .withheld(.none, .motion, quality: quality)
     case .peak(_, let quality) where quality < configuration.qualityThreshold:
       gate.push(nil)
       diagnostic.gate = .quality
@@ -563,6 +572,8 @@ struct PulseTracker {
         return .withheld(acceptedSinceReset ? .none : .settling, .awaitingAgreement, quality: quality)
       }
       acceptedSinceReset = true
+      // Only a window whose rhythm cannot be movement may vouch for later ones.
+      if !movesInRhythm(outcome.detail) { steadyRate = (bpm, now) }
       validWindows.append(
         ValidPulseWindow(start: history.times[range.lowerBound], end: now, rateHz: hz))
       for (entry, weight) in zip(regions, outcome.weights) {
@@ -570,6 +581,26 @@ struct PulseTracker {
       }
       return .valid(bpm, quality: quality)
     }
+  }
+
+  /// Whether the rhythm a window holds is the subject moving, not blood. A head that nods,
+  /// rocks or bobs changes the regions' brightness in a rhythm, and a little of that always
+  /// leaks into their colour, where it is indistinguishable from a pulse. But blood barely
+  /// changes brightness: at a pulse's own rate the brightness swings about as far as the
+  /// pulse signal does. When it swings several times further, or the "pulse" is larger
+  /// than blood makes it, the rhythm is the movement's.
+  private func movesInRhythm(_ detail: PulseAnalyzer.Detail) -> Bool {
+    (detail.brightnessRatio ?? 0) > configuration.maximumBrightnessRatio
+      || (detail.pulseAmplitude ?? 0) > configuration.maximumPulseAmplitude
+  }
+
+  /// A rhythm that could be movement is believed only where one that could not be was read
+  /// at the same rate a moment ago: a heart beating hard enough to rock the head moves the
+  /// brightness at its own rate, and that is no reason to lose a reading already
+  /// established. It never establishes one.
+  private func vouchedFor(_ bpm: Double, at now: Double) -> Bool {
+    guard let steadyRate, now - steadyRate.time <= configuration.steadyRateSeconds else { return false }
+    return abs(bpm - steadyRate.bpm) <= configuration.agreementToleranceBpm
   }
 
   /// Frames per second the camera delivered over `range`, counting a dropped frame as the

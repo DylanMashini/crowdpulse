@@ -141,6 +141,30 @@ func colouredNoiseControl(
   }
 }
 
+/// A head that bobs, nods or rocks at `hz`: every region's brightness swings by the
+/// fraction `brightness`, and a part of that, `colour`, shows in each channel of each region
+/// on its own, in a direction drawn from `seed`, because the skin under a region and its
+/// angle to the light change with the movement. The rhythm wanders a little, as a person's
+/// does. The movement lasts from `from` to `until`, in seconds since `origin`.
+func swaying(
+  _ frames: [FrameRecord], hz: Double, brightness: Double, colour: Double, seed: UInt64, from: Double = 0,
+  until: Double = .infinity, origin: Double = 1000
+) -> [FrameRecord] {
+  var generator = SplitMix64(state: seed)
+  var direction = (0..<9).map { _ in generator.nextGaussian() }
+  let largest = direction.map(abs).max() ?? 1
+  direction = direction.map { $0 / largest }
+  return recolour(frames) { t, region, c in
+    let elapsed = t - origin
+    guard elapsed >= from, elapsed < until else { return }
+    let wave = sin(2 * .pi * hz * elapsed + 0.4 * sin(2 * .pi * 0.07 * elapsed))
+    c = RegionColor(
+      r: c.r * (1 + wave * (brightness + colour * direction[3 * region])),
+      g: c.g * (1 + wave * (brightness + colour * direction[3 * region + 1])),
+      b: c.b * (1 + wave * (brightness + colour * direction[3 * region + 2])))
+  }
+}
+
 func rmssd(_ intervals: [Double]) -> Double {
   let differences = zip(intervals, intervals.dropFirst()).map { $1 - $0 }
   return (differences.reduce(0) { $0 + $1 * $1 } / Double(differences.count)).squareRoot()
