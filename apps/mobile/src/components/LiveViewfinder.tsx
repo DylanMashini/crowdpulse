@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { View } from 'react-native';
 import TriageCapture, {
   type CameraFacing,
   CapturePreview,
@@ -85,8 +86,9 @@ export function LiveViewfinder({ state, message, flipDisabled = false }: Props) 
 type FlipProps = { camera: CameraFacing; disabled: boolean; onPress: () => void };
 
 /**
- * A pill on the picture that names the camera in use and flips to the other one. The touch
- * target is the full 48 points high; the pill is smaller.
+ * A round control on the picture with the camera in use named under it, so the front camera
+ * is not told apart by the mirrored picture alone. It keeps to the corner: the word sits under
+ * the disc, not beside it, where the outline labels are drawn.
  */
 function FlipCameraButton({ camera, disabled, onPress }: FlipProps) {
   const theme = useScopedTheme();
@@ -101,26 +103,39 @@ function FlipCameraButton({ camera, disabled, onPress }: FlipProps) {
       accessibilityLabel={`Switch to the ${next} camera`}
       accessibilityValue={{ text: `Using the ${camera} camera` }}
       accessibilityState={{ disabled }}
-      style={({ pressed }) => ({
-        height: 40,
-        minWidth: 40,
-        paddingHorizontal: theme.space.space3,
-        gap: theme.space.space2,
-        borderRadius: theme.radius.radiusPill,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 1,
-        borderColor: colors.lineStrong,
-        backgroundColor: pressed ? colors.surfaceRaised : colors.scrim,
-        opacity: disabled ? 0.45 : 1,
-      })}
+      style={{ alignItems: 'center', gap: theme.space.space1, opacity: disabled ? 0.45 : 1 }}
     >
-      <Icon name="flip-camera" size={20} color={colors.ink} />
-      {/* The pill keeps its height, so its word grows less than the text around it. */}
-      <Text maxFontSizeMultiplier={1.2} style={[theme.type.label, { color: colors.ink }]}>
-        {camera === 'front' ? 'Front' : 'Back'}
-      </Text>
+      {({ pressed }) => (
+        <>
+          <View
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: theme.radius.radiusPill,
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderWidth: 1,
+              borderColor: colors.lineStrong,
+              backgroundColor: pressed ? colors.surfaceRaised : colors.scrim,
+            }}
+          >
+            <Icon name="flip-camera" size={20} color={colors.ink} />
+          </View>
+          {/* "Rear", not "Back": beside a picture, Back reads as the way out of the screen. */}
+          <View
+            style={{
+              paddingHorizontal: theme.space.space2,
+              paddingVertical: 2,
+              borderRadius: theme.radius.radiusPill,
+              backgroundColor: colors.scrim,
+            }}
+          >
+            <Text maxFontSizeMultiplier={1.2} style={[theme.type.label, { color: colors.ink }]}>
+              {camera === 'front' ? 'Front' : 'Rear'}
+            </Text>
+          </View>
+        </>
+      )}
     </Touchable>
   );
 }
