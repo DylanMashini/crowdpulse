@@ -1,8 +1,12 @@
+import { env } from "./env.ts";
 import { ApiError } from "./http.ts";
 
 type Window = { startedAt: number; count: number };
 
-/** Fixed-window counters held in memory. One server process, so this is the whole picture. */
+/**
+ * Fixed-window counters held in memory. One server process, so this is the whole picture,
+ * except for the minute or so of a deploy when two overlap and a caller can get both allowances.
+ */
 export class RateLimiter {
   private readonly windows = new Map<string, Window>();
   private readonly now: () => number;
@@ -45,7 +49,27 @@ export function rateLimit(key: string, limit: number, windowMs: number): void {
   }
 }
 
-/** The caller's address as the tunnel or proxy reports it; requests made directly share one bucket. */
-export function clientAddress(request: Request): string {
-  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "direct";
+/**
+ * The caller's address out of an `X-Forwarded-For` header.
+ *
+ * Every proxy appends the address it received the request from, so the right-hand end of the
+ * list is written by our own proxies and the left-hand end by whoever sent the request. With
+ * `trustedProxies` proxies of ours in front of the server (production: Cloudflare, then the
+ * load balancer, so 2) the caller is that many entries from the right, and nothing a caller
+ * puts in the header can move it. A shorter list means the request skipped a proxy; its first
+ * entry was still written by one of ours.
+ *
+ * With `trustedProxies` undefined (development, where the only proxy is a tunnel) the first
+ * entry is used, as the tunnel reports it. Requests with no header share the bucket "direct".
+ */
+export function forwardedClient(header: string | null, trustedProxies: number | undefined): string {
+  const entries = (header ?? "").split(",").map((entry) => entry.trim()).filter(Boolean);
+  if (entries.length === 0) return "direct";
+  if (!trustedProxies) return entries[0] as string;
+  return entries[Math.max(0, entries.length - trustedProxies)] as string;
+}
+
+/** The caller's address, for rate limits. `TRUSTED_PROXY_HOPS` says how many proxies of ours are in front. */
+export function clientAddress(request: Request, trustedProxies: number | undefined = env().TRUSTED_PROXY_HOPS): string {
+  return forwardedClient(request.headers.get("x-forwarded-for"), trustedProxies);
 }
