@@ -86,6 +86,10 @@ export const ErrorResponse = z.object({
 });
 export type ErrorResponse = z.infer<typeof ErrorResponse>;
 
+/** Body of `GET /api/health`, with status 200 for `ok` and 503 for `unavailable`. */
+export const HealthResponse = z.object({ status: z.enum(['ok', 'unavailable']) });
+export type HealthResponse = z.infer<typeof HealthResponse>;
+
 /** Query string of every list route. */
 export const PageQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),

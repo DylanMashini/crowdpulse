@@ -1,5 +1,7 @@
 /** Every API path, relative to the API base URL. Build URLs with these, not by hand. */
 export const routes = {
+  /** Public. For the load balancer: 200 when the server can reach its database, 503 when it cannot. */
+  health: '/api/health',
   auth: {
     signUp: '/api/auth/sign-up',
     verifyEmail: '/api/auth/verify-email',
