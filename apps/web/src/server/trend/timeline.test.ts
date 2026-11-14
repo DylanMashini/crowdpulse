@@ -22,6 +22,8 @@ const opened = (minute: number, n: number, rule: "score_rise" | "baseline_shift"
   type: "flag_opened",
   at: at(minute),
   flagId: id(n),
+  // The trend flags one sitting raised are one alert, named by the instant they opened.
+  alertId: `trend-14-${minute}`,
   rule,
   handoff: "Patient 2: pulse 82 bpm at check-in, 108 bpm now (26 min later).",
 });
@@ -46,7 +48,7 @@ describe("orderTimeline", () => {
       { type: "discharged", at: at(30) },
       { type: "flag_acknowledged", at: at(30), flagId: id(4), by: "nurse@example.test" },
       opened(30, 4, "score_rise"),
-      { type: "flag_closed", at: at(30), flagId: id(6), rule: "overdue" },
+      { type: "flag_closed", at: at(30), flagId: id(6), rule: "overdue", alertId: id(6) },
       sitting(30, 3),
     ];
     assert.deepEqual(
