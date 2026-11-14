@@ -221,17 +221,19 @@ public struct EngineConfiguration: Codable, Sendable, Equatable {
   /// the sitting, so that one lucky stretch of noise is not enough, before the estimate
   /// may stand for a sitting on its own.
   public var wholeSittingStretches: Int = 4
-  /// And from this many before it may vouch for a few valid readings at its rate, provided
-  /// `wholeSittingSupport` of the windows are among them. The readings are evidence of their
-  /// own, and a sitting interrupted twice (a face lost, an exposure change) has three
-  /// stretches to offer, not four. A pulse seen for a quarter of a minute and then gone also
-  /// reaches three stretches, but not that share of the windows.
-  public var wholeSittingCorroboratingStretches: Int = 3
+  /// And from this many before it may vouch for a few valid readings at its rate; with
+  /// fewer than `wholeSittingStretches`, `wholeSittingSupport` of the windows must be among
+  /// them as well. Set to 3, two more of the phone's seven sittings end with a rate and no
+  /// tuning control does; it is 4, the same as standing alone, because on the held-out set
+  /// 3 let one sitting end 12 bpm from its reference (results, section 11.6).
+  public var wholeSittingCorroboratingStretches: Int = 4
   /// `evidence` is multiplied by this when every skin region, summed over the sitting on
   /// its own, has its strongest peak within `agreementToleranceBpm` of the estimate. It
   /// counts towards `wholeSittingEvidence` (standing alone) only; vouching for a few
-  /// readings is held to the product without it. 1 switches it off.
-  public var wholeSittingRegionAgreement: Double = 1.5
+  /// readings is held to the product without it. 1 switches it off, and it is off: at 1.5
+  /// it gave faint pulses a rate more often and no tuning control one, and then let one
+  /// held-out control through (results, section 11.6).
+  public var wholeSittingRegionAgreement: Double = 1
   /// The whole-sitting estimate reports no rate under this, in bpm. Drift and slow light
   /// changes pile up at the bottom of the pulse band in every window alike, so down there
   /// "the same peak all through the sitting" is what noise looks like too. A slow heart

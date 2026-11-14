@@ -205,7 +205,10 @@ private func steppingLight(every: Double, _ change: (inout SyntheticSitting) -> 
     let whole = replay(faint(84)).summary.wholeSitting
     #expect(whole?.regions == 3)
     #expect(whole?.agreeingRegions == 3)
-    #expect((whole?.evidence ?? 0) > (whole?.rawEvidence ?? 0))
+    // Counted, and by default not rewarded.
+    #expect(whole?.evidence == whole?.rawEvidence)
+    let rewarded = replay(faint(84)) { $0.wholeSittingRegionAgreement = 1.5 }.summary.wholeSitting
+    #expect((rewarded?.evidence ?? 0) > (rewarded?.rawEvidence ?? 0))
   }
 
   @Test func regionsOfNoiseDoNotAllAgree() {
@@ -224,7 +227,9 @@ private func steppingLight(every: Double, _ change: (inout SyntheticSitting) -> 
   }
 
   @Test func threeStretchesVouchOnlyWithTheirShareOfTheWindows() {
-    let analyzer = WholeSittingAnalyzer(configuration: .default)
+    var configuration = EngineConfiguration.default
+    configuration.wholeSittingCorroboratingStretches = 3
+    let analyzer = WholeSittingAnalyzer(configuration: configuration)
     let bins = 300
     let binHz = 60.0 / 4096
     func window(end: Double, bpm: Double?) -> WindowEvidence {
@@ -249,6 +254,8 @@ private func steppingLight(every: Double, _ change: (inout SyntheticSitting) -> 
     let briefEstimate = analyzer.estimate(brief, origin: 0)
     #expect(briefEstimate.supportingStretches == 3)
     #expect(!briefEstimate.corroborates)
+    // As shipped, three stretches vouch for nothing.
+    #expect(!WholeSittingAnalyzer(configuration: .default).estimate(steady, origin: 0).corroborates)
   }
 }
 
