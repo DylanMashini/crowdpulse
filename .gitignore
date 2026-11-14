@@ -32,3 +32,6 @@ recordings/
 # dataset evaluation: downloads and results
 eval/data/
 eval/out/
+
+# agent worktrees and QA notes
+.claude/
