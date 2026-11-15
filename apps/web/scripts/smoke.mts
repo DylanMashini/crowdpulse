@@ -644,6 +644,50 @@ done("patient detail: baseline, sittings, flags and a newest-first timeline");
   done("after a lower-confidence check-in with breathing, steady re-checks at 100 and 101 bpm open no flag");
 }
 
+// --- a check-in takes what was shown live ------------------------------------------------------
+
+{
+  // Twelve seconds: heart rates were on screen from the ninth second, breathing never. The
+  // summary recorded neither. The check-in stores the median of the shown heart rates and is
+  // the baseline; breathing, with nothing shown, stays "No reading".
+  const live = (await ok(PatientResponse, 201, "POST", routes.patients, { auth: web, body: {} })).patient.number;
+  const shown = await sit(live, "check_in", 80, 16, 12);
+  const body = { endedAt: new Date(shown.startedOnPhone.getTime() + 12_000).toISOString(), summary: summary(null, null) };
+  const saved = (await ok(SittingResponse, 200, "POST", routes.sittingFinish(shown.id), { auth: mobile, body })).sitting;
+  assert.equal(saved.summary?.heartRate.value, 80.5, "the median of the shown 81, 79, 80, 81");
+  assert.equal(saved.summary?.heartRate.coverage, 0, "coverage still counts recorded seconds");
+  assert.equal(saved.summary?.heartRateConfidence, "normal");
+  assert.equal(saved.summary?.heartRateFromLive, true);
+  assert.equal(saved.summary?.breathingRate.value, null);
+  assert.equal(saved.summary?.breathingRateFromLive, false);
+  let row = (await worklistItem(live)).item;
+  assert.equal(row.state, "observed");
+  assert.equal(row.pulse.base, 80.5);
+  assert.equal(row.pulse.lowConfidence, undefined);
+  // A re-check with the same readings and the same empty summary records nothing.
+  const again = await sit(live, "recheck", 95, 16, 12);
+  const unrecorded = (
+    await ok(SittingResponse, 200, "POST", routes.sittingFinish(again.id), {
+      auth: mobile,
+      body: { endedAt: new Date(again.startedOnPhone.getTime() + 12_000).toISOString(), summary: summary(null, null) },
+    })
+  ).sitting;
+  assert.equal(unrecorded.summary?.heartRate.value, null);
+  assert.equal(unrecorded.summary?.heartRateFromLive, false);
+  row = (await worklistItem(live)).item;
+  assert.equal(row.pulse.base, 80.5);
+  // A lower-confidence check-in pulse with live values shown is replaced by their median and counts.
+  const weak = (await ok(PatientResponse, 201, "POST", routes.patients, { auth: web, body: {} })).patient.number;
+  const low = (await (await sit(weak, "check_in", 64, null, 12, { heartRateCoverage: 0.05, heartRateConfidence: "low" })).finish()).sitting;
+  assert.equal(low.summary?.heartRate.value, 64.5);
+  assert.equal(low.summary?.heartRateConfidence, "normal");
+  assert.equal(low.summary?.heartRateFromLive, true);
+  assert.equal((await worklistItem(weak)).item.state, "observed");
+  await ok(PatientResponse, 200, "POST", routes.patientDischarge(live), { auth: web });
+  await ok(PatientResponse, 200, "POST", routes.patientDischarge(weak), { auth: web });
+  done("a check-in with nothing recorded stored the median of the readings shown live as the baseline; a re-check did not");
+}
+
 // --- two deteriorations, two alerts -----------------------------------------------------------
 
 {

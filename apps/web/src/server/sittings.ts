@@ -8,7 +8,6 @@ import {
   type SittingDetailResponse,
   SittingFileHeader,
   type StartSittingRequest,
-  summaryHeartRateConfidence,
 } from "@triagecam/contracts";
 import { and, asc, eq, isNull, max } from "drizzle-orm";
 
@@ -20,7 +19,7 @@ import { ApiError } from "./http.ts";
 import { noteSittingEnded, noteSittingStarted } from "./intake.ts";
 import { cameraState } from "./live.ts";
 import type { SittingRow } from "./serialize.ts";
-import { hasSummary, iso, toPatientRef, toSitting, toStoredReading } from "./serialize.ts";
+import { hasSummary, iso, storedVitals, toPatientRef, toSitting, toStoredReading } from "./serialize.ts";
 import { findWaitingPatient } from "./patients.ts";
 import { type Elsewhere, sittingIsStray } from "./stray.ts";
 import { syncPatients } from "./trend/engine.ts";
@@ -115,20 +114,33 @@ export async function finishSitting(sittingId: string, request: FinishSittingReq
   // On the server clock, and never before the start or in the future whatever the phone's clock says.
   const reported = Date.parse(request.endedAt) + sitting.clockOffsetMs;
   const endedAt = new Date(Math.min(Math.max(reported, sitting.startedAt.getTime()), Date.now()));
+  // A check-in takes a vital the engine did not record from the readings that were shown live
+  // (storedVitals). The phone sends every reading before the summary, so they are all here.
+  const shown =
+    sitting.kind === "check_in"
+      ? await db
+          .select({ heartRate: schema.readings.heartRate, breathingRate: schema.readings.breathingRate })
+          .from(schema.readings)
+          .where(eq(schema.readings.sittingId, sittingId))
+      : [];
+  const vitals = storedVitals(sitting.kind, summary, {
+    heartRate: shown.map((reading) => reading.heartRate),
+    breathingRate: shown.map((reading) => reading.breathingRate),
+  });
   const finished = await db.transaction(async (tx) => {
     const [row] = await tx
       .update(schema.sittings)
       .set({
         endedAt,
         durationSeconds: summary.durationSeconds,
-        heartRate: summary.heartRate.value,
+        heartRate: vitals.heartRate,
+        // Coverage stays what the engine recorded, so a value taken from live readings shows it.
         heartRateCoverage: summary.heartRate.coverage,
-        // The lower of what the phone says and the engine's own rule applied here: a rate that
-        // rests on fewer than ten valid seconds is `low`, whether the phone left the field out
-        // (a build from before it existed) or stated `normal`.
-        heartRateConfidence: summaryHeartRateConfidence(summary),
-        breathingRate: summary.breathingRate.value,
+        heartRateConfidence: vitals.heartRateConfidence,
+        heartRateFromLive: vitals.heartRateFromLive,
+        breathingRate: vitals.breathingRate,
         breathingRateCoverage: summary.breathingRate.coverage,
+        breathingRateFromLive: vitals.breathingRateFromLive,
         rmssd: summary.rmssd.value,
         rmssdCoverage: summary.rmssd.coverage,
         sdnn: summary.sdnn.value,

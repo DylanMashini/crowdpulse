@@ -5,10 +5,14 @@ import {
   type EstimateReason,
   type HeartRateConfidence,
   isLowConfidence,
+  liveReadingFallback,
   type Patient,
   type PatientRef,
   type Sitting,
+  type SittingKind,
+  type SittingSummary,
   type StoredReading,
+  summaryHeartRateConfidence,
   type User,
 } from "@triagecam/contracts";
 
@@ -89,6 +93,49 @@ export const heartRateConfidence = (row: Pick<SittingRow, "heartRate" | "heartRa
 export const trustedHeartRate = (row: Pick<SittingRow, "heartRate" | "heartRateConfidence">): number | null =>
   isLowConfidence(heartRateConfidence(row)) ? null : row.heartRate;
 
+/** The two vitals of a sitting as they are stored, and whether each was taken from the readings shown live. */
+export type StoredVitals = {
+  heartRate: number | null;
+  heartRateConfidence: HeartRateConfidence | null;
+  heartRateFromLive: boolean;
+  breathingRate: number | null;
+  breathingRateFromLive: boolean;
+};
+
+/**
+ * What a finished sitting stores for heart and breathing rate. A re-check stores the summary as
+ * it came. A check-in is never sent back to the chair for want of a steady stretch: a vital
+ * the engine recorded nothing for (or, for heart rate, only a lower-confidence rate) takes the
+ * median of the values that were shown live during the sitting, is marked as taken from them,
+ * and counts as the baseline. Each vital on its own; one with nothing shown stays as it came.
+ */
+export function storedVitals(
+  kind: SittingKind,
+  summary: Pick<SittingSummary, "durationSeconds" | "heartRate" | "heartRateConfidence" | "breathingRate">,
+  shown: { heartRate: ReadonlyArray<number | null>; breathingRate: ReadonlyArray<number | null> },
+): StoredVitals {
+  const recorded: StoredVitals = {
+    heartRate: summary.heartRate.value,
+    // The lower of what the phone says and the engine's own rule applied here: a rate that
+    // rests on fewer than ten valid seconds is `low`, whether the phone left the field out
+    // (a build from before it existed) or stated `normal`.
+    heartRateConfidence: summaryHeartRateConfidence(summary),
+    heartRateFromLive: false,
+    breathingRate: summary.breathingRate.value,
+    breathingRateFromLive: false,
+  };
+  if (kind !== "check_in") return recorded;
+  if (recorded.heartRate === null || isLowConfidence(recorded.heartRateConfidence)) {
+    const live = liveReadingFallback(shown.heartRate);
+    if (live !== null) Object.assign(recorded, { heartRate: live, heartRateConfidence: "normal", heartRateFromLive: true });
+  }
+  if (recorded.breathingRate === null) {
+    const live = liveReadingFallback(shown.breathingRate);
+    if (live !== null) Object.assign(recorded, { breathingRate: live, breathingRateFromLive: true });
+  }
+  return recorded;
+}
+
 /** A sitting has a summary once it was finished by the phone; one that was abandoned has none. */
 export const hasSummary = (row: SittingRow): boolean => row.durationSeconds !== null;
 
@@ -113,6 +160,8 @@ export const toSitting = (row: SittingRow, patientNumber: number): Sitting => ({
         frameCount: row.frameCount ?? 0,
         droppedFrames: row.droppedFrames ?? 0,
         heartRateConfidence: heartRateConfidence(row),
+        heartRateFromLive: row.heartRate !== null && row.heartRateFromLive,
+        breathingRateFromLive: row.breathingRate !== null && row.breathingRateFromLive,
       }
     : null,
 });
