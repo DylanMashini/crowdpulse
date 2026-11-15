@@ -40,6 +40,15 @@ async function register(): Promise<string> {
   return id;
 }
 
+/** One registration at a time, however many times the page asks (React mounts an effect twice in development). */
+let registering: Promise<string> | null = null;
+function registerOnce(): Promise<string> {
+  registering ??= register().finally(() => {
+    registering = null;
+  });
+  return registering;
+}
+
 /**
  * This computer's webcam as a camera device of its own. It is registered once per visit to the
  * page, and does nothing more until `useWebcamConnection` puts it to work.
@@ -53,7 +62,7 @@ export function useWebcam(): Webcam {
   useEffect(() => {
     if (!available) return;
     let cancelled = false;
-    register().then(
+    registerOnce().then(
       (deviceId) => {
         if (!cancelled) setRegistration({ deviceId, done: true });
       },
