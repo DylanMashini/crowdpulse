@@ -292,10 +292,17 @@ function Station({ device, serverOffsetMs, serverNow, picker, waiting }: Station
     }
   };
 
+  // For keeping the keyboard's place from one step to the next (the effect is further down).
+  const controlRef = useRef<HTMLDivElement | null>(null);
+  const statusRef = useRef<HTMLDivElement | null>(null);
+  const held = useRef(false);
+
   const start = () => void send({ type: 'start', patientNumber: onPhone, enrolFace: patient ? patient.faceOptIn && !patient.faceEnrolled : false });
   const confirmed = () => {
     const type = confirming;
     setConfirming(null);
+    // The dialog took the focus from the button that opened it; what follows belongs to that button.
+    held.current = true;
     if (type) void send({ type, patientNumber: onPhone });
   };
 
@@ -345,9 +352,6 @@ function Station({ device, serverOffsetMs, serverNow, picker, waiting }: Station
 
   // Each step replaces the button that was pressed. Focus follows to the next step's button, or to
   // the words when there is none to press, so the keyboard and a screen reader keep their place.
-  const controlRef = useRef<HTMLDivElement | null>(null);
-  const statusRef = useRef<HTMLDivElement | null>(null);
-  const held = useRef(false);
   useEffect(() => {
     const root = controlRef.current;
     if (!held.current || !root) return;
@@ -479,7 +483,6 @@ function Station({ device, serverOffsetMs, serverNow, picker, waiting }: Station
         <Section className="max-xl:order-1">
           <div className="flex flex-col gap-4">
             {showFeed ? (
-              <>
                 <LiveFeed
                   deviceId={device.id}
                   deviceLabel={device.label}
@@ -498,15 +501,12 @@ function Station({ device, serverOffsetMs, serverNow, picker, waiting }: Station
                     ) : null}
                   </div>
                 </LiveFeed>
-                {timed ? <SittingTimer elapsed={elapsed} doneLabel="Saving" /> : null}
-                {control}
-              </>
-            ) : (
-              <div className="flex min-h-[clamp(160px,24vh,240px)] w-full flex-col justify-center gap-4 rounded-lg border border-line bg-surface-0 p-5">
-                {timed ? <SittingTimer elapsed={elapsed} doneLabel="Saving" /> : null}
-                {control}
-              </div>
-            )}
+            ) : null}
+            {/* One element whether or not the picture is above it, so the focused button or line is never remounted when the camera comes on. */}
+            <div className={cx('flex w-full flex-col gap-4', !showFeed && 'min-h-[clamp(160px,24vh,240px)] justify-center rounded-lg border border-line bg-surface-0 p-5')}>
+              {timed ? <SittingTimer elapsed={elapsed} doneLabel="Saving" /> : null}
+              {control}
+            </div>
 
             {trouble ? (
               <p role="alert" className="type-dense text-watch">
