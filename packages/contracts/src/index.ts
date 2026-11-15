@@ -10,4 +10,5 @@ export * from './signal.ts';
 export * from './sittings.ts';
 export * from './statistics.ts';
 export * from './patients.ts';
+export * from './webcam.ts';
 export * from './worklist.ts';

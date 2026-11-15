@@ -48,6 +48,7 @@ export const ErrorCode = z.enum([
   'face_not_opted_in',
   'no_face_detected',
   'face_unavailable',
+  'engine_unavailable',
   'payload_too_large',
   'rate_limited',
   'internal',
@@ -75,6 +76,8 @@ export const errorStatus: Record<ErrorCode, number> = {
   no_face_detected: 422,
   /** The face models are not installed on the server. Choose the patient from the waiting-room list instead. */
   face_unavailable: 503,
+  /** The webcam's measuring engine is not built on this server (`pnpm webcam:build`), or would not start. Webcam routes only. */
+  engine_unavailable: 503,
   payload_too_large: 413,
   rate_limited: 429,
   internal: 500,
