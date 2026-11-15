@@ -155,6 +155,9 @@ export function considerFrameForPhoto(deviceId: string, jpeg: Buffer, now = Date
         best ? { onlyIfStillAt: best.storedAt } : { onlyIfMissing: true },
       );
       if (stored === running.patient || !stored.photoUpdatedAt) {
+        // The phone's own crop landed while this frame was being looked at: the next frame
+        // replaces it.
+        if (running.best !== best) return;
         // Someone else's photo, or a removal, got there first.
         running.looking = false;
         return;
