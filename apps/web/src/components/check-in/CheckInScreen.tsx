@@ -353,7 +353,9 @@ function Station({ device, serverOffsetMs, serverNow, picker, waiting }: Station
     if (!held.current || !root) return;
     const active = document.activeElement;
     if (active instanceof HTMLButtonElement && !active.disabled && root.contains(active)) return;
-    (root.querySelector<HTMLButtonElement>('button:not(:disabled)') ?? statusRef.current)?.focus();
+    // Never onto a lesser button because the main one is not ready yet: Enter would then cancel.
+    const first = root.querySelector<HTMLButtonElement>('button');
+    (first && !first.disabled ? first : statusRef.current)?.focus();
   }, [stage]);
 
   const pendingType = commands.pending?.type ?? null;
