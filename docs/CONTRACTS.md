@@ -520,7 +520,12 @@ List routes take `limit` (1 to 200, default 50) and `cursor`, and return `{ item
 7. Once the viewfinder is measuring: `captureFaceCrop()`, then `PUT /api/patients/:number/photo` (check-in sittings), and `POST /api/patients/:number/face` if the patient opted in to face match and is not enrolled.
 8. In development: `PUT /api/sittings/:id/file` with the file at `fileUri`, then `deleteSittingFile(fileUri)`. Up to three tries. A file that did not get through stays on the phone and is written down (sitting id and path, beside the device registration); it is offered again when a later file gets through and when the app next starts. Never more than five are kept: the oldest is deleted first. A refusal that cannot pass (404, 413, 403, or the file is gone from the caches folder) deletes the file; a 401 does not, because signing in again lets it through.
 
-The dashboard's check-in page follows the same sitting through `GET /api/stream` (`sitting_started`, `reading`, `sitting_finished`).
+The dashboard's check-in page follows the same sitting through `GET /api/stream` (`sitting_started`, `reading`, `sitting_finished`, `camera_state`), and it is where a check-in is normally run from, with nobody touching the phone (section 4, Live view):
+
+- Step 1 from the dashboard: "Check in a new patient" is `POST /api/patients` with `{}` and then the command `open` for that patient; "Open re-check" is `open` with `kind: 'recheck'` for someone on the worklist. The phone opens its sitting screen and step 2 follows by itself.
+- Step 3 from the dashboard: "Start sitting" is the command `start`, offered once the phone reports a face (`facePresent`). The phone then makes the same two calls as when its own button is pressed. Face match is a switch beside the Start button (`PATCH /api/patients/:number` with `faceOptIn`), and `start` carries `enrolFace` when the patient is opted in and not enrolled.
+- Step 6 from the dashboard: "End now" is `stop`. "Call off" (and "Cancel" before the sitting starts) is `cancel`: the phone leaves the sitting screen and, if a sitting was running, posts `POST /api/sittings/:id/abandon`, as it now does whenever a sitting screen is left mid-sitting.
+- The page says what the phone is doing at each point (`apps/web/src/components/check-in/station.ts`): not connected, ready, starting the camera, looking for a face, ready to start, measuring with the countdown, saving, complete, called off, or stopped responding (a sitting was running and the state reports ceased).
 
 ### Observations, baseline and score
 
