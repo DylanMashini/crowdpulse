@@ -37,8 +37,14 @@ const EYE_DISTANCE_RANGE = [22, 80] as const;
 /** The nose this far off the middle of the eyes, in eye distances, is a head turned well away. */
 const YAW_LIMIT = 0.3;
 const ROLL_LIMIT_DEGREES = 25;
-/** Variance of the Laplacian at which sharpness scores one half. */
-const SHARPNESS_HALF = 120;
+/**
+ * Variance of the Laplacian, on the 96 px copy, at which sharpness scores one half. Set from
+ * 640 px live-view frames of a synthetic face: about 700 in focus, 220 slightly soft, 50
+ * badly blurred.
+ */
+const SHARPNESS_HALF = 300;
+/** No part counts as less than this, so one hopeless part lowers the score a lot but not to nothing. */
+const PART_FLOOR = 0.02;
 
 /**
  * Facing the camera, from the five landmarks alone. A turned head moves the nose off the
@@ -62,7 +68,7 @@ export function poseScore(landmarks: Landmarks): number {
   // Facing the camera, the mouth is about one eye distance below the eyes.
   const proportion = eyeDistance / Math.max(distance(eyes, mouth), 1e-6);
   const level = Math.min(ramp(proportion, 0.5, 0.8), ramp(proportion, 1.6, 1.2));
-  return 0.5 * yaw + 0.2 * roll + 0.3 * level;
+  return 0.5 * yaw + 0.25 * roll + 0.25 * level;
 }
 
 /** How much of the head-and-shoulders square around the face is inside the picture. */
@@ -118,7 +124,7 @@ export function exposureScore(grey: Uint8Array): number {
 }
 
 /**
- * One number for a frame, from the face found in it and a small greyscale copy of the
+ * One number from 0 to 1 for a frame, from the face found in it and a small greyscale copy of the
  * portrait that would be cut from it. The copy is always the same size, so a face near the
  * camera and one further away are compared like for like.
  */
@@ -141,9 +147,13 @@ export function portraitQuality(input: {
     exposure: exposureScore(input.grey),
     confidence: ramp(input.confidence, ...CONFIDENCE_RANGE),
   };
-  const score = (Object.keys(WEIGHTS) as (keyof QualityParts)[]).reduce(
-    (total, part) => total + WEIGHTS[part] * parts[part],
-    0,
+  // A weighted geometric mean: the parts multiply, so a frame that is good on average but
+  // useless in one way (turned away, blurred, half out of the picture) still scores low.
+  const score = Math.exp(
+    (Object.keys(WEIGHTS) as (keyof QualityParts)[]).reduce(
+      (total, part) => total + WEIGHTS[part] * Math.log(Math.max(parts[part], PART_FLOOR)),
+      0,
+    ),
   );
   return { score, parts };
 }
