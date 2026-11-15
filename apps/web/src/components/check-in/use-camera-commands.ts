@@ -23,7 +23,13 @@ export interface CameraCommands {
  * air. A command is done when the phone's own state says so, not when the server accepts it:
  * until then the button that sent it stays busy, so pressing twice sends once.
  */
-export function useCameraCommands(deviceId: string, phone: string, camera: CameraState | null): CameraCommands {
+export function useCameraCommands(
+  deviceId: string,
+  phone: string,
+  camera: CameraState | null,
+  /** What to do when the camera does not answer. */
+  remedy = 'Check that Crowdpulse is open on it, then try again.',
+): CameraCommands {
   const [pending, setPending] = useState<PendingCommand | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,10 +40,10 @@ export function useCameraCommands(deviceId: string, phone: string, camera: Camer
     if (!pending) return;
     const timer = setTimeout(() => {
       setPending(null);
-      setError(`${phone} did not respond. Check that Crowdpulse is open on it, then try again.`);
+      setError(`${phone} did not respond. ${remedy}`);
     }, NO_ANSWER_AFTER_MS);
     return () => clearTimeout(timer);
-  }, [pending, phone]);
+  }, [pending, phone, remedy]);
 
   const send = useCallback(
     async (request: SendCameraCommandRequest) => {
