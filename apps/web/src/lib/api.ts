@@ -8,6 +8,7 @@ import {
   MeResponse,
   PostLiveStateResponse,
   PostReadingsResponse,
+  PollWebcamResponse,
   PostWebcamFramesResponse,
   ResendVerificationResponse,
   SendCameraCommandResponse,
@@ -190,6 +191,9 @@ export const api = {
         [WEBCAM_FRAME_HEADERS.readingsAfter]: String(readingsAfter),
       },
     }),
+  /** Asks after the camera the server opens itself. The first call turns it on. */
+  pollWebcam: (deviceId: string, readingsAfter: number, snapshot = false) =>
+    request(PollWebcamResponse, 'POST', routes.webcamNative(deviceId), { readingsAfter, snapshot }),
   webcamSitting: (deviceId: string, action: 'start' | 'finish' | 'abandon', sittingId: string) =>
     request(WebcamSittingResponse, 'POST', routes.webcamSitting(deviceId), { action, sittingId }),
   closeWebcam: (deviceId: string) => request<void>(null, 'DELETE', routes.webcam(deviceId)),

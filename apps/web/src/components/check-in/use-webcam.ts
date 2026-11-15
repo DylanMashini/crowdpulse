@@ -2,7 +2,6 @@ import type { CameraState } from '@triagecam/contracts';
 import { useEffect, useMemo, useState } from 'react';
 
 import { api } from '@/lib/api';
-import { WebcamCapture } from '@/lib/webcam-capture';
 import { WEBCAM_IDLE, WEBCAM_LABEL, WebcamStation } from '@/lib/webcam-station';
 
 /** This browser's webcam device, kept so a reload is the same camera and not one more row in the list. */
@@ -77,7 +76,7 @@ export function useWebcam(): Webcam {
 
   const { deviceId } = registration;
   const station = useMemo(
-    () => (deviceId ? new WebcamStation(deviceId, { api, openCamera: (handlers) => WebcamCapture.open(handlers) }) : null),
+    () => (deviceId ? new WebcamStation(deviceId, { api }) : null),
     [deviceId],
   );
   useEffect(() => station?.subscribe(setState), [station]);

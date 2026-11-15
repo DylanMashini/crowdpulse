@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { CameraCommand, CameraState, PostWebcamFramesResponse, Reading, SittingSummary } from '@triagecam/contracts';
+import type { CameraCommand, CameraState, PollWebcamResponse, Reading, SittingSummary } from '@triagecam/contracts';
 
 import { ApiError } from './api.ts';
-import { WebcamError, frameBatch, sendSize, type WebcamHandlers } from './webcam-capture.ts';
+import { frameBatch, sendSize } from './webcam-capture.ts';
 import { WEBCAM_IDLE, WEBCAM_SITTING_MS, WebcamStation, type StationApi } from './webcam-station.ts';
 
 const DEVICE = '6f1d1c6e-3c0a-4f5e-9a51-0d6a3b1f2c11';
@@ -30,27 +30,28 @@ const SUMMARY: SittingSummary = {
   heartRateConfidence: 'normal',
 };
 const face = { x: 0.4, y: 0.2, width: 0.2, height: 0.3 };
-const seen = (overrides: Partial<PostWebcamFramesResponse> = {}): PostWebcamFramesResponse => ({
+const CAMERA = { name: 'MacBook Pro Camera', width: 1280, height: 720, fps: 30, delivered: 300, dropped: 0, exposureHeld: false, whiteBalanceHeld: false };
+const seen = (overrides: Partial<PollWebcamResponse> = {}): PollWebcamResponse => ({
   viewers: 1,
   outlines: { aspectRatio: 4 / 3, face, forehead: null, leftCheek: null, rightCheek: null, chest: null },
   facePresent: true,
   exposureLocked: true,
   sittingId: null,
   readings: [],
+  camera: CAMERA,
+  snapshotJpegBase64: null,
   ...overrides,
 });
 
-/** A server and a camera that do what the test says, and note every call the station makes. */
-function rig(options: { camera?: 'ok' | WebcamError } = {}) {
+/** A server, with the camera it opens, that does what the test says and notes every call the station makes. */
+function rig(options: { camera?: Error } = {}) {
   const calls: string[] = [];
   const commands: CameraCommand[] = [];
   const posted: Reading[] = [];
   /** Every reading the engine has made, as the server keeps them for the finish. */
   const made: Reading[] = [];
-  let handlers: WebcamHandlers | null = null;
-  let closed = 0;
   let answer = seen();
-  let framesFail: Error | null = null;
+  let cameraFails: Error | null = options.camera ?? null;
   let finished: { endedAt: string; summary: SittingSummary } | null = null;
   const sitting = { id: SITTING, patientNumber: 14, deviceId: DEVICE, kind: 'check_in' as const, source: 'camera' as const, startedAt: '2026-11-15T07:39:33.000Z', endedAt: null, clockOffsetMs: 0, summary: null };
   const api: StationApi = {
@@ -76,9 +77,10 @@ function rig(options: { camera?: 'ok' | WebcamError } = {}) {
     enrolFace: async (number) => {
       calls.push(`enrol:${number}`);
     },
-    postWebcamFrames: async () => {
-      if (framesFail) throw framesFail;
-      return answer;
+    pollWebcam: async (_device, readingsAfter, snapshot) => {
+      if (cameraFails) throw cameraFails;
+      // As the server does it: the readings after the ones the station holds, and a picture only when asked.
+      return { ...answer, readings: made.slice(readingsAfter), snapshotJpegBase64: snapshot ? 'anVzdCBhIHBpY3R1cmU=' : null };
     },
     webcamSitting: async (_device, action) => {
       calls.push(`engine:${action}`);
@@ -90,14 +92,7 @@ function rig(options: { camera?: 'ok' | WebcamError } = {}) {
       calls.push('close');
     },
   };
-  const station = new WebcamStation(DEVICE, {
-    api,
-    openCamera: async (given) => {
-      if (options.camera instanceof WebcamError) throw options.camera;
-      handlers = given;
-      return { dropped: 0, snapshot: () => 'anVzdCBhIHBpY3R1cmU=', close: () => void (closed += 1) };
-    },
-  });
+  const station = new WebcamStation(DEVICE, { api, pollIntervalMs: 1 });
   const states: CameraState[] = [];
   station.subscribe((state) => states.push(state));
   const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
@@ -107,7 +102,7 @@ function rig(options: { camera?: 'ok' | WebcamError } = {}) {
     states,
     posted,
     settle,
-    closed: () => closed,
+    closed: () => calls.filter((call) => call === 'close').length,
     finished: () => finished,
     /** A command from the check-in page, waiting for the station's next state report. */
     queue: (type: CameraCommand['type'], extra: Partial<CameraCommand> = {}) => {
@@ -120,17 +115,15 @@ function rig(options: { camera?: 'ok' | WebcamError } = {}) {
       station.connect();
       await settle();
     },
-    /** One camera frame goes up and the server answers with `next`. */
-    frame: async (next: PostWebcamFramesResponse) => {
+    /** The engine has looked at more frames: the station's next question is answered with `next`. */
+    frame: async (next: PollWebcamResponse) => {
       answer = next;
       made.push(...next.readings);
-      handlers?.onFrame({ jpeg: new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])]), capturedAtMs: Date.now() });
       await settle();
     },
-    failFrames: (error: Error | null) => {
-      framesFail = error;
+    failCamera: (error: Error | null) => {
+      cameraFails = error;
     },
-    lose: () => handlers?.onLost(),
   };
 }
 
@@ -178,15 +171,27 @@ test('a check-in on the webcam makes the calls a phone makes, in a phone\'s orde
   r.station.disconnect();
 });
 
+test('a camera that is slow to start keeps the check-in preparing until its first frame has been looked at', async () => {
+  const r = rig();
+  r.station.connect();
+  r.frame(seen({ outlines: null, facePresent: false, exposureLocked: false, camera: null }));
+  await r.command('open', { patientNumber: 14, kind: 'check_in' });
+  await r.settle();
+  assert.equal(r.station.current().phase, 'preparing');
+  await r.frame(seen());
+  assert.equal(r.station.current().phase, 'framing');
+  assert.equal(r.station.current().facePresent, true);
+  r.station.disconnect();
+  assert.equal(r.closed(), 1);
+});
+
 test('a refused or missing camera is a phase the page can show, and closing it goes back to idle', async () => {
-  for (const [error, phase] of [
-    [new WebcamError('permission_denied', 'The browser has not been allowed to use the camera.'), 'permission_denied'],
-    [new WebcamError('no_camera', 'No camera was found on this computer.'), 'unavailable'],
-  ] as const) {
+  for (const sentence of ['This Mac has not allowed the server to use its camera.', 'No camera was found on this Mac.']) {
+    const error = new ApiError('engine_unavailable', sentence, 503);
     const r = rig({ camera: error });
     r.station.connect();
     await r.command('open', { patientNumber: 14, kind: 'check_in' });
-    assert.equal(r.station.current().phase, phase);
+    assert.equal(r.station.current().phase, 'unavailable');
     assert.equal(r.station.current().error, error.message);
     assert.equal(r.station.current().patientNumber, 14);
     await r.command('cancel');
@@ -203,10 +208,10 @@ test('a camera lost mid-sitting abandons the sitting and says so', async () => {
   await inner.start(false);
   assert.equal(r.station.current().phase, 'running');
 
-  r.lose();
+  r.failCamera(new ApiError('engine_unavailable', "This Mac's camera stopped. Close this check-in and try again.", 503));
   await r.settle();
   assert.equal(r.station.current().phase, 'unavailable');
-  assert.match(r.station.current().error ?? '', /stopped sending a picture/);
+  assert.match(r.station.current().error ?? '', /camera stopped/);
   assert.equal(r.station.current().sittingId, null);
   assert.ok(r.calls.includes('engine:abandon') && r.calls.includes('abandon'));
   assert.equal(r.calls.includes('finish'), false);
@@ -217,14 +222,15 @@ test('an engine that is not there stops the check-in with the server\'s own sent
   const r = rig();
   r.station.connect();
   await r.command('open', { patientNumber: 14, kind: 'check_in' });
-  r.failFrames(new ApiError('engine_unavailable', 'The measuring engine for the webcam is not built on this server. Run pnpm webcam:build, then try again.', 503));
+  r.failCamera(new ApiError('engine_unavailable', 'Webcam check-in needs the server to run on a Mac.', 503));
   await r.frame(seen());
   assert.equal(r.station.current().phase, 'unavailable');
-  assert.match(r.station.current().error ?? '', /pnpm webcam:build/);
+  assert.equal(r.station.current().error, 'Webcam check-in needs the server to run on a Mac.');
   assert.equal(r.closed(), 1);
   r.station.disconnect();
 });
 
+// The browser's own upload path, which the check-in page no longer uses; the frames route still takes it.
 test('frames are sent at the camera\'s size up to 640 px, each behind its capture time and length', async () => {
   assert.deepEqual(sendSize(640, 480), { width: 640, height: 480 });
   assert.deepEqual(sendSize(1280, 720), { width: 640, height: 360 });

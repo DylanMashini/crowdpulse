@@ -1,12 +1,12 @@
 import {
   LIVE_VIEW,
-  WEBCAM,
+  WEBCAM_NATIVE,
   type CameraCommand,
   type CameraState,
   type LiveRegions,
   type PostLiveStateRequest,
+  type PollWebcamResponse,
   type PostLiveStateResponse,
-  type PostWebcamFramesResponse,
   type Reading,
   type SittingKind,
   type SittingResponse,
@@ -16,15 +16,15 @@ import {
 } from '@triagecam/contracts';
 
 import { ApiError } from './api.ts';
-import { WebcamError, frameBatch, type WebcamFrame, type WebcamHandlers } from './webcam-capture.ts';
 
 // This computer's webcam in the place of a camera phone. To the server and to the check-in page
 // it is a camera device like any other: it reports its state, takes the page's commands from
 // the answers, makes the sitting, posts its readings and finishes it, call for call as the
-// phone app does (apps/mobile/src/lib/capture). The one difference is where frames are
-// measured: a phone runs the capture module and the engine itself; the webcam sends its frames
-// to the server, which runs the same region code and the same engine on them and hands back
-// the outlines and the readings. No value is made up here: what the engine does not say is not shown.
+// phone app does (apps/mobile/src/lib/capture). The one difference is where the camera is: a
+// phone runs the capture module and the engine itself; here the server, on the same Mac, opens
+// the camera, runs the same region code and the same engine on its frames, and hands back the
+// outlines and the readings when this asks. No picture passes through the browser, and no
+// value is made up here: what the engine does not say is not shown.
 
 export const WEBCAM_SITTING_MS = 60_000;
 /** What the picker and the device list call it. */
@@ -45,18 +45,11 @@ export const WEBCAM_IDLE: CameraState = {
 const LOST_FOR_MS = 10_000;
 /** Outlines prompt a state report, as on a phone, about ten times a second. */
 const REGIONS_EVERY_MS = 100;
-/** Frame requests that may fail in a row before the check-in is stopped. About three seconds of them. */
-const FRAME_FAILURES = 6;
+/** Requests to the camera that may fail in a row before the check-in is stopped. About three seconds of them. */
+const POLL_FAILURES = 30;
 const FACE_ENROL_ATTEMPTS = 3;
 const SAVE_ATTEMPTS = 3;
 const REMEMBERED_COMMANDS = 20;
-
-/** The camera, as the station needs it. `WebcamCapture` in the browser; a stand-in under test. */
-export interface StationCamera {
-  dropped: number;
-  snapshot(): string | null;
-  close(): void;
-}
 
 /** Every call the station makes. `api` in the browser. */
 export interface StationApi {
@@ -66,15 +59,16 @@ export interface StationApi {
   finishSitting(sittingId: string, finish: { endedAt: string; summary: NonNullable<WebcamSittingResponse['summary']> }): Promise<SittingResponse>;
   abandonSitting(sittingId: string): Promise<unknown>;
   enrolFace(patientNumber: number, jpegBase64: string): Promise<unknown>;
-  postWebcamFrames(deviceId: string, frames: Blob, dropped: number, readingsAfter: number): Promise<PostWebcamFramesResponse>;
+  pollWebcam(deviceId: string, readingsAfter: number, snapshot?: boolean): Promise<PollWebcamResponse>;
   webcamSitting(deviceId: string, action: 'start' | 'finish' | 'abandon', sittingId: string): Promise<WebcamSittingResponse>;
   closeWebcam(deviceId: string): Promise<unknown>;
 }
 
 export interface StationDeps {
   api: StationApi;
-  openCamera: (handlers: WebcamHandlers) => Promise<StationCamera>;
   now?: () => number;
+  /** How often the camera on the server is asked. */
+  pollIntervalMs?: number;
 }
 
 type RunningSitting = {
@@ -90,14 +84,14 @@ type RunningSitting = {
   timer: ReturnType<typeof setTimeout> | null;
 };
 
-const message = (error: unknown, fallback: string) => (error instanceof ApiError || error instanceof WebcamError ? error.message : fallback);
+const message = (error: unknown, fallback: string) => (error instanceof ApiError ? error.message : fallback);
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export class WebcamStation {
   private readonly deviceId: string;
   private readonly api: StationApi;
-  private readonly openCamera: StationDeps['openCamera'];
   private readonly now: () => number;
+  private readonly pollIntervalMs: number;
   private readonly listeners = new Set<(state: CameraState) => void>();
 
   private state: CameraState = WEBCAM_IDLE;
@@ -109,22 +103,21 @@ export class WebcamStation {
   private lastRegionsReport = 0;
   private readonly seen: string[] = [];
 
-  private camera: StationCamera | null = null;
+  /** While set, the camera on the server is kept on by asking after it. */
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private openedAt = 0;
   /** Counts every time the camera is given up, so an answer that arrives after it is not acted on. */
   private generation = 0;
-  private queue: WebcamFrame[] = [];
-  private uploading = false;
+  private asking = false;
   private failures = 0;
-  /** Frames that were taken and never reached the server. They count as dropped. */
-  private undelivered = 0;
   private measuredAt: number | null = null;
   private sitting: RunningSitting | null = null;
 
   constructor(deviceId: string, deps: StationDeps) {
     this.deviceId = deviceId;
     this.api = deps.api;
-    this.openCamera = deps.openCamera;
     this.now = deps.now ?? (() => Date.now());
+    this.pollIntervalMs = deps.pollIntervalMs ?? WEBCAM_NATIVE.pollIntervalMs;
   }
 
   /** What the station is doing, as it tells the server. */
@@ -210,32 +203,13 @@ export class WebcamStation {
 
   // --- the camera ----------------------------------------------------------------------------------
 
-  private async open(patientNumber: number, kind: SittingKind): Promise<void> {
+  /** The first question turns the camera on; the check-in is `preparing` until its first frame has been looked at. */
+  private open(patientNumber: number, kind: SittingKind): void {
     this.release();
-    const generation = this.generation;
     this.setState({ ...WEBCAM_IDLE, phase: 'preparing', patientNumber, kind });
-    let camera: StationCamera;
-    try {
-      camera = await this.openCamera({
-        accepts: () => this.queue.length < WEBCAM.maxQueuedFrames,
-        onFrame: (frame) => {
-          if (generation !== this.generation) return;
-          this.queue.push(frame);
-          this.pump();
-        },
-        onLost: () => {
-          if (generation === this.generation) this.stopWith('The webcam stopped sending a picture. Close this check-in and try again.');
-        },
-      });
-    } catch (error) {
-      if (generation !== this.generation) return;
-      const denied = error instanceof WebcamError && error.kind === 'permission_denied';
-      return this.setState({ phase: denied ? 'permission_denied' : 'unavailable', error: message(error, 'The webcam could not be started.') });
-    }
-    // Called off while the browser was asking for permission.
-    if (generation !== this.generation) return camera.close();
-    this.camera = camera;
-    this.setState({ phase: 'framing' });
+    this.openedAt = this.now();
+    this.pollTimer = setInterval(() => this.poll(), this.pollIntervalMs);
+    this.poll();
   }
 
   /** Turns the camera off and forgets everything that belonged to it. A running sitting is abandoned. */
@@ -248,14 +222,12 @@ export class WebcamStation {
       void this.api.webcamSitting(this.deviceId, 'abandon', sitting.id).catch(() => {});
       void this.api.abandonSitting(sitting.id).catch(() => {});
     }
-    if (this.camera) {
-      this.camera.close();
-      this.camera = null;
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
       void this.api.closeWebcam(this.deviceId).catch(() => {});
     }
-    this.queue = [];
     this.failures = 0;
-    this.undelivered = 0;
     this.measuredAt = null;
     this.regions = null;
   }
@@ -272,37 +244,40 @@ export class WebcamStation {
     this.setState(WEBCAM_IDLE);
   }
 
-  // --- frames up, outlines and readings back ---------------------------------------------------------
+  // --- outlines and readings from the camera on the server ---------------------------------------------
 
-  /** One request in flight, carrying every frame taken since the last, in order. */
-  private pump(): void {
-    const camera = this.camera;
-    if (this.uploading || this.queue.length === 0 || !camera) return;
+  /** One question in flight at most. The answer is what the engine has made of the camera's frames so far. */
+  private poll(): void {
+    if (this.asking || !this.pollTimer) return;
     const generation = this.generation;
-    const frames = this.queue;
-    this.queue = [];
-    this.uploading = true;
+    this.asking = true;
     this.api
-      .postWebcamFrames(this.deviceId, frameBatch(frames), camera.dropped + this.undelivered, this.sitting?.readings.length ?? 0)
+      .pollWebcam(this.deviceId, this.sitting?.readings.length ?? 0)
       .then((answer) => {
         if (generation !== this.generation) return;
         this.failures = 0;
+        if (this.state.phase === 'preparing') {
+          // No frame looked at yet: the camera is starting, or the Mac is asking whether it may be used.
+          if (answer.outlines === null) {
+            if (this.now() - this.openedAt > WEBCAM_NATIVE.startTimeoutMs) this.stopWith('The camera did not start. Close this check-in and try again.');
+            return;
+          }
+          this.setState({ phase: 'framing' });
+        }
         this.absorb(answer);
       })
       .catch((error: unknown) => {
         if (generation !== this.generation) return;
-        this.undelivered += frames.length;
         this.failures += 1;
         if (error instanceof ApiError && error.code === 'engine_unavailable') this.stopWith(error.message);
-        else if (this.failures >= FRAME_FAILURES) this.stopWith(message(error, 'The webcam picture is not reaching the server. Close this check-in and try again.'));
+        else if (this.failures >= POLL_FAILURES) this.stopWith(message(error, 'The server is not answering for the webcam. Close this check-in and try again.'));
       })
       .finally(() => {
-        this.uploading = false;
-        this.pump();
+        this.asking = false;
       });
   }
 
-  private absorb(answer: PostWebcamFramesResponse): void {
+  private absorb(answer: PollWebcamResponse): void {
     const now = this.now();
     this.regions = answer.outlines;
     let viewfinder: CameraState['viewfinder'];
@@ -349,15 +324,16 @@ export class WebcamStation {
       });
   }
 
-  /** Face match was asked for with Start: the newest frame goes to the enrolment route, which finds the face in it. */
+  /** Face match was asked for with Start: the newest picture goes to the enrolment route, which finds the face in it. */
   private async enrol(sitting: RunningSitting): Promise<void> {
     const { enrol } = sitting;
     if (!enrol.wanted || enrol.busy || enrol.attempts >= FACE_ENROL_ATTEMPTS) return;
-    const picture = this.camera?.snapshot();
-    if (!picture) return;
     enrol.busy = true;
-    enrol.attempts += 1;
     try {
+      // Asked for apart from the regular question: its readings are left for that one to collect.
+      const picture = (await this.api.pollWebcam(this.deviceId, sitting.readings.length, true)).snapshotJpegBase64;
+      if (!picture) return;
+      enrol.attempts += 1;
       await this.api.enrolFace(sitting.patientNumber, picture);
       enrol.wanted = false;
     } catch (error) {

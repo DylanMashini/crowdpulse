@@ -188,14 +188,14 @@ function webcamCopy(stage: Stage, camera: CameraState | null): StageCopy | null 
     case 'ready':
       return { title: 'Ready for the next patient', detail: "Seat the patient in front of this computer's webcam, then start here." };
     case 'opening':
-      return { title: 'Starting the webcam', detail: 'Allow the camera if the browser asks.' };
+      return { title: 'Starting the webcam', detail: 'Allow the camera if this Mac asks.' };
     case 'blocked':
       return camera?.phase === 'permission_denied'
         ? { title: 'The browser has blocked the camera', detail: "Allow the camera for this site in the browser's address bar, then close this check-in and start again.", attention: true }
         : { title: 'The webcam is not available', detail: camera?.error ?? 'Close this check-in and try again.', attention: true };
     case 'framing':
       if (!camera?.facePresent) return { title: 'Looking for a face', detail: 'Seat the patient 0.6 to 0.9 m from the webcam, facing it.' };
-      // A browser cannot lock a webcam's exposure, so the page does not say it is locked.
+      // A MacBook's own camera does not let its exposure be locked, so the page does not say it is.
       return camera.exposureLocked ? { title: 'Ready to start', detail: 'Face in view.' } : { title: 'Face found', detail: 'The picture is settling. You can start now.' };
     case 'running':
       return camera?.viewfinder === 'lost' || camera?.viewfinder === 'searching'
