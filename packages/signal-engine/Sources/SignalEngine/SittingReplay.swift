@@ -127,6 +127,25 @@ public struct ReferenceComparison: Codable, Sendable, Equatable {
   /// that had a reading, so this is the mean to hold it against: when the rate moves during a
   /// recording, the whole-recording mean describes seconds the summary never saw.
   public var pairedReferenceMeanBpm: Double?
+  /// The same for everything the screen showed during the sitting: the recorded readings
+  /// above together with the provisional ones (`Estimate.provisional`). Every number above
+  /// is of recorded readings only.
+  public var shown: Shown?
+
+  public struct Shown: Codable, Sendable, Equatable {
+    public var pairedReadings: Int
+    public var meanAbsoluteErrorBpm: Double?
+    public var within5BpmShare: Double?
+    /// Of the provisional readings alone.
+    public var provisionalPairedReadings: Int
+    public var provisionalMeanAbsoluteErrorBpm: Double?
+    public var provisionalWithin5BpmShare: Double?
+    /// Share of the one-second readings with a value on screen.
+    public var coverage: Double
+    public var timeToFirstReadingSeconds: Double?
+    /// Longest run of seconds without a fresh value after the first one.
+    public var longestDropoutSeconds: Double?
+  }
 
   /// A reading pairs with the nearest reference sample no further away than this, in seconds.
   public static let pairingSeconds = 1.5
@@ -143,13 +162,47 @@ public struct ReferenceComparison: Codable, Sendable, Equatable {
   public init(replay: SittingReplay.Result, reference: [ReferenceSample]) {
     var errors: [Double] = []
     var pairedReference = 0.0
+    var provisionalErrors: [Double] = []
+    var shownSeconds = 0
+    var firstShown: Double?
+    var dropout = 0
+    var longestDropout = 0
     for reading in replay.readings {
+      if reading.heartRate.value != nil {
+        shownSeconds += 1
+        firstShown = firstShown ?? reading.elapsed
+        dropout = 0
+      } else if firstShown != nil {
+        dropout += 1
+        longestDropout = max(longestDropout, dropout)
+      }
       guard let estimate = reading.heartRate.value,
         let paired = ReferenceComparison.reference(at: reading.elapsed, in: reference)
       else { continue }
+      if reading.heartRate.provisional {
+        provisionalErrors.append(estimate - paired)
+        continue
+      }
       errors.append(estimate - paired)
       pairedReference += paired
     }
+    func meanAbsolute(_ errors: [Double]) -> Double? {
+      errors.isEmpty ? nil : errors.reduce(0) { $0 + abs($1) } / Double(errors.count)
+    }
+    func within5(_ errors: [Double]) -> Double? {
+      errors.isEmpty ? nil : Double(errors.filter { abs($0) <= 5 }.count) / Double(errors.count)
+    }
+    let everything = errors + provisionalErrors
+    shown = Shown(
+      pairedReadings: everything.count,
+      meanAbsoluteErrorBpm: meanAbsolute(everything),
+      within5BpmShare: within5(everything),
+      provisionalPairedReadings: provisionalErrors.count,
+      provisionalMeanAbsoluteErrorBpm: meanAbsolute(provisionalErrors),
+      provisionalWithin5BpmShare: within5(provisionalErrors),
+      coverage: replay.readings.isEmpty ? 0 : Double(shownSeconds) / Double(replay.readings.count),
+      timeToFirstReadingSeconds: firstShown,
+      longestDropoutSeconds: firstShown == nil ? nil : Double(longestDropout))
     let pairs = Double(errors.count)
     pairedReadings = errors.count
     meanAbsoluteErrorBpm = errors.isEmpty ? nil : errors.reduce(0) { $0 + abs($1) } / pairs

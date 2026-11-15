@@ -45,16 +45,21 @@ public struct Estimate: Codable, Sendable, Equatable {
   public var reason: EstimateReason?
   /// Signal quality at the reported frequency, 0 to 1. 0 when there is no candidate.
   public var quality: Double
-  /// Share of the sitting so far, 0 to 1, in which this estimate was `valid`,
-  /// counted over the one-second readings since the first frame.
+  /// Share of the sitting so far, 0 to 1, in which this estimate was `valid` and not
+  /// `provisional`, counted over the one-second readings since the first frame.
   public var coverage: Double
   /// Milliseconds since this estimate was last `valid`. 0 while valid. Nil if it has not been
   /// valid in this sitting.
   public var ageMs: Int?
+  /// True when `value` passed the display checks only (`EngineConfiguration`, "Live display"):
+  /// it is there for the screen to show during the sitting. It is not counted in `coverage`,
+  /// and the sitting's summary is built without it. Always false unless `state` is `valid`.
+  /// Engine-side only: the wire `Estimate` does not carry it.
+  public var provisional: Bool
 
   public init(
     value: Double?, state: EstimateState, reason: EstimateReason?,
-    quality: Double, coverage: Double, ageMs: Int?
+    quality: Double, coverage: Double, ageMs: Int?, provisional: Bool = false
   ) {
     self.value = value
     self.state = state
@@ -62,6 +67,23 @@ public struct Estimate: Codable, Sendable, Equatable {
     self.quality = quality
     self.coverage = coverage
     self.ageMs = ageMs
+    self.provisional = provisional
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case value, state, reason, quality, coverage, ageMs, provisional
+  }
+
+  /// `provisional` is absent from readings written before it existed.
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    value = try container.decodeIfPresent(Double.self, forKey: .value)
+    state = try container.decode(EstimateState.self, forKey: .state)
+    reason = try container.decodeIfPresent(EstimateReason.self, forKey: .reason)
+    quality = try container.decode(Double.self, forKey: .quality)
+    coverage = try container.decode(Double.self, forKey: .coverage)
+    ageMs = try container.decodeIfPresent(Int.self, forKey: .ageMs)
+    provisional = try container.decodeIfPresent(Bool.self, forKey: .provisional) ?? false
   }
 
   public static func unavailable(_ state: EstimateState, _ reason: EstimateReason) -> Estimate {

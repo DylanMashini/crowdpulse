@@ -9,7 +9,7 @@ import { Text } from './Text';
 
 type Props = {
   label: string;
-  /** Printed for `valid`, struck through for `stale`. */
+  /** Printed for `valid` and `held`, struck through for `stale`. */
   value?: string;
   /** Printed beside the value: "bpm", "per min", "ms". */
   unit: string;
@@ -18,7 +18,9 @@ type Props = {
   /** Closes the gaps between the lines, for a cell that also carries a trace. */
   dense?: boolean;
   size?: 'xl' | 'lg' | 'md';
-  state?: 'valid' | 'settling' | 'none' | 'stale';
+  state?: 'valid' | 'settling' | 'none' | 'stale' | 'held';
+  /** How old a `held` value is, in the corner of the readout: "8 s ago". Left out while it is fresh. */
+  age?: string | null;
   /** A value being measured now is ice-white. A settled one is `ink`. */
   live?: boolean;
   icon?: IconName;
@@ -33,18 +35,21 @@ const READOUT_TEXT_SCALE = 1.3;
 /**
  * One measured value with its unit, source and age, set as an instrument: a fixed-width face
  * with tabular figures, so the number keeps still when it changes. `none` prints the words
- * "No reading", never a dash or a faded number.
+ * "No reading", never a dash or a faded number. `held`, during a sitting, keeps the latest
+ * value in place when the readings after it carry none: in `ink`, not the live accent, with
+ * its age in the corner once it is no longer fresh.
  */
-export function Readout({ label, value, unit, unitSpoken, dense, size = 'lg', state = 'valid', live, icon, foot, experimental }: Props) {
+export function Readout({ label, value, unit, unitSpoken, dense, size = 'lg', state = 'valid', age, live, icon, foot, experimental }: Props) {
   const theme = useScopedTheme();
   const { colors } = theme;
   const valueStyle = { xl: theme.type.readoutXl, lg: theme.type.readoutLg, md: theme.type.readoutMd }[size];
   // The words stand where the number would, on the number's own line height, so nothing moves
   // when a reading arrives.
   const wordStyle = size === 'md' ? theme.type.subheading : theme.type.heading;
-  const showsNumber = state === 'valid' || state === 'stale';
+  const showsNumber = state === 'valid' || state === 'stale' || state === 'held';
+  const heldAge = state === 'held' && age ? age : null;
   const spoken = showsNumber
-    ? `${label}, ${state === 'stale' ? 'stale, last value ' : ''}${value} ${unitSpoken ?? unit}. ${foot}`
+    ? `${label}, ${state === 'stale' ? 'stale, last value ' : ''}${value} ${unitSpoken ?? unit}${heldAge ? `, read ${heldAge}` : ''}. ${foot}`
     : `${label}, ${state === 'settling' ? 'settling' : 'no reading'}. ${foot}`;
 
   return (
@@ -53,6 +58,9 @@ export function Readout({ label, value, unit, unitSpoken, dense, size = 'lg', st
         {icon ? <Icon name={icon} size={16} color={colors.inkMuted} /> : null}
         <Text style={[theme.type.caption, { color: colors.inkMuted }]}>{label}</Text>
         {experimental ? <ProvenanceTag kind="experimental" /> : null}
+        {heldAge ? (
+          <Text style={[theme.type.caption, { color: colors.inkFaint, marginLeft: 'auto', fontVariant: ['tabular-nums'] }]}>{heldAge}</Text>
+        ) : null}
       </View>
       {showsNumber ? (
         <View style={{ flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', columnGap: 6 }}>
@@ -63,7 +71,7 @@ export function Readout({ label, value, unit, unitSpoken, dense, size = 'lg', st
             style={
               state === 'stale'
                 ? { ...valueStyle, color: colors.inkFaint, textDecorationLine: 'line-through' }
-                : { ...valueStyle, color: live ? colors.signalStrong : colors.ink }
+                : { ...valueStyle, color: live && state === 'valid' ? colors.signalStrong : colors.ink }
             }
           >
             {value}

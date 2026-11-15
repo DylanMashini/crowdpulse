@@ -162,6 +162,7 @@ function SittingScreen({ patientNumber, kind, enrolFace, deviceId }: Props) {
             size="lg"
             live={running}
             state={heart.state}
+            age={heart.state === 'held' ? heart.age : undefined}
             value={'value' in heart ? heart.value : undefined}
             foot={heart.foot}
           />
@@ -177,6 +178,7 @@ function SittingScreen({ patientNumber, kind, enrolFace, deviceId }: Props) {
             size="lg"
             live={running}
             state={breathing.state}
+            age={breathing.state === 'held' ? breathing.age : undefined}
             value={'value' in breathing ? breathing.value : undefined}
             foot={breathing.foot}
           />

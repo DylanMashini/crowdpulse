@@ -62,6 +62,9 @@ public struct PulseDiagnostic: Codable, Sendable, Equatable {
   /// The reading's value. Set if and only if `state` is `valid`.
   public var value: Double?
   public var quality = 0.0
+  /// The reading was shown under the display checks only (`Estimate.provisional`): `state`
+  /// is `valid`, and `gate` names the check that kept it out of the record.
+  public var provisional = false
   /// The check that refused the reading. Nil if and only if `state` is `valid`.
   public var gate: PulseGate?
 

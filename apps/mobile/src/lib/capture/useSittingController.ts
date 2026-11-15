@@ -5,7 +5,7 @@ import TriageCapture, { type CaptureStatusEvent } from 'triage-capture';
 import { api, authHeaders, errorMessage, isApiError } from '@/lib/api';
 
 import { captureErrorCode, captureErrorMessage } from './captureErrors';
-import { type LastValid, ReasonTally, type Vital } from './readingFormat';
+import { type LastValid, nextLastValid, ReasonTally, type Vital } from './readingFormat';
 import { keptFileStore } from './keptFileStore';
 import { type KeptFile, type SittingFileHandOff, SittingFileGone, createSittingFileShelf, isPermanentRefusal } from './sittingFile';
 import { type FaceEnrolment, createUploadQueue, rememberFinishedSitting } from './sittingSession';
@@ -115,6 +115,7 @@ export function useSittingController({ patientNumber, kind, enrolFace, deviceId,
         source,
         summary: result.summary,
         mainReasons: { heartRate: current.reasons.main('heartRate'), breathingRate: current.reasons.main('breathingRate') },
+        shownLive: { heartRate: current.reasons.wasShown('heartRate'), breathingRate: current.reasons.wasShown('breathingRate') },
         face:
           current.face.status === 'pending'
             ? { status: 'failed', reason: 'No clear view of the face during this sitting' }
@@ -274,11 +275,8 @@ export function useSittingController({ patientNumber, kind, enrolFace, deviceId,
         setReading(event.reading);
         const atMs = Date.now();
         setLastValid((previous) => ({
-          heartRate: event.reading.heartRate.value != null ? { value: event.reading.heartRate.value, atMs } : previous.heartRate,
-          breathingRate:
-            event.reading.breathingRate.value != null
-              ? { value: event.reading.breathingRate.value, atMs }
-              : previous.breathingRate,
+          heartRate: nextLastValid(previous.heartRate, event.reading.heartRate, atMs),
+          breathingRate: nextLastValid(previous.breathingRate, event.reading.breathingRate, atMs),
         }));
         if (event.reading.elapsedMs >= SITTING_MS) void stop();
       }),

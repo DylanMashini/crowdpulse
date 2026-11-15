@@ -146,7 +146,7 @@ import Testing
   }
 
   @Test func saysWhyThereIsNoReadingYet() {
-    let result = replay(sitting { $0.durationSeconds = 30 })
+    let result = replay(sitting { $0.durationSeconds = 30 }, recordOnly)
     #expect(result.breathingRates.isEmpty)
     let last = result.readings.last!.breathingRate
     #expect(last.state == .settling)

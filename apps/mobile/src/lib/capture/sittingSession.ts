@@ -20,6 +20,8 @@ export type FinishedSitting = {
   source: CaptureSource;
   summary: CaptureSittingSummary;
   mainReasons: Record<Vital, EstimateReason | null>;
+  /** Which vitals had a value on screen while the sitting ran, recorded or not. */
+  shownLive: Record<Vital, boolean>;
   face: FaceEnrolment;
   uploads: SittingUploadQueue;
 };

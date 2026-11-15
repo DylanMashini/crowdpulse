@@ -79,14 +79,14 @@ private let search = PulseAnalyzer(configuration: .default, fourier: Fourier()).
 
 @Suite struct Requirement3AgreeingWindows {
   @Test func theFirstReadingWaitsForThreeAgreeingWindows() {
-    let three = replay(sitting())
+    let three = replay(sitting(), recordOnly)
     let firstValid = try! #require(three.readings.firstIndex { $0.heartRate.state == .valid })
     #expect(three.readings[firstValid - 1].heartRate.reason == .awaitingAgreement)
     #expect(three.readings[firstValid - 2].heartRate.reason == .awaitingAgreement)
     #expect(three.readings[firstValid - 1].heartRate.state == .settling)
     #expect(three.readings[firstValid - 3].heartRate.reason == .warmingUp)
 
-    let one = replay(sitting()) { $0.agreeingWindows = 1 }
+    let one = replay(sitting()) { $0.agreeingWindows = 1; $0.showsProvisionalReadings = false }
     #expect(one.summary.timeToFirstReadingSeconds == three.summary.timeToFirstReadingSeconds.map { $0 - 2 })
   }
 
@@ -150,7 +150,7 @@ private let search = PulseAnalyzer(configuration: .default, fourier: Fourier()).
     #expect(fiveWide.heartRates.count > inARow.heartRates.count)
     #expect(fiveWide.heartRates.allSatisfy { abs($0.bpm - 45) <= 2 })
     let diagnostics = SittingReplay.run(slow.frames(), diagnostics: true).diagnostics
-    #expect(diagnostics.filter { $0.state == .valid }.allSatisfy { ($0.passingWindows ?? 0) >= 3 })
+    #expect(diagnostics.filter { $0.state == .valid && !$0.provisional }.allSatisfy { ($0.passingWindows ?? 0) >= 3 })
   }
 }
 
@@ -486,7 +486,7 @@ private let search = PulseAnalyzer(configuration: .default, fourier: Fourier()).
 @Suite struct Bookkeeping {
   @Test func coverageCountsValidSeconds() {
     let result = replay(sitting())
-    let valid = result.readings.filter { $0.heartRate.state == .valid }.count
+    let valid = result.readings.filter { $0.heartRate.isRecorded }.count
     #expect(result.summary.heartRate.coverage == Double(valid) / Double(result.readings.count))
     #expect(result.readings.last?.heartRate.coverage == result.summary.heartRate.coverage)
     #expect(result.summary.timeToFirstReadingSeconds == result.heartRates.first?.elapsed)
