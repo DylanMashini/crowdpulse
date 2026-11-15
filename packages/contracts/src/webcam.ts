@@ -1,7 +1,7 @@
 import * as z from 'zod';
 
 import { Id, Timestamp } from './common.ts';
-import { LIVE_FRAME_HEADERS, LiveRegions } from './live.ts';
+import { LiveRegions } from './live.ts';
 import { SittingSummary } from './signal.ts';
 import { Reading } from './sittings.ts';
 
@@ -17,20 +17,30 @@ export const WEBCAM = {
   maxLongSidePx: 640,
   /** High, because the pulse is measured on these frames; the live view's own frames are 0.5. */
   jpegQuality: 0.92,
-  /** A frame body is at most this many bytes. */
+  /** One frame is at most this many bytes. */
   maxFrameBytes: 600_000,
-  /** Frames on their way to the server at once. A frame taken while this many are is dropped and counted. */
-  maxInFlight: 3,
+  /**
+   * Frames waiting to go up. One request is in flight at a time and carries every frame taken
+   * since the last, in order, so a slow link thickens the requests instead of reordering frames.
+   * A frame taken while this many wait is dropped and counted.
+   */
+  maxQueuedFrames: 8,
   /** With no frame for this long the server closes the webcam's engine; a running sitting is not saved by it. */
   timeoutMs: 15_000,
   /** The camera has stopped when it delivers no frame for this long. */
   lostAfterMs: 3000,
 } as const;
 
-/** Headers of POST /api/webcam/:deviceId/frame, whose body is the JPEG itself (Content-Type image/jpeg). */
+/** Bytes before each JPEG in the body of the frames route: Float64 capture time, Uint32 length, both little-endian. */
+export const WEBCAM_FRAME_PREFIX_BYTES = 12;
+
+/**
+ * Headers of POST /api/webcam/:deviceId/frames. The body (Content-Type application/octet-stream)
+ * is one or more frames in capture order, each a 12-byte prefix and then the JPEG: the capture
+ * time as a little-endian Float64 (the browser's clock, ms since the epoch, fractions kept) and
+ * the JPEG's byte length as a little-endian Uint32.
+ */
 export const WEBCAM_FRAME_HEADERS = {
-  /** When the frame was captured: the browser's clock, ms since the epoch, fractions allowed. Required. */
-  capturedAt: LIVE_FRAME_HEADERS.capturedAt,
   /** Frames the browser has dropped since the camera opened. Cumulative. */
   dropped: 'x-frames-dropped',
   /** How many readings of the running sitting the browser already holds: the answer carries the ones after. */
@@ -39,9 +49,9 @@ export const WEBCAM_FRAME_HEADERS = {
 
 /**
  * What the server made of the frames so far. It describes the newest frame it has looked at,
- * which is a few frames behind the one this answers.
+ * which is a few frames behind the ones this answers.
  */
-export const PostWebcamFrameResponse = z.object({
+export const PostWebcamFramesResponse = z.object({
   /** Dashboards reading this device's live stream. */
   viewers: z.int().nonnegative(),
   /** The outlines being measured on, as a phone reports them. Null until the first frame has been looked at. */
@@ -54,7 +64,7 @@ export const PostWebcamFrameResponse = z.object({
   /** That sitting's readings after the `x-readings-after` of the request, oldest first, ready to post. */
   readings: z.array(Reading).max(120),
 });
-export type PostWebcamFrameResponse = z.infer<typeof PostWebcamFrameResponse>;
+export type PostWebcamFramesResponse = z.infer<typeof PostWebcamFramesResponse>;
 
 /** `start` after POST /api/sittings, `finish` at 60 seconds or when staff end it, `abandon` to give it up. */
 export const WebcamSittingRequest = z.object({
@@ -68,5 +78,10 @@ export const WebcamSittingResponse = z.object({
   summary: SittingSummary.nullable(),
   /** For `finish`: the browser's clock at the last frame. */
   endedAt: Timestamp.nullable(),
+  /**
+   * For `finish`: every reading of the sitting, oldest first, so the last ones, made after the
+   * final frames request was answered, are not lost. Post the ones not yet posted before finishing.
+   */
+  readings: z.array(Reading).max(600).default([]),
 });
 export type WebcamSittingResponse = z.infer<typeof WebcamSittingResponse>;
