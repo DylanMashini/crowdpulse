@@ -6,10 +6,23 @@ import SignalEngine
 import Vision
 
 // A sitting from frames that arrive as they are taken: the dashboard's own webcam, in place of
-// the phone. JPEG frames come in on stdin with their capture times; each is reduced to a frame
-// record by the phone's own region code (as video-to-sitting does for a file) and handed to
-// the SignalEngine. Outlines, one reading a second and the summary go out on stdout, one JSON
-// object per line. The web server starts one of these per webcam (apps/web/src/server/webcam.ts).
+// the phone. Each frame is reduced to a frame record by the phone's own region code (as
+// video-to-sitting does for a file) and handed to the SignalEngine. Outlines, one reading a
+// second and the summary go out on stdout, one JSON object per line. The web server starts one
+// of these per webcam (apps/web/src/server/webcam.ts).
+//
+// Where the frames come from:
+//   live-sitting --camera            This Mac's camera, opened here with AVFoundation (Camera.swift):
+//                                    uncompressed frames with the camera's own capture times. The
+//                                    commands below still come on stdin; 'F' records are ignored.
+//   live-sitting --camera --bench N  The same, with no server: one sitting of N seconds, then the
+//                                    summary and the camera's frame counts, and exit. No picture leaves
+//                                    the process.
+//   live-sitting --raw --width W --height H --fps F [--out file.jsonl]
+//                                    Raw NV12 frames on stdin, as video-to-sitting takes them from
+//                                    ffmpeg: the same path on a recording, for comparing with eval/.
+//   live-sitting                     JPEG frames on stdin with their capture times (the browser's
+//                                    upload path, kept for the frames route).
 //
 // stdin, little-endian, one record after another:
 //   'F'  Float64 t, UInt32 droppedFrames, UInt32 length, then the JPEG.   t is capture-clock seconds.
@@ -24,16 +37,25 @@ import Vision
 //   {"type":"reading","sittingId":…,"reading":Reading}          the engine's Reading, unchanged
 //   {"type":"summary","sittingId":…,"endedAt":…,"summary":SittingSummary,"file":true|false}
 //   {"type":"abandoned"}   {"type":"error","message":…}
+// and with --camera:
+//   {"type":"camera","name":…,"width":…,"height":…,"fps":…,"delivered":…,"dropped":…,"longestGapMs":…,
+//    "faceTracks":…,"exposureHeld":…,"whiteBalanceHeld":…,"focusHeld":…}      once a second
+//   {"type":"preview","t":ms,"width":…,"height":…,"jpeg":base64}             the live view's picture
+//   {"type":"error","message":"camera_denied" | "no_camera" | "camera_failed"}   and the process ends
 
 /// Seconds after the first frame during which the camera is taken to be finding its exposure.
 /// A browser cannot say when a webcam's exposure has settled, so the first frames are not measured on.
 let settleSeconds = 1.0
-let nominalFrameRate = 30.0
+var nominalFrameRate = 30.0
 
 let output = FileHandle.standardOutput
+/// Lines are written whole: the preview is encoded on a queue of its own.
+let outputLock = NSLock()
 func emit(_ object: [String: Any]) {
   guard var data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) else { return }
   data.append(0x0a)
+  outputLock.lock()
+  defer { outputLock.unlock() }
   output.write(data)
 }
 
@@ -115,6 +137,7 @@ final class Sitting {
   private let droppedBefore: Int
   private(set) var lastFrameTime: Double
   private var frames = 0
+  var frameCount: Int { frames }
   private var readingsEmitted = 0
   private var fileFailed = false
 
@@ -186,6 +209,8 @@ var lastFrameTime = -Double.infinity
 var lastFrameArrival = 0.0
 var pendingSitting: (id: String, file: String?)?
 var sitting: Sitting?
+var signalSources: [DispatchSourceSignal] = []
+var emitRecords = false
 
 func uptime() -> Double { Double(DispatchTime.now().uptimeNanoseconds) / 1e9 }
 
@@ -203,15 +228,20 @@ func handleFrame(t: Double, dropped: Int, jpeg: Data) {
   // Out of order or repeated: the engine would ignore it, and the tracker must not see time run back.
   guard t > lastFrameTime else { return }
   guard let buffer = decoder.decode(jpeg) else { return emit(["type": "error", "message": "A frame could not be decoded"]) }
+  let start = firstFrameTime ?? t
+  measure(buffer, t: t, dropped: dropped, exposure: t - start >= settleSeconds ? .locked : .adjusting)
+}
+
+/// One frame, wherever it came from: regions, a frame record, the engine, the outlines.
+func measure(_ buffer: CVPixelBuffer, t: Double, dropped: Int, exposure: ExposureState) {
+  guard t > lastFrameTime else { return }
   lastFrameTime = t
   lastFrameArrival = uptime()
-  let start = firstFrameTime ?? t
-  firstFrameTime = start
+  if firstFrameTime == nil { firstFrameTime = t }
 
   tracker.feed(buffer, at: t)
   let regions = tracker.current(at: t)
-  var record = FrameRecord(
-    t: t, facePresent: false, exposure: t - start >= settleSeconds ? .locked : .adjusting, droppedFrames: dropped)
+  var record = FrameRecord(t: t, facePresent: false, exposure: exposure, droppedFrames: dropped)
   var aspectRatio = 4.0 / 3.0
   let read: Void? = PlanarFrame.withLocked(buffer) { frame in
     aspectRatio = Double(frame.width) / Double(frame.height)
@@ -231,6 +261,8 @@ func handleFrame(t: Double, dropped: Int, jpeg: Data) {
   }
   if read == nil { chestMotion.reset() }
 
+  // For tuning at the terminal (--bench N --records): the frame record, which is numbers only.
+  if emitRecords { emit(["type": "record", "record": encoded(record)]) }
   if let waiting = pendingSitting {
     pendingSitting = nil
     let started = Sitting(id: waiting.id, file: waiting.file, firstFrame: record)
@@ -266,15 +298,36 @@ func endSitting(keep: Bool) {
   emit(["type": "summary", "sittingId": current.id, "endedAt": current.lastFrameTime, "summary": encoded(result.summary), "file": result.file])
 }
 
+// ---------------------------------------------------------------- where the frames come from
+
+func fail(_ message: String) -> Never {
+  FileHandle.standardError.write(Data((message + "\n").utf8))
+  exit(1)
+}
+
+var useCamera = false, useRaw = false, benchSeconds: Double?
+var rawWidth = 0, rawHeight = 0, rawFps = 0.0, rawOut: String?
+var arguments = CommandLine.arguments.dropFirst().makeIterator()
+while let flag = arguments.next() {
+  switch flag {
+  case "--camera": useCamera = true
+  case "--raw": useRaw = true
+  case "--records": emitRecords = true
+  default:
+    guard let value = arguments.next() else { fail("\(flag) needs a value") }
+    switch flag {
+    case "--bench": benchSeconds = Double(value)
+    case "--width": rawWidth = Int(value) ?? 0
+    case "--height": rawHeight = Int(value) ?? 0
+    case "--fps": rawFps = Double(value) ?? 0
+    case "--out": rawOut = value
+    default: fail("unknown option \(flag)")
+    }
+  }
+}
+
 // Everything above runs on this one queue: the engine is not thread-safe.
 let work = DispatchQueue(label: "live-sitting")
-let ticker = DispatchSource.makeTimerSource(queue: work)
-ticker.schedule(deadline: .now() + 0.25, repeating: 0.25)
-ticker.setEventHandler {
-  guard sitting != nil else { return }
-  emitReadingIfDue(now: lastFrameTime + (uptime() - lastFrameArrival))
-}
-ticker.resume()
 
 let input = FileHandle.standardInput
 func read(_ count: Int) -> Data? {
@@ -285,40 +338,168 @@ func read(_ count: Int) -> Data? {
   }
   return data
 }
+
+// ---------------------------------------------------------------- a recording: raw NV12 on stdin
+
+if useRaw {
+  guard rawWidth > 0, rawHeight > 0, rawWidth % 2 == 0, rawHeight % 2 == 0, rawFps > 0
+  else { fail("usage: live-sitting --raw --width W --height H --fps F [--out file.jsonl]") }
+  var created: CVPixelBuffer?
+  let attributes = [kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary] as CFDictionary
+  guard
+    CVPixelBufferCreate(nil, rawWidth, rawHeight, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange, attributes, &created) == kCVReturnSuccess,
+    let buffer = created
+  else { fail("cannot create a pixel buffer") }
+  CVBufferSetAttachment(buffer, kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_709_2, .shouldPropagate)
+  nominalFrameRate = rawFps
+  pendingSitting = ("recording", rawOut)
+  var index = 0
+  while let frame = read(rawWidth * rawHeight * 3 / 2) {
+    CVPixelBufferLockBaseAddress(buffer, [])
+    frame.withUnsafeBytes { source in
+      var offset = 0
+      for plane in 0..<2 {
+        let rows = plane == 0 ? rawHeight : rawHeight / 2
+        let stride = CVPixelBufferGetBytesPerRowOfPlane(buffer, plane)
+        let destination = CVPixelBufferGetBaseAddressOfPlane(buffer, plane)!
+        for row in 0..<rows {
+          memcpy(destination + row * stride, source.baseAddress! + offset, rawWidth)
+          offset += rawWidth
+        }
+      }
+    }
+    CVPixelBufferUnlockBaseAddress(buffer, [])
+    // Every frame counts as locked, as video-to-sitting has it, so the two can be compared.
+    measure(buffer, t: Double(index) / rawFps, dropped: 0, exposure: .locked)
+    index += 1
+  }
+  endSitting(keep: true)
+  emit(["type": "recording", "frames": index, "faceTracks": tracker.id])
+  exit(0)
+}
+
+// ---------------------------------------------------------------- this Mac's camera
+
+var camera: Camera?
+let preview = PreviewEncoder()
+var benchStarted = false
+
+func cameraStatus(_ camera: Camera, fps: Double) -> [String: Any] {
+  [
+    "type": "camera", "name": camera.device.localizedName, "width": camera.width, "height": camera.height,
+    "fps": (fps * 10).rounded() / 10, "delivered": camera.delivered, "dropped": camera.dropped,
+    "longestGapMs": (camera.takeLongestGap() * 1000).rounded(), "faceTracks": tracker.id,
+    "exposureHeld": camera.held.exposure, "whiteBalanceHeld": camera.held.whiteBalance, "focusHeld": camera.held.focus,
+    "exposureLockSupported": camera.supports.exposure, "whiteBalanceLockSupported": camera.supports.whiteBalance,
+  ]
+}
+
+func stopCamera() {
+  camera?.stop()
+  camera = nil
+}
+
+if useCamera {
+  do {
+    let opened = try Camera(queue: work) { buffer, t, dropped, exposure in
+      measure(buffer, t: t, dropped: dropped, exposure: exposure)
+      if let seconds = benchSeconds {
+        // No server: the sitting starts itself on the first locked frame and ends itself.
+        if !benchStarted, exposure == .locked {
+          benchStarted = true
+          pendingSitting = ("bench", nil)
+        } else if let running = sitting, t - running.captureStart >= seconds, let camera {
+          endSitting(keep: true)
+          emit(cameraStatus(camera, fps: Double(running.frameCount) / (t - running.captureStart)))
+          stopCamera()
+          exit(0)
+        }
+      } else {
+        preview.offer(buffer, at: t) { jpeg, width, height, at in
+          emit(["type": "preview", "t": at, "width": width, "height": height, "jpeg": jpeg.base64EncodedString()])
+        }
+      }
+    }
+    try opened.start()
+    camera = opened
+  } catch {
+    emit(["type": "error", "message": (error as? CameraFailure ?? .failed).rawValue])
+    exit(3)
+  }
+  // SIGTERM is how the server closes the webcam: the camera gets its automatic exposure back first.
+  for number in [SIGTERM, SIGINT] {
+    signal(number, SIG_IGN)
+    let source = DispatchSource.makeSignalSource(signal: number, queue: work)
+    source.setEventHandler {
+      sitting?.abandon()
+      stopCamera()
+      exit(0)
+    }
+    source.resume()
+    signalSources.append(source)
+  }
+}
+
+let ticker = DispatchSource.makeTimerSource(queue: work)
+ticker.schedule(deadline: .now() + 0.25, repeating: 0.25)
+var ticks = 0, deliveredAtLastStatus = 0
+ticker.setEventHandler {
+  ticks += 1
+  if let camera, benchSeconds == nil, ticks % 4 == 0 {
+    emit(cameraStatus(camera, fps: Double(camera.delivered - deliveredAtLastStatus)))
+    deliveredAtLastStatus = camera.delivered
+  }
+  guard sitting != nil else { return }
+  emitReadingIfDue(now: lastFrameTime + (uptime() - lastFrameArrival))
+}
+ticker.resume()
+
+// ---------------------------------------------------------------- commands, and the browser's frames, on stdin
+
 func number<T>(_ data: Data, at offset: Int, as type: T.Type) -> T {
   data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: type) }
 }
 /// A frame or a command larger than this is not one: the stream is out of step.
 let maxRecordBytes = 4_000_000
 
-reading: while let kind = read(1)?.first {
-  switch kind {
-  case UInt8(ascii: "F"):
-    guard let header = read(16) else { break reading }
-    let t = Double(bitPattern: UInt64(littleEndian: number(header, at: 0, as: UInt64.self)))
-    let dropped = Int(UInt32(littleEndian: number(header, at: 8, as: UInt32.self)))
-    let length = Int(UInt32(littleEndian: number(header, at: 12, as: UInt32.self)))
-    guard length <= maxRecordBytes, let jpeg = read(length) else { break reading }
-    work.sync { handleFrame(t: t, dropped: dropped, jpeg: jpeg) }
-  case UInt8(ascii: "S"):
-    guard let header = read(4) else { break reading }
-    let length = Int(UInt32(littleEndian: number(header, at: 0, as: UInt32.self)))
-    guard length <= maxRecordBytes, let body = read(length) else { break reading }
-    let options = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
-    work.sync {
-      guard let id = options?["sittingId"] as? String else { return emit(["type": "error", "message": "A sitting needs an id"]) }
-      sitting?.abandon()
-      sitting = nil
-      pendingSitting = (id, options?["file"] as? String)
+func readCommands() {
+  reading: while let kind = read(1)?.first {
+    switch kind {
+    case UInt8(ascii: "F"):
+      guard let header = read(16) else { break reading }
+      let t = Double(bitPattern: UInt64(littleEndian: number(header, at: 0, as: UInt64.self)))
+      let dropped = Int(UInt32(littleEndian: number(header, at: 8, as: UInt32.self)))
+      let length = Int(UInt32(littleEndian: number(header, at: 12, as: UInt32.self)))
+      guard length <= maxRecordBytes, let jpeg = read(length) else { break reading }
+      // With the camera open here, the frames are its own: a browser's are not mixed in.
+      if !useCamera { work.sync { handleFrame(t: t, dropped: dropped, jpeg: jpeg) } }
+    case UInt8(ascii: "S"):
+      guard let header = read(4) else { break reading }
+      let length = Int(UInt32(littleEndian: number(header, at: 0, as: UInt32.self)))
+      guard length <= maxRecordBytes, let body = read(length) else { break reading }
+      let options = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
+      work.sync {
+        guard let id = options?["sittingId"] as? String else { return emit(["type": "error", "message": "A sitting needs an id"]) }
+        sitting?.abandon()
+        sitting = nil
+        pendingSitting = (id, options?["file"] as? String)
+      }
+    case UInt8(ascii: "E"):
+      work.sync { endSitting(keep: true) }
+    case UInt8(ascii: "A"):
+      work.sync { endSitting(keep: false) }
+    default:
+      emit(["type": "error", "message": "Unknown record on stdin"])
+      break reading
     }
-  case UInt8(ascii: "E"):
-    work.sync { endSitting(keep: true) }
-  case UInt8(ascii: "A"):
-    work.sync { endSitting(keep: false) }
-  default:
-    emit(["type": "error", "message": "Unknown record on stdin"])
-    break reading
   }
+  // The server has gone, or closed the camera: a sitting still running is given up.
+  work.sync {
+    sitting?.abandon()
+    stopCamera()
+  }
+  exit(0)
 }
-// The server has gone, or closed the camera: a sitting still running is given up.
-work.sync { sitting?.abandon() }
+
+if benchSeconds == nil { Thread.detachNewThread(readCommands) }
+dispatchMain()
