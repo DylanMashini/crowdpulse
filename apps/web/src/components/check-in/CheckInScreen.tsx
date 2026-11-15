@@ -27,6 +27,7 @@ import { useNow } from '@/lib/clock';
 import { cx } from '@/lib/cx';
 import { milliseconds, minutesAgo, rate } from '@/lib/format';
 import { useResource } from '@/lib/use-resource';
+import { WebcamError, webcamSnapshot } from '@/lib/webcam-capture';
 import { WEBCAM_LABEL } from '@/lib/webcam-station';
 
 import { LiveFeed, type FeedStats } from './LiveFeed';
@@ -606,7 +607,7 @@ function Station({ device, webcam, serverOffsetMs, serverNow, picker, waiting }:
 
             {/* Between sittings, whichever way the last one ended: someone already waiting can sit down next. */}
             {camera && (stage === 'ready' || stage === 'done' || stage === 'called_off') ? (
-              <Recheck waiting={waiting} disabled={busy} onOpen={(number) => void open(number, 'recheck')} />
+              <Recheck waiting={waiting} disabled={busy} byFace={webcam} onOpen={(number) => void open(number, 'recheck')} />
             ) : null}
 
             <PrivacyNote icon="video">{PRIVACY_CAPTURE}</PrivacyNote>
@@ -691,15 +692,40 @@ const showsReadings = (stage: Stage) => stage !== 'called_off' && stage !== 'rea
 interface RecheckProps {
   waiting: WorklistItem[];
   disabled: boolean;
+  /** The camera is this computer's webcam: it can look for the patient by face, as the phone app does. */
+  byFace?: boolean;
   onOpen: (patientNumber: number) => void;
 }
 
 /** The other way a sitting starts: someone already in the waiting room sits down again. */
-function Recheck({ waiting, disabled, onOpen }: RecheckProps) {
+function Recheck({ waiting, disabled, byFace = false, onOpen }: RecheckProps) {
   const id = useId();
   const candidates = waiting.filter((item) => !item.sittingInProgress);
   const [choice, setChoice] = useState('');
   const chosen = candidates.find((item) => String(item.patientNumber) === choice) ?? null;
+  const [face, setFace] = useState<{ busy: boolean; note: string | null; attention: boolean }>({ busy: false, note: null, attention: false });
+
+  // One picture from the webcam goes to the face-match route. A match only fills in the list:
+  // staff check the name with the patient and open the re-check themselves.
+  const findByFace = async () => {
+    setFace({ busy: true, note: null, attention: false });
+    try {
+      const match = await api.matchFace(await webcamSnapshot());
+      const found = match.outcome === 'matched' ? candidates.find((item) => item.patientNumber === match.patientNumber) : undefined;
+      if (found) {
+        setChoice(String(found.patientNumber));
+        setFace({ busy: false, note: `Matched ${patientLabel(found.patient)}. Check the name with the patient, then open the re-check.`, attention: false });
+      } else if (match.outcome === 'matched' && match.patient) {
+        setFace({ busy: false, note: `Matched ${patientLabel(match.patient)}, who has a sitting running.`, attention: true });
+      } else {
+        setFace({ busy: false, note: 'No sure match. Choose the patient from the list.', attention: true });
+      }
+    } catch (failure) {
+      const known = failure instanceof ApiError || failure instanceof WebcamError;
+      setFace({ busy: false, note: known ? failure.message : 'Face match did not work. Choose the patient from the list.', attention: true });
+    }
+  };
+
   if (candidates.length === 0) return null;
   return (
     <div className="flex flex-wrap items-end gap-2 border-t border-line pt-4">
@@ -726,6 +752,16 @@ function Recheck({ waiting, disabled, onOpen }: RecheckProps) {
       <Button disabled={disabled || !chosen} onClick={() => (chosen ? onOpen(chosen.patientNumber) : undefined)}>
         Open re-check
       </Button>
+      {byFace ? (
+        <Button variant="quiet" disabled={disabled || face.busy} onClick={() => void findByFace()}>
+          {face.busy ? 'Looking' : 'Find by face'}
+        </Button>
+      ) : null}
+      {byFace && face.note ? (
+        <p role="status" className={cx('basis-full type-caption', face.attention ? 'text-watch' : 'text-ink-muted')}>
+          {face.note}
+        </p>
+      ) : null}
     </div>
   );
 }

@@ -49,6 +49,29 @@ export function sendSize(width: number, height: number, maxLongSide: number = WE
   return { width: even(width), height: even(height) };
 }
 
+/**
+ * One picture from the webcam, for finding a waiting patient by face: the camera comes on,
+ * is given a moment to find its exposure, and goes off again. Rejects with a `WebcamError`.
+ */
+export async function webcamSnapshot(settleMs = 1200): Promise<string> {
+  let lost = false;
+  const capture = await WebcamCapture.open({
+    accepts: () => true,
+    onFrame: () => {},
+    onLost: () => {
+      lost = true;
+    },
+  });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, settleMs));
+    const picture = lost ? null : capture.snapshot();
+    if (!picture) throw new WebcamError('unavailable', 'The webcam gave no picture. Try again.');
+    return picture;
+  } finally {
+    capture.close();
+  }
+}
+
 function failure(error: unknown): WebcamError {
   const name = error instanceof DOMException ? error.name : '';
   if (name === 'NotAllowedError' || name === 'SecurityError') return new WebcamError('permission_denied', 'The browser has not been allowed to use the camera.');
@@ -220,7 +243,9 @@ export class WebcamCapture {
     if (this.closed) return;
     this.closed = true;
     if (this.watchdog) clearInterval(this.watchdog);
-    void this.reader?.cancel().catch(() => {});
+    // Stopping the track ends the reader's stream. It is not cancelled: frames already queued
+    // in it are then read and closed by the loop, where cancelling would leave them to the
+    // garbage collector, which Chrome reports as an error.
     for (const track of this.stream.getTracks()) track.stop();
     if (this.video) {
       this.video.srcObject = null;
