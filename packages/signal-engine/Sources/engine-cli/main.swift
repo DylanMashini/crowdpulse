@@ -3,11 +3,14 @@ import SignalEngine
 
 let usage = """
   usage:
-    engine-cli run <sitting.jsonl>
-        One Reading per second as JSON Lines, then the SittingSummary.
-    engine-cli compare <sitting.jsonl> <reference.jsonl>
+    engine-cli run <sitting.jsonl> [--config <overrides.json>]
+        One Reading per second as JSON Lines, then the SittingSummary. A reading with
+        "provisional": true was shown on screen and is not one the sitting records.
+    engine-cli compare <sitting.jsonl> <reference.jsonl> [--config <overrides.json>]
         Agreement with a reference as one JSON object. Reference lines are
         {"t": seconds since the first frame or an ISO 8601 time, "heartRate": bpm}.
+        The figures are of the readings the sitting records; "shown" holds the same for
+        everything on screen, provisional readings included.
     engine-cli diagnose <sitting.jsonl> [reference.jsonl] [--config <overrides.json>]
         One PulseDiagnostic per second as JSON Lines, then the SittingSummary: the check
         that refused each heart-rate reading ("gate"), the numbers it compared, and what
@@ -35,19 +38,21 @@ func printJSON<T: Encodable>(_ value: T) throws {
   print(String(decoding: try encoder.encode(value), as: UTF8.self))
 }
 
-func run(path: String) throws {
+func run(path: String, configuration: EngineConfiguration = .default) throws {
   let contents = try SittingFile.read(from: URL(fileURLWithPath: path))
-  let result = SittingReplay.run(contents.frames)
+  let result = SittingReplay.run(contents.frames, configuration: configuration)
   for reading in result.readings { try printJSON(reading) }
   try printJSON(result.summary)
 }
 
-func compare(sittingPath: String, referencePath: String) throws {
+func compare(sittingPath: String, referencePath: String, configuration: EngineConfiguration = .default) throws {
   let contents = try SittingFile.read(from: URL(fileURLWithPath: sittingPath))
   let reference = try ReferenceFile.decode(
     Data(contentsOf: URL(fileURLWithPath: referencePath)),
     sittingStartedAt: contents.header.startedAt)
-  try printJSON(ReferenceComparison(replay: SittingReplay.run(contents.frames), reference: reference))
+  try printJSON(
+    ReferenceComparison(
+      replay: SittingReplay.run(contents.frames, configuration: configuration), reference: reference))
 }
 
 /// One line of `diagnose`: the diagnostic's own fields, with the reference beside them.
@@ -146,8 +151,14 @@ do {
   switch (arguments.first, arguments.count) {
   case ("run", 2):
     try run(path: arguments[1])
+  case ("run", 4) where arguments[2] == "--config":
+    try run(path: arguments[1], configuration: configuration(overridesPath: arguments[3]))
   case ("compare", 3):
     try compare(sittingPath: arguments[1], referencePath: arguments[2])
+  case ("compare", 5) where arguments[3] == "--config":
+    try compare(
+      sittingPath: arguments[1], referencePath: arguments[2],
+      configuration: configuration(overridesPath: arguments[4]))
   case ("diagnose", 2...):
     var paths = Array(arguments.dropFirst())
     var overridesPath: String?
