@@ -1,14 +1,23 @@
 // The launch screen: one colour and the mark in the middle, with no new native dependency.
+// The same colour is put behind React Native's root view, which iOS shows between the launch
+// screen and the first rendered screen (React Native's own default there is the system
+// background: white in the light appearance).
 //
 // Expo configures the launch screen through the expo-splash-screen package, which this app
 // does not have. The generated project already contains SplashScreen.storyboard and names it in
-// Info.plist, so this plugin only rewrites that storyboard and adds the image it shows. It runs
-// at prebuild and changes nothing until the next native build.
+// Info.plist, so this plugin only rewrites that storyboard and adds the image it shows. Expo's
+// root view colour needs expo-system-ui, which the app does not have either, so the plugin adds
+// one override to the generated AppDelegate. It runs at prebuild and changes nothing until the
+// next native build.
+//
+// backgroundColor is the design system's surface-0 (design-system/tokens.json, "surface-0";
+// colors.surface0 in src/theme/tokens.ts). app.json cannot import the token, so the value is copied
+// there; change both together.
 //
 //   ["./plugins/withSplash", { "image": "./assets/splash-icon.png", "backgroundColor": "#0a0c0f", "imageSize": 200 }]
 const fs = require('fs');
 const path = require('path');
-const { withDangerousMod } = require('expo/config-plugins');
+const { withAppDelegate, withDangerousMod } = require('expo/config-plugins');
 
 const IMAGE_SET = 'SplashScreenLogo';
 
@@ -79,8 +88,37 @@ function writeSplash(appDir, imagePath, backgroundColor, imageSize) {
   fs.writeFileSync(path.join(appDir, 'SplashScreen.storyboard'), storyboard(backgroundColor, imageSize));
 }
 
+const ROOT_VIEW_ANCHOR = '// Extension point for config-plugins';
+const ROOT_VIEW_MARK = '// withSplash: root view colour';
+
+/** Adds the root view colour to the React Native delegate in the generated AppDelegate.swift. */
+function addRootViewColor(source, backgroundColor) {
+  if (source.includes(ROOT_VIEW_MARK)) return source;
+  if (!source.includes(ROOT_VIEW_ANCHOR)) {
+    throw new Error(`withSplash: AppDelegate.swift has no "${ROOT_VIEW_ANCHOR}" line to add the root view colour after`);
+  }
+  const [red, green, blue] = channels(backgroundColor);
+  return source.replace(
+    ROOT_VIEW_ANCHOR,
+    `${ROOT_VIEW_ANCHOR}
+
+  ${ROOT_VIEW_MARK} (${backgroundColor}), shown until the first screen is drawn.
+  override func customize(_ rootView: UIView) {
+    super.customize(rootView)
+    rootView.backgroundColor = UIColor(red: ${red}, green: ${green}, blue: ${blue}, alpha: 1)
+  }`,
+  );
+}
+
+const withRootViewColor = (config, backgroundColor) =>
+  withAppDelegate(config, (mod) => {
+    if (mod.modResults.language !== 'swift') throw new Error('withSplash: the AppDelegate is not Swift');
+    mod.modResults.contents = addRootViewColor(mod.modResults.contents, backgroundColor);
+    return mod;
+  });
+
 const withSplash = (config, { image, backgroundColor, imageSize = 200 }) =>
-  withDangerousMod(config, [
+  withDangerousMod(withRootViewColor(config, backgroundColor), [
     'ios',
     (mod) => {
       const { projectRoot, platformProjectRoot, projectName } = mod.modRequest;
@@ -91,3 +129,4 @@ const withSplash = (config, { image, backgroundColor, imageSize = 200 }) =>
 
 module.exports = withSplash;
 module.exports.writeSplash = writeSplash;
+module.exports.addRootViewColor = addRootViewColor;
