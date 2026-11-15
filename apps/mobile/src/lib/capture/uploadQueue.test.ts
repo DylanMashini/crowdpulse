@@ -238,3 +238,50 @@ test('subscribers hear every change and nothing after dispose', async () => {
   assert.equal(changes, before);
   assert.deepEqual(h.log, ['readings:1']);
 });
+
+test('the queue keeps the summary the station stored, which can differ from the one sent', async () => {
+  const h = harness();
+  h.queue.finish(finishRequest);
+  await h.settle();
+  assert.equal(h.queue.getState().finish, 'sent');
+  assert.equal(h.queue.getState().saved, null, 'an answer that is not a sitting leaves nothing to show');
+
+  const stored = {
+    durationSeconds: 60,
+    heartRate: { value: 74, coverage: 0 },
+    breathingRate: none,
+    rmssd: none,
+    sdnn: none,
+    timeToFirstReadingSeconds: null,
+    longestDropoutSeconds: 60,
+    frameCount: 3600,
+    droppedFrames: 0,
+    heartRateConfidence: 'normal' as const,
+    heartRateFromLive: true,
+    breathingRateFromLive: false,
+  };
+  const queue = new SittingUploadQueue({
+    transport: {
+      postReadings: async () => undefined,
+      postFinish: async () => ({
+        sitting: {
+          id: '3f2b8a52-6c1d-4e0a-9a53-0d7f5c2b9e11',
+          patientNumber: 7,
+          deviceId: '9d1c7e40-2b3a-4f5d-8e6f-1a2b3c4d5e6f',
+          kind: 'check_in',
+          source: 'simulated',
+          startedAt: '2026-11-14T03:00:00.000Z',
+          endedAt: '2026-11-14T03:01:00.000Z',
+          clockOffsetMs: 0,
+          summary: stored,
+        },
+      }),
+    },
+    isRetryable: () => false,
+    describe: (error) => (error as Error).message,
+  });
+  queue.finish({ ...finishRequest, summary: { ...finishRequest.summary, heartRate: none } });
+  await h.settle();
+  assert.deepEqual(queue.getState().saved, stored);
+  queue.dispose();
+});

@@ -11,7 +11,7 @@ import { SittingSummary } from '@/components/SittingSummary';
 import { useScopedTheme } from '@/components/ThemeScope';
 import { PatientIdentity } from '@/components/PatientIdentity';
 import { usePatientRef } from '@/hooks/usePatientRef';
-import { hasLowConfidencePulse, summaryItems } from '@/lib/capture/readingFormat';
+import { staysLowConfidence, summaryItems } from '@/lib/capture/readingFormat';
 import { type FinishedSitting, finishedSitting } from '@/lib/capture/sittingSession';
 import type { UploadState } from '@/lib/capture/uploadQueue';
 import { sentences } from '@/lib/format';
@@ -42,7 +42,7 @@ function SummaryContent({ sitting }: { sitting: FinishedSitting }) {
   const { colors, space } = theme;
   const router = useRouter();
   const uploads = useSyncExternalStore(sitting.uploads.subscribe, sitting.uploads.getState);
-  const status = uploadStatus(uploads, sitting.kind, hasLowConfidencePulse(sitting.summary));
+  const status = uploadStatus(uploads, sitting.kind, staysLowConfidence(sitting.summary, uploads.saved));
   const source = sourceLabel(sitting.source);
   const patient = usePatientRef(sitting.patientNumber, null);
 
@@ -56,7 +56,7 @@ function SummaryContent({ sitting }: { sitting: FinishedSitting }) {
       </View>
 
       <SittingSummary
-        items={summaryItems(sitting.summary, sitting.mainReasons, sitting.shownLive)}
+        items={summaryItems(sitting.summary, sitting.mainReasons, sitting.shownLive, { kind: sitting.kind, saved: uploads.saved })}
         status={status}
         sourceNote={source ? `${source} signal, not a camera measurement` : null}
       >

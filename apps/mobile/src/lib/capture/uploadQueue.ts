@@ -1,4 +1,4 @@
-import type { FinishSittingRequest, Reading } from '@triagecam/contracts';
+import { type FinishSittingRequest, type Reading, type Sitting, SittingResponse } from '@triagecam/contracts';
 
 /** The server takes at most this many readings in one request. */
 export const MAX_BATCH = 30;
@@ -19,6 +19,11 @@ export type UploadState = {
   droppedReadings: number;
   /** `idle` until finish() is called; `failed` when the server refused the summary for good. */
   finish: 'idle' | 'pending' | 'sent' | 'failed';
+  /**
+   * The summary as the station stored it, once it answered. A check-in can differ from what the
+   * phone sent: a vital the engine did not record is taken from the readings shown live.
+   */
+  saved: Sitting['summary'];
   /** The last failure, cleared by the next success. */
   error: string | null;
   /** True while the queue is waiting to retry after a failure. */
@@ -52,6 +57,7 @@ export class SittingUploadQueue {
     sentReadings: 0,
     droppedReadings: 0,
     finish: 'idle',
+    saved: null,
     error: null,
     waitingToRetry: false,
   };
@@ -124,15 +130,17 @@ export class SittingUploadQueue {
           this.attempt = 0;
           this.update({ sentReadings: this.state.sentReadings + batch.length, error: null });
         } else if (this.finishRequest && this.state.finish === 'pending') {
+          let answer: unknown;
           try {
-            await this.options.transport.postFinish(this.finishRequest);
+            answer = await this.options.transport.postFinish(this.finishRequest);
           } catch (error) {
             if (this.options.isRetryable(error)) return this.retryLater(error);
             this.update({ finish: 'failed', error: this.options.describe(error) });
             return;
           }
           this.attempt = 0;
-          this.update({ finish: 'sent', error: null });
+          const stored = SittingResponse.safeParse(answer);
+          this.update({ finish: 'sent', error: null, saved: stored.success ? stored.data.sitting.summary : null });
         } else {
           return;
         }

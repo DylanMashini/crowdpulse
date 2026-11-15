@@ -5,7 +5,8 @@ import { test } from 'node:test';
 import { EXPOSURE_STUCK, EXPOSURE_STUCK_AFTER_SECONDS, HELD_READING_FOR_MS, type Estimate } from '@triagecam/contracts';
 import type { CaptureSittingSummary, VariabilityReason } from 'triage-capture';
 
-import { ReasonTally, hasLowConfidencePulse, nextLastValid, readoutFor, summaryItems, viewfinderHint, type LastValid } from './readingFormat.ts';
+import { ReasonTally, hasLowConfidencePulse,
+  staysLowConfidence, nextLastValid, readoutFor, summaryItems, viewfinderHint, type LastValid } from './readingFormat.ts';
 
 const estimate = (patch: Partial<Estimate>): Estimate => ({
   value: null,
@@ -132,6 +133,34 @@ test('a lower-confidence heart rate says so in place of "Median of this sitting"
   const note = (s: CaptureSittingSummary) => summaryItems(s, { heartRate: null, breathingRate: null })[0]!.note;
   assert.equal(note(summary('low')), 'Lower confidence. Too little of the sitting gave a clear pulse. Not used for trends or flags. Repeat the sitting.');
   assert.equal(hasLowConfidencePulse(summary('low')), true);
+  // At a check-in where a heart rate was on screen, the station replaces the lower-confidence
+  // rate with the median of the live readings: no "repeat" before or after its answer.
+  const live = { heartRate: true };
+  const before = summaryItems(summary('low'), { heartRate: null, breathingRate: null }, live, { kind: 'check_in', saved: null })[0]!;
+  assert.equal(before.note, 'Shown live. The station records the median of the live readings');
+  const stored = {
+    durationSeconds: 60,
+    heartRate: { value: 98.4, coverage: 0.05 },
+    breathingRate: { value: null, coverage: 0 },
+    rmssd: { value: null, coverage: 0 },
+    sdnn: { value: null, coverage: 0 },
+    timeToFirstReadingSeconds: 9,
+    longestDropoutSeconds: 49,
+    frameCount: 3600,
+    droppedFrames: 0,
+    heartRateConfidence: 'normal' as const,
+    heartRateFromLive: true,
+    breathingRateFromLive: false,
+  };
+  const after = summaryItems(summary('low'), { heartRate: null, breathingRate: null }, live, { kind: 'check_in', saved: stored })[0]!;
+  assert.equal(after.value, '98');
+  assert.match(after.note ?? '', /^From live readings\. /);
+  assert.equal(staysLowConfidence(summary('low'), stored), false);
+  assert.equal(staysLowConfidence(summary('low'), null), true);
+  // With nothing shown live the station keeps the lower-confidence rate, and so does the phone.
+  const kept = { ...stored, heartRate: { value: 102, coverage: 0.05 }, heartRateConfidence: 'low' as const, heartRateFromLive: false };
+  assert.equal(staysLowConfidence(summary('low'), kept), true);
+  assert.match(summaryItems(summary('low'), { heartRate: null, breathingRate: null }, {}, { kind: 'check_in', saved: kept })[0]!.note ?? '', /^Lower confidence\. /);
   // Normal, null and a capture module from before the field existed all read as an ordinary rate.
   for (const confidence of ['normal', null, undefined] as const) {
     assert.equal(note(summary(confidence)), undefined);
@@ -243,4 +272,39 @@ test('a vital shown live and not recorded says so in the summary, and gets no va
   assert.equal(items[0]!.reason, 'Face not in view for most of the sitting');
   // Without the flag (a sitting finished by an older build of the screen) the reason is the usual one.
   assert.equal(summaryItems(summary, reasons)[1]!.reason, 'Signal too weak. Keep still, more light');
+
+  // A check-in is never told to repeat for that. Until the station answers, the box says the
+  // live readings are being taken; then it shows the value the station stored, tagged.
+  const shown = { heartRate: tally.wasShown('heartRate'), breathingRate: tally.wasShown('breathingRate') };
+  const waiting = summaryItems(summary, reasons, shown, { kind: 'check_in', saved: null });
+  assert.equal(waiting[1]!.value, null);
+  assert.equal(waiting[1]!.reason, 'Shown live. The station records the median of the live readings');
+  assert.equal(waiting[0]!.reason, 'Face not in view for most of the sitting');
+  const stored = {
+    durationSeconds: 60,
+    heartRate: { value: null, coverage: 0 },
+    breathingRate: { value: 15.5, coverage: 0 },
+    rmssd: { value: null, coverage: 0 },
+    sdnn: { value: null, coverage: 0 },
+    timeToFirstReadingSeconds: null,
+    longestDropoutSeconds: 60,
+    frameCount: 3600,
+    droppedFrames: 0,
+    heartRateConfidence: null,
+    heartRateFromLive: false,
+    breathingRateFromLive: true,
+  };
+  const saved = summaryItems(summary, reasons, shown, { kind: 'check_in', saved: stored });
+  assert.equal(saved[1]!.value, '16');
+  assert.equal(saved[1]!.reason, null);
+  assert.equal(saved[1]!.note, 'From live readings. Median of the readings shown live. They were not steady long enough for the usual check.');
+  assert.equal(saved[1]!.coverage, 0);
+  assert.equal(saved[0]!.value, null);
+  for (const item of [...waiting, ...saved]) assert.doesNotMatch(`${item.reason} ${item.note}`, /repeat/i);
+  // A re-check keeps the old words, with or without the station's answer.
+  assert.equal(summaryItems(summary, reasons, shown, { kind: 'recheck', saved: null })[1]!.reason, 'Shown live, not steady long enough to record. Repeat the sitting');
+  assert.equal(
+    summaryItems(summary, reasons, shown, { kind: 'recheck', saved: { ...stored, breathingRate: { value: null, coverage: 0 }, breathingRateFromLive: false } })[1]!.reason,
+    'Shown live, not steady long enough to record. Repeat the sitting',
+  );
 });

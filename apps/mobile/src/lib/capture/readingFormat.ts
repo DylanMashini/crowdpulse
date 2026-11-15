@@ -3,6 +3,8 @@ import {
   EXPOSURE_STUCK_AFTER_SECONDS,
   HELD_READING_CLEARS_AFTER_ABSENT_MS,
   HELD_READING_FOR_MS,
+  FROM_LIVE_READINGS,
+  FROM_LIVE_READINGS_DETAIL,
   SHOWN_NOT_RECORDED,
   heldReadingAge,
   isAbsentReason,
@@ -12,6 +14,8 @@ import {
   type CaptureSource,
   type Estimate,
   type EstimateReason,
+  type Sitting,
+  type SittingKind,
 } from '@triagecam/contracts';
 import type { CaptureSittingSummary, VariabilityReason, ViewfinderState } from 'triage-capture';
 
@@ -200,23 +204,57 @@ export function hasLowConfidencePulse(summary: Pick<CaptureSittingSummary, 'hear
   return summary.heartRate.value != null && isLowConfidence(summary.heartRateConfidence);
 }
 
+/** Under a check-in vital that was shown live and not recorded, until the station answers with the value it took. */
+export const LIVE_VALUE_PENDING = 'Shown live. The station records the median of the live readings';
+
+const FROM_LIVE_NOTE = `${FROM_LIVE_READINGS}. ${FROM_LIVE_READINGS_DETAIL}`;
+
+/** What the station made of the sitting: its kind, and the summary it stored (null until it answers). */
+export type StationRecord = { kind: SittingKind; saved: Sitting['summary'] };
+
+/** The sitting's heart rate is a lower-confidence one that the station did not replace with the live readings. */
+export function staysLowConfidence(
+  summary: Pick<CaptureSittingSummary, 'heartRate' | 'heartRateConfidence'>,
+  saved: Sitting['summary'] = null,
+): boolean {
+  return hasLowConfidencePulse(summary) && saved?.heartRateFromLive !== true;
+}
+
 /** The four measurements of a finished sitting, in the order SittingSummary shows them. */
 export function summaryItems(
   summary: CaptureSittingSummary,
   mainReasons: Record<Vital, EstimateReason | null>,
-  /** Which vitals had a value on screen while the sitting ran. Never turned into a result. */
+  /** Which vitals had a value on screen while the sitting ran. A re-check never turns one into a result. */
   shownLive: Partial<Record<Vital, boolean>> = {},
+  /**
+   * A check-in takes a vital the engine did not record from the readings shown live; the
+   * station does it and its answer carries the value. Left out, the summary is shown as measured.
+   */
+  station?: StationRecord,
 ): SummaryItem[] {
   const value = (v: number | null) => (v == null ? null : wholeNumber(v));
+  const checkIn = station?.kind === 'check_in';
+  const saved = station?.saved ?? null;
+  const heartFromLive = saved?.heartRateFromLive === true;
+  const breathingFromLive = saved?.breathingRateFromLive === true;
+  const lowConfidence = hasLowConfidencePulse(summary);
+  // Shown live at a check-in and not recorded: the station will take it, so nothing here says "repeat".
+  const pending = (vital: Vital, unrecorded: boolean) => checkIn && saved === null && unrecorded && shownLive[vital] === true;
+  const heartPending = pending('heartRate', summary.heartRate.value == null || lowConfidence);
+  const breathingPending = pending('breathingRate', summary.breathingRate.value == null);
+  const heartRate = heartFromLive ? (saved?.heartRate.value ?? null) : summary.heartRate.value;
+  const breathingRate = breathingFromLive ? (saved?.breathingRate.value ?? null) : summary.breathingRate.value;
+  const reason = (vital: Vital, isPending: boolean) =>
+    isPending ? LIVE_VALUE_PENDING : summaryReason(mainReasons[vital], !checkIn && shownLive[vital] === true);
   return [
     {
       key: 'heartRate',
       label: 'Heart rate',
       icon: 'pulse',
-      value: value(summary.heartRate.value),
+      value: value(heartRate),
       unit: 'bpm',
-      reason: summary.heartRate.value == null ? summaryReason(mainReasons.heartRate, shownLive.heartRate === true) : null,
-      note: hasLowConfidencePulse(summary) ? `${LOWER_CONFIDENCE}. ${LOWER_CONFIDENCE_DETAIL}` : undefined,
+      reason: heartRate == null ? reason('heartRate', heartPending) : null,
+      note: heartFromLive ? FROM_LIVE_NOTE : heartPending ? LIVE_VALUE_PENDING : lowConfidence ? `${LOWER_CONFIDENCE}. ${LOWER_CONFIDENCE_DETAIL}` : undefined,
       coverage: summary.heartRate.coverage,
       experimental: false,
     },
@@ -224,9 +262,10 @@ export function summaryItems(
       key: 'breathingRate',
       label: 'Breathing',
       icon: 'breath',
-      value: value(summary.breathingRate.value),
+      value: value(breathingRate),
       unit: 'per min',
-      reason: summary.breathingRate.value == null ? summaryReason(mainReasons.breathingRate, shownLive.breathingRate === true) : null,
+      reason: breathingRate == null ? reason('breathingRate', breathingPending) : null,
+      note: breathingFromLive ? FROM_LIVE_NOTE : undefined,
       coverage: summary.breathingRate.coverage,
       experimental: false,
     },
