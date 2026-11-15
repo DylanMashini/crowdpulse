@@ -24,7 +24,7 @@ export declare function ScoreChip(props: ScoreChipProps): React.ReactElement;
 export interface QualityMeterProps { value: number; label?: string; threshold?: number }
 export declare function QualityMeter(props: QualityMeterProps): React.ReactElement;
 
-export interface ReadoutProps { label: string; value?: number | string; unit?: string; size?: 'xl' | 'lg' | 'md'; state?: 'valid' | 'settling' | 'none' | 'stale'; icon?: IconName; age?: string; reason?: string; tag?: Provenance }
+export interface ReadoutProps { label: string; value?: number | string; unit?: string; size?: 'xl' | 'lg' | 'md'; state?: 'valid' | 'settling' | 'none' | 'stale' | 'held'; icon?: IconName; age?: string; reason?: string; heldAge?: string; tag?: Provenance }
 export declare function Readout(props: ReadoutProps): React.ReactElement;
 export interface TicketNumberProps { number: number | string; size?: 'sm' | 'md' | 'lg' | 'xl' }
 export declare function TicketNumber(props: TicketNumberProps): React.ReactElement;
