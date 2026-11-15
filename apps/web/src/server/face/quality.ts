@@ -37,12 +37,23 @@ const EYE_DISTANCE_RANGE = [22, 80] as const;
 /** The nose this far off the middle of the eyes, in eye distances, is a head turned well away. */
 const YAW_LIMIT = 0.3;
 const ROLL_LIMIT_DEGREES = 25;
+/** The face itself, in eye distances: this far outside the eyes and mouth each way, brows to lower lip. */
+const FACE_MARGIN = 0.35;
 /**
- * Variance of the Laplacian, on the 96 px copy, at which sharpness scores one half. Set from
- * 640 px live-view frames of a synthetic face: about 700 in focus, 220 slightly soft, 50
- * badly blurred.
+ * Variance of the Laplacian, on the 96 px copy of the face and at the reference brightness,
+ * at which sharpness scores one half. Set from 640 px live-view frames of four synthetic
+ * faces: about 120 to 310 in focus, 50 to 130 slightly soft, 15 to 60 badly blurred.
  */
 const SHARPNESS_HALF = 300;
+/**
+ * Edges in a dim picture are fainter by how dim it is, in focus or not. The variance is
+ * brought to what it would be at this mean brightness, so a dim room does not read as a
+ * blurred face. Below the floor the picture is mostly noise and is not brightened further.
+ */
+const REFERENCE_BRIGHTNESS = 110;
+const BRIGHTNESS_FLOOR = 40;
+/** Mean brightness of the face, 0 to 255: full marks from 70, none below 25. Dark skin in fair light reads 45 to 80. */
+const DARK_RANGE = [25, 70] as const;
 /** No part counts as less than this, so one hopeless part lowers the score a lot but not to nothing. */
 const PART_FLOOR = 0.02;
 
@@ -86,6 +97,31 @@ export function framingScore(landmarks: Landmarks, width: number, height: number
   return ramp(inside(centre.x, width) * inside(centre.y, height), 0.75, 1);
 }
 
+/**
+ * The part of the picture that is the face and nothing else, brows to lower lip: no hair line,
+ * collar or background. Sharpness and exposure are measured here, so a crisp edge behind a
+ * blurred face, or a bright wall behind a dark one, does not count for the face. Where the
+ * face runs out of the picture the box is cut off, not moved. Null when too little is left.
+ */
+export function faceBox(
+  landmarks: Landmarks,
+  width: number,
+  height: number,
+): { left: number; top: number; width: number; height: number } | null {
+  const [rightEye, leftEye, , rightMouth, leftMouth] = landmarks;
+  const eyes = midpoint(rightEye, leftEye);
+  const mouth = midpoint(rightMouth, leftMouth);
+  const unit = Math.max(distance(rightEye, leftEye), distance(eyes, mouth));
+  const centre = midpoint(eyes, mouth);
+  const half = unit * (0.5 + FACE_MARGIN);
+  const left = Math.max(0, Math.round(centre.x - half));
+  const top = Math.max(0, Math.round(centre.y - half));
+  const right = Math.min(width, Math.round(centre.x + half));
+  const bottom = Math.min(height, Math.round(centre.y + half));
+  if (right - left < 8 || bottom - top < 8) return null;
+  return { left, top, width: right - left, height: bottom - top };
+}
+
 /** Variance of the Laplacian of a greyscale picture: high when edges are crisp, low when blurred. */
 export function laplacianVariance(grey: Uint8Array, width: number, height: number): number {
   if (width < 3 || height < 3) return 0;
@@ -109,7 +145,17 @@ export function laplacianVariance(grey: Uint8Array, width: number, height: numbe
   return sumOfSquares / count - mean * mean;
 }
 
-/** Mid-toned and not clipped. `grey` is the portrait, 0 to 255. */
+/** In focus and still, from 0 to 1. `grey` is the face (see faceBox), 0 to 255. */
+export function sharpnessScore(grey: Uint8Array, width: number, height: number): number {
+  if (grey.length === 0) return 0;
+  let sum = 0;
+  for (const value of grey) sum += value;
+  const gain = REFERENCE_BRIGHTNESS / Math.max(sum / grey.length, BRIGHTNESS_FLOOR);
+  const variance = laplacianVariance(grey, width, height) * gain * gain;
+  return variance / (variance + SHARPNESS_HALF);
+}
+
+/** Mid-toned and not clipped. `grey` is the face (see faceBox), 0 to 255. */
 export function exposureScore(grey: Uint8Array): number {
   if (grey.length === 0) return 0;
   let sum = 0;
@@ -119,14 +165,14 @@ export function exposureScore(grey: Uint8Array): number {
     if (value < 10 || value > 245) clipped += 1;
   }
   const mean = sum / grey.length;
-  const brightness = Math.min(ramp(mean, 40, 90), ramp(mean, 225, 180));
+  const brightness = Math.min(ramp(mean, ...DARK_RANGE), ramp(mean, 225, 180));
   return brightness * ramp(clipped / grey.length, 0.3, 0.05);
 }
 
 /**
- * One number from 0 to 1 for a frame, from the face found in it and a small greyscale copy of the
- * portrait that would be cut from it. The copy is always the same size, so a face near the
- * camera and one further away are compared like for like.
+ * One number from 0 to 1 for a frame, from the face found in it and a small greyscale copy of
+ * that face (faceBox). The copy is always the same size, so a face near the camera and one
+ * further away are compared like for like.
  */
 export function portraitQuality(input: {
   landmarks: Landmarks;
@@ -138,10 +184,9 @@ export function portraitQuality(input: {
   greyHeight: number;
 }): Quality {
   const [rightEye, leftEye] = input.landmarks;
-  const variance = laplacianVariance(input.grey, input.greyWidth, input.greyHeight);
   const parts: QualityParts = {
     pose: poseScore(input.landmarks),
-    sharpness: variance / (variance + SHARPNESS_HALF),
+    sharpness: sharpnessScore(input.grey, input.greyWidth, input.greyHeight),
     size: ramp(distance(rightEye, leftEye), ...EYE_DISTANCE_RANGE),
     framing: framingScore(input.landmarks, input.width, input.height),
     exposure: exposureScore(input.grey),

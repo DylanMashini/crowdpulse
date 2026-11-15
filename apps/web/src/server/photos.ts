@@ -8,7 +8,7 @@ import { detectFaceScored } from "./face/detect.ts";
 import { decodeJpegBytes } from "./face/image.ts";
 import { faceModels } from "./face/models.ts";
 import { portraitSquare } from "./face/portrait.ts";
-import { portraitQuality, type Quality } from "./face/quality.ts";
+import { faceBox, portraitQuality, type Quality } from "./face/quality.ts";
 import { ApiError } from "./http.ts";
 import type { PatientRow } from "./serialize.ts";
 import { toPatientRef } from "./serialize.ts";
@@ -31,7 +31,7 @@ export async function portraitFromCrop(jpeg: Buffer): Promise<Buffer> {
   }
 }
 
-/** The side of the small greyscale copy a portrait is scored on. */
+/** The side of the small greyscale copy of the face that sharpness and exposure are measured on. */
 const SCORED_SIZE = 96;
 
 /** A portrait that could be cut from a frame: how good it would be, and the cut itself on request. */
@@ -47,15 +47,12 @@ export async function portraitCandidate(jpeg: Buffer): Promise<PortraitCandidate
   const face = await detectFaceScored(image, models);
   if (!face) return null;
   const square = portraitSquare(face.landmarks, image.width, image.height);
-  if (!square) return null;
-  const cut = () =>
-    sharp(image.data, { raw: { width: image.width, height: image.height, channels: 3 } }).extract({
-      left: square.left,
-      top: square.top,
-      width: square.size,
-      height: square.size,
-    });
-  const grey = await cut().resize(SCORED_SIZE, SCORED_SIZE, { fit: "fill" }).greyscale().raw().toBuffer();
+  const box = faceBox(face.landmarks, image.width, image.height);
+  if (!square || !box) return null;
+  const whole = () => sharp(image.data, { raw: { width: image.width, height: image.height, channels: 3 } });
+  const cut = () => whole().extract({ left: square.left, top: square.top, width: square.size, height: square.size });
+  // Scored on the face alone: a crisp edge elsewhere in the portrait says nothing about the face.
+  const grey = await whole().extract(box).resize(SCORED_SIZE, SCORED_SIZE, { fit: "fill" }).greyscale().raw().toBuffer();
   const quality = portraitQuality({
     landmarks: face.landmarks,
     confidence: face.confidence,

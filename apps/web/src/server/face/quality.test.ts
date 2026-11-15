@@ -5,10 +5,12 @@ import type { Landmarks } from "./detect.ts";
 import {
   CLEARLY_BETTER,
   exposureScore,
+  faceBox,
   framingScore,
   laplacianVariance,
   portraitQuality,
   poseScore,
+  sharpnessScore,
   shouldKeep,
 } from "./quality.ts";
 
@@ -125,15 +127,65 @@ describe("laplacianVariance", () => {
   });
 });
 
+describe("faceBox", () => {
+  it("holds the eyes and mouth with a margin, and stops well short of the portrait square", () => {
+    const box = faceBox(face(320, 200, 60), 640, 480);
+    assert.ok(box);
+    // Eyes at y 200 and x 290 to 350, mouth at y 260.
+    assert.ok(box.left < 290 && box.left + box.width > 350 && box.top < 200 && box.top + box.height > 260);
+    // The portrait is 3.8 eye distances across: hair, collar and background are outside the face.
+    assert.ok(box.width <= 60 * 2 && box.height <= 60 * 2, `${box.width} by ${box.height}`);
+  });
+
+  it("is cut off at the edge of the picture, not moved onto what is beside the face", () => {
+    const box = faceBox(face(320, 440, 60), 640, 480);
+    assert.ok(box);
+    assert.equal(box.top + box.height, 480);
+    assert.ok(box.top > 400 && box.height < box.width);
+  });
+
+  it("is null when the face is outside the picture", () => {
+    assert.equal(faceBox(face(-200, 200, 60), 640, 480), null);
+  });
+
+  it("grows with the face", () => {
+    assert.ok((faceBox(face(320, 200, 80), 640, 480)?.width ?? 0) > (faceBox(face(320, 200, 40), 640, 480)?.width ?? 0));
+  });
+});
+
+describe("sharpnessScore", () => {
+  it("is high for crisp detail and low for the same picture blurred", () => {
+    const crisp = sharpnessScore(checkerboard(8), SIZE, SIZE);
+    const soft = sharpnessScore(blurred(checkerboard(8), 3), SIZE, SIZE);
+    assert.ok(crisp > 0.8 && soft < crisp / 2, `${crisp} against ${soft}`);
+  });
+
+  it("does not read a dim picture as a blurred one", () => {
+    // The same picture at half the light: every edge is half as high.
+    const bright = sharpnessScore(blurred(checkerboard(8, 90, 170), 1), SIZE, SIZE);
+    const dim = sharpnessScore(blurred(checkerboard(8, 45, 85), 1), SIZE, SIZE);
+    assert.ok(Math.abs(bright - dim) < 0.02, `${bright} against ${dim}`);
+  });
+
+  it("is zero for a flat picture, however dark", () => {
+    assert.equal(sharpnessScore(flat(5), SIZE, SIZE), 0);
+    assert.equal(sharpnessScore(new Uint8Array(0), 0, 0), 0);
+  });
+});
+
 describe("exposureScore", () => {
   it("is full for mid tones", () => {
     assert.equal(exposureScore(flat(130)), 1);
   });
 
   it("drops for a dark picture and for a washed-out one", () => {
-    assert.equal(exposureScore(flat(30)), 0);
+    assert.equal(exposureScore(flat(20)), 0);
     assert.equal(exposureScore(flat(250)), 0);
-    assert.ok(exposureScore(flat(65)) < 1 && exposureScore(flat(65)) > 0);
+    assert.ok(exposureScore(flat(50)) < 1 && exposureScore(flat(50)) > 0);
+  });
+
+  it("gives full marks to a dark face in fair light", () => {
+    assert.equal(exposureScore(flat(72)), 1);
   });
 
   it("drops when much of the picture is clipped, even if the average is fine", () => {
@@ -201,6 +253,14 @@ describe("shouldKeep", () => {
     for (const [kept, next] of [[0.5, 0.6], [0.5, 0.55], [0.7, 0.9]] as const) {
       assert.equal(shouldKeep(kept * dimmer, next * dimmer), shouldKeep(kept, next));
     }
+  });
+
+  it("replaces a dim, blurred first photo with the same face in focus", () => {
+    const dim = (grey: Uint8Array) => Uint8Array.from(grey, (value) => Math.round(value * 0.2));
+    const soft = quality(face(320, 200, 30), dim(blurred(checkerboard(8), 3))).score;
+    const still = quality(face(320, 200, 30), dim(checkerboard(8))).score;
+    assert.ok(still < 0.6, `the scene is poor: ${still}`);
+    assert.equal(shouldKeep(soft, still), true, `${soft} then ${still}`);
   });
 
   it("replaces the phone's own crop, which scores nothing, with any portrait", () => {
