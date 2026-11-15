@@ -17,7 +17,7 @@ import Vision
 //                                    commands below still come on stdin; 'F' records are ignored.
 //   live-sitting --camera --bench N  The same, with no server: one sitting of N seconds, then the
 //                                    summary and the camera's frame counts, and exit. No picture leaves
-//                                    the process.
+//                                    the process. With --records, every frame record too (numbers only).
 //   live-sitting --raw --width W --height H --fps F [--out file.jsonl]
 //                                    Raw NV12 frames on stdin, as video-to-sitting takes them from
 //                                    ffmpeg: the same path on a recording, for comparing with eval/.
