@@ -50,12 +50,14 @@ export function useStation(deviceId: string | null): void {
         // From the check-in list, the summary or the face match alike: on top, and "Next
         // patient" or a call-off goes back to the list from wherever this was opened.
         router.push(sitting);
+        const before = stationLink.revision();
         // A command can arrive while the last sitting screen is still on its way out (called off
         // and started again within a second). The navigator drops a move made then, so look
-        // again once it has settled.
+        // again once it has settled, but only if no sitting screen came up at all: one that came
+        // up and was cancelled straight away is not to be opened again.
         again = setTimeout(() => {
           again = null;
-          if (triesLeft > 0 && stationLink.current().phase === 'idle') go(triesLeft - 1);
+          if (triesLeft > 0 && stationLink.revision() === before) go(triesLeft - 1);
         }, OPEN_SETTLE_MS);
       };
       if (again) clearTimeout(again);

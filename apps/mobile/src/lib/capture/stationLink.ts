@@ -62,6 +62,7 @@ export class StationLink {
   private inFlight = false;
   private dirty = false;
   private timer: unknown = null;
+  private changes = 0;
   private readonly seen: string[] = [];
   private readonly handlers = new Set<CommandHandler>();
   private readonly post: StationTransport;
@@ -94,10 +95,16 @@ export class StationLink {
     return this.state;
   }
 
+  /** Counts the changes of state, so a caller can tell "still idle" from "opened and closed again". */
+  revision(): number {
+    return this.changes;
+  }
+
   /** What the screen is doing. Sent at once when it differs from the last state. */
   setState(state: CameraState): void {
     if (sameState(this.state, state)) return;
     this.state = state;
+    this.changes += 1;
     // Outlines belong to a camera that is on.
     if (state.phase === 'idle') this.regions = null;
     this.send();
