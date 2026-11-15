@@ -10,6 +10,9 @@
 //                 is out of focus and the photo must be replaced once the picture is sharp.
 //                 Without it, the frames are a test pattern and only the phone's own crop
 //                 is stored.
+//   SIM_STRANGER  With SIM_FACE: path to a picture of somebody else. The stream is then in
+//                 thirds: the patient out of focus, the stranger alone and in focus, the
+//                 patient in focus. The stranger must never become the photo.
 //   SIM_KEEP=1    Leave the patient in the waiting room instead of discharging them.
 //
 // What the phone does here is what apps/mobile does: POST /api/patients, POST /api/sittings,
@@ -39,6 +42,7 @@ const email = process.env.SIM_EMAIL || "demo@triagecam.test";
 const password = process.env.SIM_PASSWORD || "triagecam-demo";
 const seconds = Number(process.env.SIM_SECONDS || 8);
 const facePath = process.env.SIM_FACE || null;
+const strangerPath = (facePath && process.env.SIM_STRANGER) || null;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const percentile = (values: number[], share: number) => {
@@ -125,8 +129,8 @@ async function eventAfter(since: number, matches: (event: StreamEvent) => boolea
 const WIDTH = LIVE_VIEW.maxLongSidePx;
 const HEIGHT = 480;
 /** A second of distinct frames, so the stream is not the same bytes over and over. */
-async function makeFrames(blurSigma = 0): Promise<Buffer[]> {
-  const picture = facePath ? sharp(await readFile(facePath)).resize(WIDTH, HEIGHT, { fit: "cover", position: "top" }) : null;
+async function makeFrames(blurSigma = 0, path = facePath): Promise<Buffer[]> {
+  const picture = path ? sharp(await readFile(path)).resize(WIDTH, HEIGHT, { fit: "cover", position: "top" }) : null;
   const background = picture
     ? await (blurSigma ? picture.blur(blurSigma) : picture).toBuffer()
     : await sharp({ create: { width: WIDTH, height: HEIGHT, channels: 3, background: { r: 28, g: 40, b: 38 } } }).png().toBuffer();
@@ -141,6 +145,11 @@ async function makeFrames(blurSigma = 0): Promise<Buffer[]> {
 const frames = await makeFrames();
 /** The patient still sitting down: the same picture out of focus, for the first half of the stream. */
 const softFrames = facePath ? await makeFrames(5) : frames;
+/** Somebody else in the chair's place for a while, in focus: a nurse leaning in. */
+const strangerFrames = strangerPath ? await makeFrames(0, strangerPath) : null;
+/** When the out-of-focus part of the stream ends, and when the patient is in focus. */
+const softUntilMs = seconds * (strangerFrames ? 1000 / 3 : 500);
+const sharpFromMs = seconds * (strangerFrames ? 2000 / 3 : 500);
 const frameBytes = Math.round(frames.reduce((sum, frame) => sum + frame.byteLength, 0) / frames.length);
 
 // --- intake starts on the phone -----------------------------------------------------------------
@@ -221,8 +230,9 @@ try {
   const ticker = setInterval(() => {
     if (inFlight >= 2) return void (dropped += 1);
     inFlight += 1;
-    const settled = performance.now() - streamStart >= seconds * 500;
-    const frame = (settled ? frames : softFrames)[sent % frames.length] as Buffer;
+    const elapsed = performance.now() - streamStart;
+    const showing = elapsed < softUntilMs ? softFrames : elapsed < sharpFromMs && strangerFrames ? strangerFrames : frames;
+    const frame = showing[sent % frames.length] as Buffer;
     sent += 1;
     fetch(base + routes.liveFrame(device.id), {
       method: "POST",
@@ -315,9 +325,14 @@ try {
       ),
     ].sort();
     const firstAfterMs = Date.parse(versions[0] as string) - Date.parse(sitting.startedAt);
-    assert.ok(firstAfterMs < seconds * 500, "no photo was taken while the picture was still out of focus");
+    assert.ok(firstAfterMs < softUntilMs, "no photo was taken while the picture was still out of focus");
     assert.ok(versions.length >= 2, "the photo was not replaced when a sharper frame arrived");
-    assert.ok(tookAfterMs >= seconds * 500, "the photo kept is not from the sharp half of the stream");
+    assert.ok(tookAfterMs >= sharpFromMs, "the photo kept is not from the sharp part of the stream");
+    if (strangerFrames) {
+      const duringStranger = versions.map((version) => Date.parse(version) - Date.parse(sitting.startedAt)).filter((after) => after >= softUntilMs && after < sharpFromMs);
+      assert.equal(duringStranger.length, 0, "somebody else's face became the patient's photo");
+      console.log("Profile photo: a stranger alone in the picture, in focus, did not become the photo");
+    }
     assert.ok(versions.length <= 3, `the photo changed ${versions.length} times: it should settle, not flicker`);
     console.log(
       `Profile photo: taken from the live view by itself ${(firstAfterMs / 1000).toFixed(1)} s into the sitting, ` +
