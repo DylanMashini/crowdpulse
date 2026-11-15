@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { CameraState, Sitting } from '@triagecam/contracts';
+import type { CameraState, Patient, Sitting } from '@triagecam/contracts';
 
-import { commandSettled, readyToStart, sittingToShow, stageCopy, stageOf } from './station.ts';
+import { commandSettled, isBlankRecord, readyToStart, sittingToShow, stageCopy, stageOf } from './station.ts';
 
 const idle: CameraState = { phase: 'idle', patientNumber: null, kind: null, sittingId: null, viewfinder: null, facePresent: false, exposureLocked: false, error: null };
 const framing: CameraState = { ...idle, phase: 'framing', patientNumber: 14, kind: 'check_in', viewfinder: 'searching' };
@@ -118,4 +118,36 @@ test('Start waits for a face, and the words say what to do next', () => {
   assert.equal(empty.title, 'Sitting complete, no reading');
   assert.equal(empty.attention, true);
   assert.equal(stageCopy('offline', null, 'Front desk phone', null, null, false).title, 'Front desk phone is not connected');
+});
+
+test('a record is blank only when nothing at all was entered for it (R2-02)', () => {
+  const blank: Patient = {
+    number: 43,
+    status: 'waiting',
+    createdAt: '2026-11-14T03:21:07.512Z',
+    dischargedAt: null,
+    intakeCompletedAt: null,
+    photoUpdatedAt: null,
+    faceOptIn: false,
+    faceEnrolled: false,
+    name: null,
+    dateOfBirth: null,
+    sex: null,
+    reasonForVisit: null,
+    painScore: null,
+    allergies: null,
+    notes: null,
+  };
+  assert.equal(isBlankRecord(blank, 0), true);
+  assert.equal(isBlankRecord(blank, 1), false, 'a sitting was started');
+  assert.equal(isBlankRecord({ ...blank, name: 'Quick Typer' }, 0), false);
+  // No name, but something else: this is somebody.
+  assert.equal(isBlankRecord({ ...blank, reasonForVisit: 'Chest pain' }, 0), false);
+  assert.equal(isBlankRecord({ ...blank, painScore: 0 }, 0), false);
+  assert.equal(isBlankRecord({ ...blank, sex: 'female' }, 0), false);
+  assert.equal(isBlankRecord({ ...blank, dateOfBirth: '1984-07-22' }, 0), false);
+  assert.equal(isBlankRecord({ ...blank, allergies: 'Penicillin' }, 0), false);
+  assert.equal(isBlankRecord({ ...blank, notes: 'Walked in unaided' }, 0), false);
+  assert.equal(isBlankRecord({ ...blank, photoUpdatedAt: '2026-11-14T03:21:09.000Z' }, 0), false);
+  assert.equal(isBlankRecord({ ...blank, faceOptIn: true }, 0), false);
 });

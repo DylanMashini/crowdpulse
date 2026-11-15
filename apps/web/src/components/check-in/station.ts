@@ -1,4 +1,4 @@
-import type { CameraCommandType, CameraState, Sitting } from '@triagecam/contracts';
+import type { CameraCommandType, CameraState, Patient, Sitting } from '@triagecam/contracts';
 
 // What the check-in page shows and offers at each point of a check-in. Kept apart from the
 // components so the rules can be read, and tested, in one place.
@@ -174,4 +174,23 @@ export function stageCopy(
       // The readings are gone; the patient is not. A new check-in made the record before the camera started.
       return { title: 'Sitting called off', detail: `No readings were saved. ${patient ?? 'The patient'} is still in the waiting room.` };
   }
+}
+
+/**
+ * True when nothing at all has been entered for a patient: no intake field, no photo, no face
+ * match, no sitting. Such a record was made by pressing "Check in a new patient" and stands for
+ * nobody, so cancelling the check-in may take it out of the waiting room again. Anything staff
+ * entered, on any screen, makes it a patient who stays.
+ */
+export function isBlankRecord(patient: Patient, sittings: number): boolean {
+  const entered = [patient.name, patient.reasonForVisit, patient.dateOfBirth, patient.sex, patient.allergies, patient.notes];
+  return (
+    sittings === 0 &&
+    entered.every((value) => value === null || value.trim() === '') &&
+    patient.painScore === null &&
+    patient.photoUpdatedAt === null &&
+    patient.intakeCompletedAt === null &&
+    !patient.faceOptIn &&
+    !patient.faceEnrolled
+  );
 }
