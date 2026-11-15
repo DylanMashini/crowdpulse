@@ -4,11 +4,12 @@ import { readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { LiveRegions, Reading, SittingSummary, WEBCAM, type PostWebcamFramesResponse, type WebcamSittingResponse } from "@triagecam/contracts";
+import { LiveRegions, WEBCAM, type PostWebcamFramesResponse, type Reading, type WebcamSittingResponse } from "@triagecam/contracts";
 
 import { env, isProduction } from "./env.ts";
 import { ApiError } from "./http.ts";
 import { saveSittingFile, sittingDetail } from "./sittings.ts";
+import { wireReading, wireSummary, type EngineReading, type WebcamFrame } from "./webcam-wire.ts";
 
 // The check-in page's own webcam, in place of a camera phone. The browser does everything a
 // phone does over the existing routes; the one thing it has no capture module for is turning
@@ -57,41 +58,6 @@ function binary(): string {
 const unavailable = () =>
   new ApiError("engine_unavailable", "The measuring engine for the webcam is not built on this server. Run pnpm webcam:build, then try again.");
 
-type EngineEstimate = { value?: number; state: string; reason?: string; quality: number; coverage: number; ageMs?: number };
-type EngineReading = { t: number; elapsed: number; heartRate: EngineEstimate; breathingRate: EngineEstimate };
-
-// The engine leaves a nil out; the wire writes it as null. Capture-clock seconds are the
-// browser's wall clock, so a frame time is a date.
-const estimate = (from: EngineEstimate) => ({
-  value: from.value ?? null,
-  state: from.state,
-  reason: from.reason ?? null,
-  quality: from.quality,
-  coverage: from.coverage,
-  ageMs: from.ageMs ?? null,
-});
-const wireReading = (from: EngineReading): Reading =>
-  Reading.parse({
-    t: new Date(from.t * 1000).toISOString(),
-    elapsedMs: Math.max(0, Math.round(from.elapsed * 1000)),
-    heartRate: estimate(from.heartRate),
-    breathingRate: estimate(from.breathingRate),
-  });
-
-type EngineSummaryValue = { value?: number; coverage: number };
-const summaryValue = (from: EngineSummaryValue) => ({ value: from.value ?? null, coverage: from.coverage });
-function wireSummary(from: Record<string, unknown>): SittingSummary {
-  return SittingSummary.parse({
-    ...from,
-    heartRate: summaryValue(from.heartRate as EngineSummaryValue),
-    breathingRate: summaryValue(from.breathingRate as EngineSummaryValue),
-    rmssd: summaryValue(from.rmssd as EngineSummaryValue),
-    sdnn: summaryValue(from.sdnn as EngineSummaryValue),
-    timeToFirstReadingSeconds: from.timeToFirstReadingSeconds ?? null,
-    heartRateConfidence: from.heartRateConfidence ?? null,
-  });
-}
-
 function drop(deviceId: string, session: Session, reason: string): void {
   if (sessions.get(deviceId) === session) sessions.delete(deviceId);
   clearTimeout(session.idle);
@@ -115,7 +81,7 @@ async function summarised(session: Session, message: { sittingId: string; endedA
   if (finish) clearTimeout(finish.timer);
   try {
     const summary = wireSummary(message.summary);
-    finish?.resolve({ summary, endedAt: new Date(message.endedAt * 1000).toISOString(), readings: sitting.readings });
+    finish?.resolve({ summary, endedAt: new Date(Math.round(message.endedAt * 1000)).toISOString(), readings: sitting.readings });
   } catch (error) {
     console.error("[webcam] The engine's summary could not be read:", error);
     finish?.reject(new ApiError("internal", "The sitting's summary could not be read"));
@@ -208,8 +174,6 @@ function snapshot(session: Session, viewers: number, readingsAfter: number): Pos
     readings: sitting?.started ? sitting.readings.slice(readingsAfter, readingsAfter + 120) : [],
   };
 }
-
-export type WebcamFrame = { jpeg: Buffer; capturedAtMs: number };
 
 /**
  * Hands frames, in capture order, to the webcam's engine process, starting it on the first.
