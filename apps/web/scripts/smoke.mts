@@ -908,6 +908,15 @@ done("live view: frame relayed to the dashboard as multipart JPEG, auth on both 
     auth: mobile,
     body: { readings: [{ t: phoneNow().toISOString(), elapsedMs: 1000, heartRate: settling, breathingRate: settling }] },
   });
+  // The phone was only out of reach and gets through with its summary afterwards: it is kept.
+  const late = (
+    await ok(SittingResponse, 200, "POST", routes.sittingFinish(begun.id), { auth: mobile, body: { endedAt: phoneNow().toISOString(), summary: summary(70, null) } })
+  ).sitting;
+  assert.equal(late.summary?.heartRate.value, 70, "a summary that arrives after the sitting was ended bare is stored");
+  // A command that names a patient is refused when the phone is on someone else.
+  await report({ ...framing, patientNumber: remote });
+  await refused(409, "camera_busy", "POST", routes.liveCommand(camera.id), { auth: web, body: { type: "start", patientNumber: remote + 1 } });
+  await ok(SendCameraCommandResponse, 202, "POST", routes.liveCommand(camera.id), { auth: web, body: { type: "cancel", patientNumber: remote } });
   await ok(PatientResponse, 200, "POST", routes.patientDischarge(remote), { auth: web });
 
   // The phone goes quiet: its state lapses and the dashboard is told.
