@@ -93,7 +93,7 @@ export interface Backer {
 export const BACKERS: Backer[] = [
   {
     company: 'Binah.ai',
-    fact: 'Raised a $13.5 million Series B in 2020, led by Maverick Ventures Israel, for vital signs measured with a smartphone camera',
+    fact: 'Raised a $13.5 million Series B in 2020, led by Maverick Ventures, for vital signs measured with a smartphone camera',
     source: 8,
   },
   {
