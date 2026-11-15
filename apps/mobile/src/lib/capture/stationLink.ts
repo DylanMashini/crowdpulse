@@ -89,6 +89,11 @@ export class StationLink {
     this.dirty = false;
   }
 
+  /** What the screen last said it is doing. `idle` means no sitting screen is open. */
+  current(): CameraState {
+    return this.state;
+  }
+
   /** What the screen is doing. Sent at once when it differs from the last state. */
   setState(state: CameraState): void {
     if (sameState(this.state, state)) return;

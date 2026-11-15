@@ -358,7 +358,13 @@ export function useSittingController({ patientNumber, kind, enrolFace, deviceId,
       error: error ? error.slice(0, 300) : null,
     });
   }, [phase, patientNumber, kind, sittingId, viewfinder, facePresent, exposureLocked, error]);
-  useEffect(() => () => stationLink.setState(IDLE_STATE), []);
+  useEffect(
+    () => () => {
+      // Unless another patient's sitting screen has already taken this one's place.
+      if (stationLink.current().patientNumber === patientNumber) stationLink.setState(IDLE_STATE);
+    },
+    [patientNumber],
+  );
   useEffect(
     () =>
       stationLink.onCommand((command) => {
