@@ -2,19 +2,25 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 
 import { db, schema } from "../db/client.ts";
 import { ApiError } from "./http.ts";
-import { portraitFromFrame, storePhoto } from "./photos.ts";
+import { GOOD_ENOUGH, shouldKeep } from "./face/quality.ts";
+import { portraitCandidate, storePhoto } from "./photos.ts";
 import type { PatientRow, SittingRow } from "./serialize.ts";
 
 // The profile photo takes itself: while a sitting runs for a patient who has no photo yet,
 // the frames the phone is already sending to the live view are looked at, a couple per
-// second, until one shows a face clearly enough to keep. That one frame is cropped and
-// stored; the rest are dropped as always.
+// second. The first one with a face is cropped and stored, so a photo appears early; after
+// that each frame is scored (face/quality.ts) and one that is clearly better replaces it,
+// so the photo ends up being of the patient sitting still and facing the camera. Only the
+// photo taken here is ever replaced here: one staff took or removed is theirs.
 
 type Running = {
   sittingId: string;
   patient: PatientRow;
   startedAt: number;
-  needsPhoto: boolean;
+  /** Still looking for a photo, or for a better one than `best`. */
+  looking: boolean;
+  /** The photo taken here that is stored now: its score, and its `photoUpdatedAt`, which names it. */
+  best: { score: number; storedAt: Date } | null;
   lastAttemptAt: number;
   busy: boolean;
 };
@@ -22,6 +28,10 @@ type Running = {
 /** The first second of a sitting is the patient still settling into the chair. */
 const SETTLE_MS = 1000;
 const ATTEMPT_EVERY_MS = 600;
+/** By now the patient has sat down and been still for a while: the photo kept is the photo. */
+const IMPROVE_FOR_MS = 30_000;
+/** The phone's own crop is a tight face box: any portrait cut here is better. */
+const PHONE_CROP_SCORE = 0;
 /** After a restart nothing is remembered: ask the database, but not on every frame. */
 const LOOKUP_EVERY_MS = 2000;
 
@@ -45,7 +55,8 @@ export function noteSittingStarted(sitting: SittingRow, patient: PatientRow): vo
     sittingId: sitting.id,
     patient,
     startedAt: sitting.startedAt.getTime(),
-    needsPhoto: patient.photoUpdatedAt === null && patient.photoRemovedAt === null,
+    looking: patient.photoUpdatedAt === null && patient.photoRemovedAt === null,
+    best: null,
     lastAttemptAt: 0,
     busy: false,
   });
@@ -57,13 +68,25 @@ export function noteSittingEnded(deviceId: string, sittingId: string): void {
 
 function stopLooking(patientId: string): void {
   for (const running of state.running.values()) {
-    if (running.patient.id === patientId) running.needsPhoto = false;
+    if (running.patient.id === patientId) running.looking = false;
   }
 }
 
-/** Staff or the phone stored a photo: stop looking for one. */
+/** Staff stored a photo: stop looking for one, and leave theirs alone. */
 export function notePhotoStored(patientId: string): void {
   stopLooking(patientId);
+}
+
+/**
+ * The phone's own crop filled the gap before a frame from the live view did. It stands in
+ * until the live view gives a portrait, which is wider and better framed.
+ */
+export function notePhoneCropStored(patientId: string, storedAt: Date): void {
+  for (const running of state.running.values()) {
+    if (running.patient.id === patientId && running.looking && running.best === null) {
+      running.best = { score: PHONE_CROP_SCORE, storedAt };
+    }
+  }
 }
 
 /**
@@ -98,19 +121,38 @@ export function considerFrameForPhoto(deviceId: string, jpeg: Buffer, now = Date
     lookUp(deviceId, now).catch((error) => console.error("[intake] Could not look for a running sitting:", error));
     return;
   }
-  if (!running.needsPhoto || running.busy) return;
+  if (!running.looking || running.busy) return;
+  if (running.best && now - running.startedAt > IMPROVE_FOR_MS) {
+    running.looking = false;
+    return;
+  }
   if (now - running.startedAt < SETTLE_MS || now - running.lastAttemptAt < ATTEMPT_EVERY_MS) return;
 
   running.busy = true;
   running.lastAttemptAt = now;
   void (async () => {
     try {
-      const portrait = await portraitFromFrame(jpeg);
+      const candidate = await portraitCandidate(jpeg);
       // Staff may have removed the photo, or taken one, while the detector ran.
-      if (!portrait || !running.needsPhoto) return;
-      // Stores nothing if there is a photo by now, or staff removed it: the database decides.
-      await storePhoto(running.patient, portrait, { onlyIfMissing: true });
-      running.needsPhoto = false;
+      if (!candidate || !running.looking) return;
+      const { score } = candidate.quality;
+      const best = running.best;
+      if (!shouldKeep(best ? best.score : null, score)) return;
+      // The database decides, in one statement: a first photo is stored only if there is
+      // none and staff did not remove it, a better one only over the photo taken here.
+      const stored = await storePhoto(
+        running.patient,
+        await candidate.encode(),
+        best ? { onlyIfStillAt: best.storedAt } : { onlyIfMissing: true },
+      );
+      if (stored === running.patient || !stored.photoUpdatedAt) {
+        // Someone else's photo, or a removal, got there first.
+        running.looking = false;
+        return;
+      }
+      running.patient = stored;
+      running.best = { score, storedAt: stored.photoUpdatedAt };
+      if (score >= GOOD_ENOUGH) running.looking = false;
     } catch (error) {
       if (error instanceof ApiError && error.code === "face_unavailable") {
         // No detector on this server. The phone's own crop and the retake button still work.
