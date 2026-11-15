@@ -4,9 +4,11 @@ import sharp, { type Sharp } from "sharp";
 
 import { db, schema } from "../db/client.ts";
 import { patientChanged } from "./events.ts";
-import { detectFaceScored } from "./face/detect.ts";
+import { detectFaces } from "./face/detect.ts";
+import { embedFace } from "./face/embed.ts";
 import { decodeJpegBytes } from "./face/image.ts";
 import { faceModels } from "./face/models.ts";
+import { mostProminent, prominence } from "./face/pick.ts";
 import { portraitSquare } from "./face/portrait.ts";
 import { faceBox, portraitQuality, type Quality } from "./face/quality.ts";
 import { ApiError } from "./http.ts";
@@ -33,41 +35,70 @@ export async function portraitFromCrop(jpeg: Buffer): Promise<Buffer> {
 
 /** The side of the small greyscale copy of the face that sharpness and exposure are measured on. */
 const SCORED_SIZE = 96;
-
-/** A portrait that could be cut from a frame: how good it would be, and the cut itself on request. */
-export type PortraitCandidate = { quality: Quality; encode: () => Promise<Buffer> };
+/** In a crowd, only this many faces are looked at, the most confident first. */
+const MAX_FACES = 4;
 
 /**
- * Finds the face in a whole camera frame and scores the portrait it would make. Null when no
- * face is found or it is too small. Throws face_unavailable when the detector is not installed.
+ * A portrait that could be cut from a frame, of one of the faces in it: how good it would be,
+ * how much that face is the subject of the frame, and on request the face's embedding (to
+ * tell whose it is) and the cut itself.
  */
-export async function portraitCandidate(jpeg: Buffer): Promise<PortraitCandidate | null> {
+export type PortraitCandidate = {
+  quality: Quality;
+  score: number;
+  prominence: number;
+  embed: () => Promise<number[]>;
+  encode: () => Promise<Buffer>;
+};
+
+/**
+ * Finds the faces in a whole camera frame and scores the portrait each would make. Empty when
+ * no face is found or none is large enough. Throws face_unavailable when the detector is not
+ * installed.
+ */
+export async function portraitCandidates(jpeg: Buffer): Promise<PortraitCandidate[]> {
   const models = await faceModels();
   const image = await decodeJpegBytes(jpeg);
-  const face = await detectFaceScored(image, models);
-  if (!face) return null;
-  const square = portraitSquare(face.landmarks, image.width, image.height);
-  const box = faceBox(face.landmarks, image.width, image.height);
-  if (!square || !box) return null;
+  const faces = (await detectFaces(image, models)).slice(0, MAX_FACES);
   const whole = () => sharp(image.data, { raw: { width: image.width, height: image.height, channels: 3 } });
-  const cut = () => whole().extract({ left: square.left, top: square.top, width: square.size, height: square.size });
-  // Scored on the face alone: a crisp edge elsewhere in the portrait says nothing about the face.
-  const grey = await whole().extract(box).resize(SCORED_SIZE, SCORED_SIZE, { fit: "fill" }).greyscale().raw().toBuffer();
-  const quality = portraitQuality({
-    landmarks: face.landmarks,
-    confidence: face.confidence,
-    width: image.width,
-    height: image.height,
-    grey,
-    greyWidth: SCORED_SIZE,
-    greyHeight: SCORED_SIZE,
-  });
-  return { quality, encode: () => encode(cut()) };
+  const candidates = await Promise.all(
+    faces.map(async (face): Promise<PortraitCandidate | null> => {
+      const square = portraitSquare(face.landmarks, image.width, image.height);
+      const box = faceBox(face.landmarks, image.width, image.height);
+      if (!square || !box) return null;
+      const grey = await whole()
+        .extract(box)
+        .resize(SCORED_SIZE, SCORED_SIZE, { fit: "fill" })
+        .greyscale()
+        .raw()
+        .toBuffer();
+      const quality = portraitQuality({
+        landmarks: face.landmarks,
+        confidence: face.confidence,
+        width: image.width,
+        height: image.height,
+        grey,
+        greyWidth: SCORED_SIZE,
+        greyHeight: SCORED_SIZE,
+      });
+      return {
+        quality,
+        score: quality.score,
+        prominence: prominence(face.landmarks, image.width, image.height),
+        embed: () => embedFace(image, face.landmarks, models),
+        encode: () => encode(whole().extract({ left: square.left, top: square.top, width: square.size, height: square.size })),
+      };
+    }),
+  );
+  return candidates.filter((candidate) => candidate !== null);
 }
 
-/** The portrait from a whole camera frame, whatever its quality: the frame staff chose. */
+/**
+ * The portrait from a whole camera frame, whatever its quality: the frame staff chose. With
+ * several people in it, the one the camera is pointed at (the largest and nearest the middle).
+ */
 export async function portraitFromFrame(jpeg: Buffer): Promise<Buffer | null> {
-  return (await (await portraitCandidate(jpeg))?.encode()) ?? null;
+  return (await mostProminent(await portraitCandidates(jpeg))?.encode()) ?? null;
 }
 
 /**

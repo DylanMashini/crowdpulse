@@ -2,16 +2,18 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 
 import { db, schema } from "../db/client.ts";
 import { ApiError } from "./http.ts";
-import { GOOD_ENOUGH, shouldKeep } from "./face/quality.ts";
-import { portraitCandidate, storePhoto } from "./photos.ts";
+import { pickPortrait } from "./face/pick.ts";
+import { GOOD_ENOUGH } from "./face/quality.ts";
+import { portraitCandidates, storePhoto } from "./photos.ts";
 import type { PatientRow, SittingRow } from "./serialize.ts";
 
 // The profile photo takes itself: while a sitting runs for a patient who has no photo yet,
 // the frames the phone is already sending to the live view are looked at, a couple per
 // second. The first one with a face is cropped and stored, so a photo appears early; after
-// that each frame is scored (face/quality.ts) and one that is clearly better replaces it,
-// so the photo ends up being of the patient sitting still and facing the camera. Only the
-// photo taken here is ever replaced here: one staff took or removed is theirs.
+// that each frame is scored (face/quality.ts) and one that is clearly better, and of the same
+// person (face/pick.ts), replaces it, so the photo ends up being of the patient sitting still
+// and facing the camera. Only the photo taken here is ever replaced here: one staff took or
+// removed is theirs.
 
 type Running = {
   sittingId: string;
@@ -19,8 +21,12 @@ type Running = {
   startedAt: number;
   /** Still looking for a photo, or for a better one than `best`. */
   looking: boolean;
-  /** The photo taken here that is stored now: its score, and its `photoUpdatedAt`, which names it. */
-  best: { score: number; storedAt: Date } | null;
+  /**
+   * The photo taken here that is stored now: its score, its `photoUpdatedAt`, which names it,
+   * and the embedding of the face in it, which says whose it is. The embedding lives here, in
+   * memory, for the length of the sitting and is never stored. The phone's crop has none.
+   */
+  best: { score: number; storedAt: Date; embedding: number[] | null } | null;
   lastAttemptAt: number;
   busy: boolean;
 };
@@ -84,7 +90,7 @@ export function notePhotoStored(patientId: string): void {
 export function notePhoneCropStored(patientId: string, storedAt: Date): void {
   for (const running of state.running.values()) {
     if (running.patient.id === patientId && running.looking && running.best === null) {
-      running.best = { score: PHONE_CROP_SCORE, storedAt };
+      running.best = { score: PHONE_CROP_SCORE, storedAt, embedding: null };
     }
   }
 }
@@ -132,12 +138,15 @@ export function considerFrameForPhoto(deviceId: string, jpeg: Buffer, now = Date
   running.lastAttemptAt = now;
   void (async () => {
     try {
-      const candidate = await portraitCandidate(jpeg);
-      // Staff may have removed the photo, or taken one, while the detector ran.
-      if (!candidate || !running.looking) return;
-      const { score } = candidate.quality;
+      const candidates = await portraitCandidates(jpeg);
       const best = running.best;
-      if (!shouldKeep(best ? best.score : null, score)) return;
+      // The first photo is of the face the camera is pointed at; a later one has to be
+      // clearly better and of the same person.
+      const picked = await pickPortrait(candidates, best);
+      // Staff may have removed the photo, or taken one, while the detector ran.
+      if (!picked || !running.looking) return;
+      const { candidate, embedding } = picked;
+      const { score } = candidate;
       // The database decides, in one statement: a first photo is stored only if there is
       // none and staff did not remove it, a better one only over the photo taken here.
       const stored = await storePhoto(
@@ -151,7 +160,7 @@ export function considerFrameForPhoto(deviceId: string, jpeg: Buffer, now = Date
         return;
       }
       running.patient = stored;
-      running.best = { score, storedAt: stored.photoUpdatedAt };
+      running.best = { score, storedAt: stored.photoUpdatedAt, embedding };
       if (score >= GOOD_ENOUGH) running.looking = false;
     } catch (error) {
       if (error instanceof ApiError && error.code === "face_unavailable") {
