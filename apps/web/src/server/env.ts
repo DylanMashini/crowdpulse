@@ -20,6 +20,8 @@ const Env = z.object({
    */
   TRUSTED_PROXY_HOPS: z.preprocess(emptyAsUndefined, z.coerce.number().int().min(0).max(5).optional()),
   FACE_MODELS_DIR: z.preprocess(emptyAsUndefined, z.string().default("./.models")),
+  /** The live-sitting executable that measures on webcam frames. Default: the release build under eval/video-to-sitting. */
+  LIVE_SITTING_BIN: optional(),
 });
 
 export type Env = z.infer<typeof Env>;

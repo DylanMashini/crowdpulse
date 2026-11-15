@@ -78,6 +78,11 @@ export function liveAt(deviceId: string): Date | null {
   return found?.frame ? new Date(found.frame.receivedAt) : null;
 }
 
+/** Dashboards reading the device's stream right now. */
+export function viewerCount(deviceId: string): number {
+  return channels.get(deviceId)?.viewers.size ?? 0;
+}
+
 /** The frame the device is showing right now, if it is live. */
 export function currentFrame(deviceId: string): RelayedFrame | null {
   return channels.get(deviceId)?.frame ?? null;

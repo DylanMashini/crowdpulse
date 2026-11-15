@@ -14,6 +14,7 @@
     "db:migrate": "pnpm --filter @triagecam/web db:migrate",
     "db:reset": "pnpm --filter @triagecam/web db:reset",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r --if-present test && swift test --package-path packages/signal-engine"
+    "test": "pnpm -r --if-present test && swift test --package-path packages/signal-engine",
+    "webcam:build": "swift build -c release --package-path eval/video-to-sitting --product live-sitting"
   }
 }
