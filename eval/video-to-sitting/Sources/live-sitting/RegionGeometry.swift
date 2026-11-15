@@ -1,1 +1,0 @@
-../../../../apps/mobile/modules/triage-capture/ios/RegionGeometry.swift

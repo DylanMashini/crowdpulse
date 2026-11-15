@@ -135,12 +135,8 @@ export function stageCopy(
   lowConfidence: boolean,
   /** The sitting finished with no heart rate at all. */
   noReading = false,
-  /** The camera is this computer's webcam, not a phone: there is no app to open and no phone to face. */
-  webcam = false,
 ): StageCopy {
   const who = patient ?? 'this patient';
-  const own = webcam ? webcamCopy(stage, camera) : null;
-  if (own) return own;
   switch (stage) {
     case 'offline':
       return { title: `${phone} is not connected`, detail: 'Open Crowdpulse on the phone and choose the camera role. Everything else happens here.' };
@@ -177,34 +173,6 @@ export function stageCopy(
     case 'called_off':
       // The readings are gone; the patient is not. A new check-in made the record before the camera started.
       return { title: 'Sitting called off', detail: `No readings were saved. ${patient ?? 'The patient'} is still in the waiting room.` };
-  }
-}
-
-/** The lines that name the phone or its app, said of this computer's webcam. Null where the phone's line holds as it is. */
-function webcamCopy(stage: Stage, camera: CameraState | null): StageCopy | null {
-  switch (stage) {
-    case 'offline':
-      return { title: 'Connecting the webcam', detail: 'If this does not change, reload the page.' };
-    case 'ready':
-      return { title: 'Ready for the next patient', detail: "Seat the patient in front of this computer's webcam, then start here." };
-    case 'opening':
-      return { title: 'Starting the webcam', detail: 'Allow the camera if the browser asks.' };
-    case 'blocked':
-      return camera?.phase === 'permission_denied'
-        ? { title: 'The browser has blocked the camera', detail: "Allow the camera for this site in the browser's address bar, then close this check-in and start again.", attention: true }
-        : { title: 'The webcam is not available', detail: camera?.error ?? 'Close this check-in and try again.', attention: true };
-    case 'framing':
-      if (!camera?.facePresent) return { title: 'Looking for a face', detail: 'Seat the patient 0.6 to 0.9 m from the webcam, facing it.' };
-      // A browser cannot lock a webcam's exposure, so the page does not say it is locked.
-      return camera.exposureLocked ? { title: 'Ready to start', detail: 'Face in view.' } : { title: 'Face found', detail: 'The picture is settling. You can start now.' };
-    case 'running':
-      return camera?.viewfinder === 'lost' || camera?.viewfinder === 'searching'
-        ? { title: 'Measuring', detail: 'Face not in view. Ask the patient to face the webcam and keep still.', attention: true }
-        : null;
-    case 'lost':
-      return { title: 'The webcam stopped responding', detail: 'The sitting was not saved. Reload the page and start it again.', attention: true };
-    default:
-      return null;
   }
 }
 

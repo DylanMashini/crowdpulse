@@ -151,24 +151,3 @@ test('a record is blank only when nothing at all was entered for it (R2-02)', ()
   assert.equal(isBlankRecord({ ...blank, photoUpdatedAt: '2026-11-14T03:21:09.000Z' }, 0), false);
   assert.equal(isBlankRecord({ ...blank, faceOptIn: true }, 0), false);
 });
-
-test('the webcam is spoken of as a webcam: no phone to open, no app, no exposure lock claimed', () => {
-  const says = (stage: Parameters<typeof stageCopy>[0], camera: CameraState | null) => stageCopy(stage, camera, 'Webcam', 'Ada Park', 'check_in', false, false, true);
-  const all = [
-    says('offline', null),
-    says('ready', idle),
-    says('opening', { ...framing, phase: 'preparing' }),
-    says('blocked', { ...framing, phase: 'permission_denied' }),
-    says('blocked', { ...framing, phase: 'unavailable', error: 'No camera was found on this computer.' }),
-    says('framing', framing),
-    says('framing', { ...framing, facePresent: true, exposureLocked: true }),
-    says('running', { ...measuring, viewfinder: 'lost' }),
-    says('lost', null),
-  ];
-  for (const copy of all) assert.doesNotMatch(`${copy.title} ${copy.detail ?? ''}`, /phone|Crowdpulse|exposure locked/);
-  assert.equal(says('blocked', { ...framing, phase: 'unavailable', error: 'No camera was found on this computer.' }).detail, 'No camera was found on this computer.');
-  assert.equal(says('blocked', { ...framing, phase: 'permission_denied' }).attention, true);
-  // Where the phone's line does not name the phone, the webcam says the same.
-  assert.deepEqual(says('done', idle), stageCopy('done', idle, 'Front desk phone', 'Ada Park', 'check_in', false));
-  assert.deepEqual(says('running', measuring), stageCopy('running', measuring, 'Front desk phone', 'Ada Park', 'check_in', false));
-});

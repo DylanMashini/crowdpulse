@@ -1,38 +1,24 @@
 import {
   DeviceListResponse,
-  DeviceResponse,
-  EnrolFaceResponse,
   ErrorResponse,
   FlagResponse,
-  MatchFaceResponse,
   MeResponse,
-  PostLiveStateResponse,
-  PostReadingsResponse,
-  PostWebcamFramesResponse,
   ResendVerificationResponse,
   SendCameraCommandResponse,
   SettingsResponse,
   SignInResponse,
   SignUpResponse,
   SittingDetailResponse,
-  SittingResponse,
-  StartSittingResponse,
   Statistics,
   PatientDetailResponse,
   PatientListResponse,
   PatientResponse,
   VerifyEmailResponse,
-  WEBCAM_FRAME_HEADERS,
-  WebcamSittingResponse,
   WorklistResponse,
   routes,
   type ErrorCode,
-  type FinishSittingRequest,
   type PatientRef,
-  type PostLiveStateRequest,
-  type Reading,
   type SendCameraCommandRequest,
-  type StartSittingRequest,
   type UpdatePatientRequest,
   type UpdateSettingsRequest,
 } from '@triagecam/contracts';
@@ -86,17 +72,13 @@ async function send(path: string, init: RequestInit): Promise<Response> {
   return fetch(path, { ...init, credentials: 'same-origin' });
 }
 
-/** A body that is not JSON: sent as it is, with its own headers. */
-type RawBody = { raw: Blob; headers: Record<string, string> };
-const isRaw = (body: unknown): body is RawBody => typeof body === 'object' && body !== null && 'raw' in body;
-
 async function request<T>(schema: ZodType<T> | null, method: Method, path: string, body?: unknown): Promise<T> {
   let response: Response;
   try {
     response = await send(path, {
       method,
-      headers: body === undefined ? undefined : isRaw(body) ? body.headers : { 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : isRaw(body) ? body.raw : JSON.stringify(body),
+      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
       cache: 'no-store',
     });
   } catch {
@@ -169,30 +151,6 @@ export const api = {
   updateSettings: (changes: UpdateSettingsRequest) => request(SettingsResponse, 'PATCH', routes.settings, changes),
 
   statistics: (from?: string, to?: string) => request(Statistics, 'GET', withQuery(routes.statistics, { from, to })),
-
-  // The check-in page's own webcam takes a camera phone's place, so it makes a phone's calls
-  // (lib/webcam-station.ts). Nothing else on the dashboard uses these.
-  registerCamera: (label: string, id?: string) => request(DeviceResponse, 'POST', routes.devices, { id, role: 'camera', label }),
-  postLiveState: (deviceId: string, report: PostLiveStateRequest) => request(PostLiveStateResponse, 'POST', routes.liveState(deviceId), report),
-  startSitting: (sitting: StartSittingRequest) => request(StartSittingResponse, 'POST', routes.sittings, sitting),
-  postReadings: (sittingId: string, readings: Reading[]) => request(PostReadingsResponse, 'POST', routes.sittingReadings(sittingId), { readings }),
-  finishSitting: (sittingId: string, finish: FinishSittingRequest) => request(SittingResponse, 'POST', routes.sittingFinish(sittingId), finish),
-  abandonSitting: (sittingId: string) => request(SittingResponse, 'POST', routes.sittingAbandon(sittingId)),
-  enrolFace: (number: number, jpegBase64: string) => request(EnrolFaceResponse, 'POST', routes.patientFace(number), { jpegBase64 }),
-  matchFace: (jpegBase64: string) => request(MatchFaceResponse, 'POST', routes.faceMatch, { jpegBase64 }),
-  /** The frames taken since the last call, already laid out as the route wants them. */
-  postWebcamFrames: (deviceId: string, frames: Blob, dropped: number, readingsAfter: number) =>
-    request(PostWebcamFramesResponse, 'POST', routes.webcamFrames(deviceId), {
-      raw: frames,
-      headers: {
-        'Content-Type': 'application/octet-stream',
-        [WEBCAM_FRAME_HEADERS.dropped]: String(dropped),
-        [WEBCAM_FRAME_HEADERS.readingsAfter]: String(readingsAfter),
-      },
-    }),
-  webcamSitting: (deviceId: string, action: 'start' | 'finish' | 'abandon', sittingId: string) =>
-    request(WebcamSittingResponse, 'POST', routes.webcamSitting(deviceId), { action, sittingId }),
-  closeWebcam: (deviceId: string) => request<void>(null, 'DELETE', routes.webcam(deviceId)),
 };
 
 /** Address of the multipart live-view stream of a camera phone. Null under the mock, which has no camera. */

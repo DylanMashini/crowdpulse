@@ -27,22 +27,17 @@ import { useNow } from '@/lib/clock';
 import { cx } from '@/lib/cx';
 import { milliseconds, minutesAgo, rate } from '@/lib/format';
 import { useResource } from '@/lib/use-resource';
-import { WebcamError, webcamSnapshot } from '@/lib/webcam-capture';
-import { WEBCAM_LABEL } from '@/lib/webcam-station';
 
 import { LiveFeed, type FeedStats } from './LiveFeed';
 import { SittingView } from './SittingView';
 import { SUMMARY_OVERDUE_MS, isBlankRecord, readyToStart, sittingToShow, stageCopy, stageOf, type Stage } from './station';
 import { useCameraCommands } from './use-camera-commands';
 import { useFollowedSitting } from './use-followed-sitting';
-import { useWebcam, useWebcamConnection } from './use-webcam';
 
 /** A phone counts as online when the server heard from it within this long. */
 const ONLINE_WITHIN_MS = 2 * 60_000;
 const DEVICE_REFRESH_MS = 15_000;
 const LAST_PHONE_KEY = 'crowdpulse.check-in.phone';
-/** A phone that stopped reporting keeps the page this long before the webcam takes its place: a dropped connection is not a phone put away. */
-const PHONE_GRACE_MS = 20_000;
 
 export function CheckInScreen() {
   const { worklist } = useLive();
@@ -60,12 +55,9 @@ export function CheckInScreen() {
   // What each phone says about itself arrives on the stream the moment it changes; the list is
   // only asked again for what the stream does not carry.
   const [reported, setReported] = useState<Record<string, CameraState | null>>({});
-  /** When each camera was last heard to go quiet, on this browser's clock. */
-  const [quiet, setQuiet] = useState<Record<string, number>>({});
   useLiveEvents((event) => {
     if (event.type === 'camera_state') {
       setReported((previous) => ({ ...previous, [event.deviceId]: event.state }));
-      if (event.state === null) setQuiet((previous) => ({ ...previous, [event.deviceId]: Date.now() }));
       if (!devices.data?.devices.some((device) => device.id === event.deviceId)) reloadDevices();
     } else if (event.type === 'reconnected') {
       setReported({});
@@ -73,28 +65,14 @@ export function CheckInScreen() {
     } else if (event.type === 'live_changed' || event.type === 'sitting_started') reloadDevices();
   });
 
-  // This computer's own webcam is a camera too: the one the page uses when no phone is connected.
-  const webcam = useWebcam();
-  const webcamId = webcam.deviceId;
-  useEffect(() => {
-    // Just registered: it is not in the list that was loaded before.
-    if (webcamId) reloadDevices();
-  }, [webcamId, reloadDevices]);
-
-  const isConnected = (device: Device) => device.camera !== null || device.liveAt !== null;
   const cameras = useMemo(
     () =>
       (devices.data?.devices ?? [])
         .filter((device) => device.role === 'camera')
-        .map((device) => (device.id in reported ? { ...device, camera: reported[device.id] ?? null } : device))
-        // Another computer's webcam is of no use from here unless it is in use: then it can be watched, like a phone.
-        .filter((device) => device.id === webcamId || device.label !== WEBCAM_LABEL || device.camera !== null || device.liveAt !== null),
-    [devices.data, reported, webcamId],
+        .map((device) => (device.id in reported ? { ...device, camera: reported[device.id] ?? null } : device)),
+    [devices.data, reported],
   );
-  const own = cameras.find((device) => device.id === webcamId) ?? null;
-  const others = cameras.filter((device) => device.id !== webcamId);
-  // Only a phone takes the page by connecting. Another computer's webcam is chosen by hand, to watch it.
-  const phones = own ? others.filter((device) => device.label !== WEBCAM_LABEL) : others;
+  const isConnected = (device: Device) => device.camera !== null || device.liveAt !== null;
   const isOnline = (device: Device) => isConnected(device) || serverNow - new Date(device.lastSeenAt).getTime() < ONLINE_WITHIN_MS;
   const [chosen, setChosen] = useState<string | null>(null);
   // The phone this page was last working with: one that was connected, or picked by hand. When
@@ -115,30 +93,20 @@ export function CheckInScreen() {
       // Private browsing: the page still stays on its phone until it is reloaded.
     }
   }, [last]);
-  // A phone keeps the page while it is connected, and for a short while after it goes quiet.
-  const holdsPage = (device: Device) => isConnected(device) || now - (quiet[device.id] ?? Number.NEGATIVE_INFINITY) < PHONE_GRACE_MS;
-  // The source: the one picked by hand; else a connected phone; else this computer's webcam.
-  // A check-in already open on the webcam is not taken from it by a phone that connects meanwhile.
   const selected =
     cameras.find((device) => device.id === chosen) ??
-    (webcam.state.phase !== 'idle' ? own : null) ??
-    phones.find((device) => device.liveAt !== null) ??
-    phones.find(isConnected) ??
-    phones.find(holdsPage) ??
-    own ??
-    phones.find((device) => device.id === last) ??
-    phones.find(isOnline) ??
+    cameras.find((device) => device.liveAt !== null) ??
+    cameras.find(isConnected) ??
+    cameras.find((device) => device.id === last) ??
+    cameras.find(isOnline) ??
     null;
-  if (selected && selected.id !== webcamId && selected.id !== last && (selected.id === chosen || isConnected(selected))) setLast(selected.id);
-  const onWebcam = selected !== null && selected.id === webcamId;
-  useWebcamConnection(webcam, onWebcam);
+  if (selected && selected.id !== last && (selected.id === chosen || isConnected(selected))) setLast(selected.id);
 
   const picker = (
-    <Section heading={own ? 'Camera' : 'Camera phone'} className="max-xl:order-4">
-      <div role="radiogroup" aria-label={own ? 'Camera' : 'Camera phone'} className="flex flex-col gap-[2px]">
-        {[...others, ...(own ? [own] : [])].map((device) => {
+    <Section heading="Camera phone" className="max-xl:order-4">
+      <div role="radiogroup" aria-label="Camera phone" className="flex flex-col gap-[2px]">
+        {cameras.map((device) => {
           const on = device.id === selected?.id;
-          const isOwn = device.id === webcamId;
           const seenMinutes = Math.max(0, Math.floor((serverNow - new Date(device.lastSeenAt).getTime()) / 60_000));
           return (
             <button
@@ -163,9 +131,7 @@ export function CheckInScreen() {
                 <span className="type-caption text-ink-faint">
                   {device.liveAt
                     ? 'Camera on'
-                    : isOwn
-                      ? 'On this computer'
-                      : device.camera
+                    : device.camera
                       ? 'Connected, camera off'
                       : isOnline(device)
                         ? 'Signed in, app not open'
@@ -191,13 +157,13 @@ export function CheckInScreen() {
         <LiveStatus updatedAt={devices.updatedAt} />
       </PageHeader>
 
-      {devices.loading || (devices.data && cameras.length === 0 && webcam.registering) ? <StateMessage kind="loading" title="Loading cameras" /> : null}
+      {devices.loading ? <StateMessage kind="loading" title="Loading camera phones" /> : null}
       {devices.error && !devices.data ? (
         <StateMessage kind="error" title="The camera phones could not be loaded" onRetry={devices.reload}>
           {devices.error.message}
         </StateMessage>
       ) : null}
-      {devices.data && cameras.length === 0 && !webcam.registering ? (
+      {devices.data && cameras.length === 0 ? (
         <StateMessage kind="empty" title="No camera phone has signed in yet">
           Open the Crowdpulse app on the phone, sign in and choose the camera role. The phone appears here within {DEVICE_REFRESH_MS / 1000} seconds.
         </StateMessage>
@@ -207,7 +173,6 @@ export function CheckInScreen() {
         <Station
           key={selected.id}
           device={selected}
-          webcam={onWebcam}
           serverOffsetMs={serverOffsetMs}
           serverNow={serverNow}
           picker={picker}
@@ -233,8 +198,6 @@ const side = 'flex min-w-0 flex-col border-line max-xl:contents xl:border-l';
 
 interface StationProps {
   device: Device;
-  /** The camera is this computer's own webcam, run by this page. */
-  webcam: boolean;
   serverOffsetMs: number | null;
   serverNow: number;
   picker: ReactNode;
@@ -249,11 +212,8 @@ type Confirming = 'stop' | 'cancel' | null;
  * picture with the outlines of what it measures, what it is doing, the button for what comes
  * next, the readings, and the patient in front of it.
  */
-function Station({ device, webcam, serverOffsetMs, serverNow, picker, waiting }: StationProps) {
+function Station({ device, serverOffsetMs, serverNow, picker, waiting }: StationProps) {
   const camera = device.camera;
-  /** The camera's name inside a sentence. */
-  const name = webcam ? 'the webcam' : device.label;
-  const openingLabel = webcam ? 'Starting the webcam' : `Opening on ${device.label}`;
   const cameraLive = device.liveAt !== null;
   const followed = useFollowedSitting(device.id);
   /** The finished sitting staff have moved on from. */
@@ -309,11 +269,11 @@ function Station({ device, webcam, serverOffsetMs, serverNow, picker, waiting }:
   const stage = stageOf({ camera, cameraLive, sitting, reportedBefore, summaryOverdue: overdue !== null && overdue === sitting?.id });
   const lowConfidence = sitting?.summary?.heartRate.value != null && isLowConfidence(sitting.summary.heartRateConfidence);
   const noReading = sitting?.summary != null && sitting.summary.heartRate.value == null;
-  const copy = stageCopy(stage, camera, device.label, patientRef ? patientLabel(patientRef) : null, kind, lowConfidence, noReading, webcam);
+  const copy = stageCopy(stage, camera, device.label, patientRef ? patientLabel(patientRef) : null, kind, lowConfidence, noReading);
 
   // --- what the buttons do ----------------------------------------------------------------------
 
-  const commands = useCameraCommands(device.id, webcam ? 'The webcam' : device.label, camera, webcam ? 'Reload the page, then try again.' : undefined);
+  const commands = useCameraCommands(device.id, device.label, camera);
   const [creating, setCreating] = useState(false);
   const [confirming, setConfirming] = useState<Confirming>(null);
   const [removing, setRemoving] = useState(false);
@@ -439,7 +399,7 @@ function Station({ device, webcam, serverOffsetMs, serverNow, picker, waiting }:
       case 'ready':
         return (
           <Button variant="primary" size="lg" disabled={busy} onClick={() => void checkInNew()}>
-            {creating || pendingType === 'open' ? openingLabel : 'Check in a new patient'}
+            {creating || pendingType === 'open' ? `Opening on ${device.label}` : 'Check in a new patient'}
           </Button>
         );
       case 'opening':
@@ -486,7 +446,7 @@ function Station({ device, webcam, serverOffsetMs, serverNow, picker, waiting }:
         return (
           <>
             <Button variant="primary" size="lg" disabled={busy || offline} onClick={() => void checkInNew()}>
-              {creating || pendingType === 'open' ? openingLabel : 'Check in next patient'}
+              {creating || pendingType === 'open' ? `Opening on ${device.label}` : 'Check in next patient'}
             </Button>
             {sitting ? (
               <Button size="lg" disabled={busy || offline} onClick={() => void open(sitting.patientNumber, 'recheck')}>
@@ -500,7 +460,7 @@ function Station({ device, webcam, serverOffsetMs, serverNow, picker, waiting }:
           <>
             {sitting ? (
               <Button variant="primary" size="lg" disabled={busy || offline} onClick={() => void open(sitting.patientNumber, sitting.kind)}>
-                {pendingType === 'open' ? openingLabel : 'Start again'}
+                {pendingType === 'open' ? `Opening on ${device.label}` : 'Start again'}
               </Button>
             ) : null}
             <Button size="lg" disabled={busy || offline} onClick={() => void checkInNew()}>
@@ -607,7 +567,7 @@ function Station({ device, webcam, serverOffsetMs, serverNow, picker, waiting }:
 
             {/* Between sittings, whichever way the last one ended: someone already waiting can sit down next. */}
             {camera && (stage === 'ready' || stage === 'done' || stage === 'called_off') ? (
-              <Recheck waiting={waiting} disabled={busy} byFace={webcam} onOpen={(number) => void open(number, 'recheck')} />
+              <Recheck waiting={waiting} disabled={busy} onOpen={(number) => void open(number, 'recheck')} />
             ) : null}
 
             <PrivacyNote icon="video">{PRIVACY_CAPTURE}</PrivacyNote>
@@ -615,7 +575,7 @@ function Station({ device, webcam, serverOffsetMs, serverNow, picker, waiting }:
         </Section>
 
         <div className="flex min-w-0 flex-col empty:hidden max-xl:order-3">
-          {followed.phase === 'searching' ? <StateMessage kind="loading" title={`Looking for a sitting on ${name}`} /> : null}
+          {followed.phase === 'searching' ? <StateMessage kind="loading" title={`Looking for a sitting on ${device.label}`} /> : null}
           {followed.error ? (
             <StateMessage kind="error" title="The sitting could not be loaded" onRetry={followed.retry}>
               {followed.error.message}
@@ -692,40 +652,15 @@ const showsReadings = (stage: Stage) => stage !== 'called_off' && stage !== 'rea
 interface RecheckProps {
   waiting: WorklistItem[];
   disabled: boolean;
-  /** The camera is this computer's webcam: it can look for the patient by face, as the phone app does. */
-  byFace?: boolean;
   onOpen: (patientNumber: number) => void;
 }
 
 /** The other way a sitting starts: someone already in the waiting room sits down again. */
-function Recheck({ waiting, disabled, byFace = false, onOpen }: RecheckProps) {
+function Recheck({ waiting, disabled, onOpen }: RecheckProps) {
   const id = useId();
   const candidates = waiting.filter((item) => !item.sittingInProgress);
   const [choice, setChoice] = useState('');
   const chosen = candidates.find((item) => String(item.patientNumber) === choice) ?? null;
-  const [face, setFace] = useState<{ busy: boolean; note: string | null; attention: boolean }>({ busy: false, note: null, attention: false });
-
-  // One picture from the webcam goes to the face-match route. A match only fills in the list:
-  // staff check the name with the patient and open the re-check themselves.
-  const findByFace = async () => {
-    setFace({ busy: true, note: null, attention: false });
-    try {
-      const match = await api.matchFace(await webcamSnapshot());
-      const found = match.outcome === 'matched' ? candidates.find((item) => item.patientNumber === match.patientNumber) : undefined;
-      if (found) {
-        setChoice(String(found.patientNumber));
-        setFace({ busy: false, note: `Matched ${patientLabel(found.patient)}. Check the name with the patient, then open the re-check.`, attention: false });
-      } else if (match.outcome === 'matched' && match.patient) {
-        setFace({ busy: false, note: `Matched ${patientLabel(match.patient)}, who has a sitting running.`, attention: true });
-      } else {
-        setFace({ busy: false, note: 'No sure match. Choose the patient from the list.', attention: true });
-      }
-    } catch (failure) {
-      const known = failure instanceof ApiError || failure instanceof WebcamError;
-      setFace({ busy: false, note: known ? failure.message : 'Face match did not work. Choose the patient from the list.', attention: true });
-    }
-  };
-
   if (candidates.length === 0) return null;
   return (
     <div className="flex flex-wrap items-end gap-2 border-t border-line pt-4">
@@ -752,16 +687,6 @@ function Recheck({ waiting, disabled, byFace = false, onOpen }: RecheckProps) {
       <Button disabled={disabled || !chosen} onClick={() => (chosen ? onOpen(chosen.patientNumber) : undefined)}>
         Open re-check
       </Button>
-      {byFace ? (
-        <Button variant="quiet" disabled={disabled || face.busy} onClick={() => void findByFace()}>
-          {face.busy ? 'Looking' : 'Find by face'}
-        </Button>
-      ) : null}
-      {byFace && face.note ? (
-        <p role="status" className={cx('basis-full type-caption', face.attention ? 'text-watch' : 'text-ink-muted')}>
-          {face.note}
-        </p>
-      ) : null}
     </div>
   );
 }
