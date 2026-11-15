@@ -129,7 +129,10 @@ export type CameraCommandType = z.infer<typeof CameraCommandType>;
 export const SendCameraCommandRequest = z
   .object({
     type: CameraCommandType,
-    /** For `open`. */
+    /**
+     * For `open`: who to open the sitting screen for. On the others it is optional and names the
+     * patient the dashboard is looking at: the command is refused when the phone is on someone else.
+     */
     patientNumber: PatientNumber.optional(),
     /** For `open`. */
     kind: SittingKind.optional(),

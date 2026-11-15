@@ -129,6 +129,19 @@ describe("commands from the check-in page", () => {
     assert.equal(reportState(id, running, null).command?.type, "cancel");
   });
 
+  it("only act on the patient the dashboard that sent them is looking at", (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const id = device();
+    reportState(id, framing, null);
+    // Another dashboard opened patient 15 here a moment ago; this one still shows 14's buttons.
+    assert.equal(refusal(() => sendCommand(id, "Front desk phone", { type: "start", patientNumber: 15 })).code, "camera_busy");
+    assert.equal(refusal(() => sendCommand(id, "Front desk phone", { type: "cancel", patientNumber: 15 })).code, "camera_busy");
+    assert.match(refusal(() => sendCommand(id, "Front desk phone", { type: "open", patientNumber: 15, kind: "check_in" })).message, /another patient/);
+    assert.equal(sendCommand(id, "Front desk phone", { type: "start", patientNumber: 14 }).type, "start");
+    // A command that names nobody is taken as before.
+    assert.equal(sendCommand(id, "Front desk phone", { type: "cancel" }).type, "cancel");
+  });
+
   it("are dropped when the phone does not collect them in time", (t) => {
     t.mock.timers.enable({ apis: ["setTimeout"] });
     const id = device();

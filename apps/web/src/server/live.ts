@@ -164,6 +164,12 @@ export function sendCommand(deviceId: string, label: string, request: SendCamera
   if (!station) throw new ApiError("camera_offline", `${label} is not connected. Open Crowdpulse on it in the camera role.`);
   const { phase } = station.state;
   if (request.type === "open" && RUNNING.has(phase)) throw new ApiError("camera_busy", `A sitting is running on ${label}`);
+  // Two dashboards on one phone: neither opens over the other's check-in, and Start, End and
+  // Call off only act on the patient the dashboard that sends them is looking at.
+  const onPhone = station.state.patientNumber;
+  if (request.patientNumber !== undefined && phase !== "idle" && onPhone !== null && onPhone !== request.patientNumber) {
+    throw new ApiError("camera_busy", `${label} is on another patient's check-in`);
+  }
   if (request.type === "start" && phase !== "framing") {
     throw new ApiError("camera_busy", RUNNING.has(phase) ? `A sitting is already running on ${label}` : `${label} is not ready to start a sitting`);
   }
@@ -171,7 +177,7 @@ export function sendCommand(deviceId: string, label: string, request: SendCamera
   if (request.type === "cancel" && phase === "idle") throw new ApiError("camera_busy", `No check-in is open on ${label}`);
 
   const waiting = station.command;
-  if (waiting && waiting.type === request.type && waiting.patientNumber === (request.patientNumber ?? null)) return waiting;
+  if (waiting && waiting.type === request.type && (request.type !== "open" || waiting.patientNumber === (request.patientNumber ?? null))) return waiting;
   const command: CameraCommand = {
     id: randomUUID(),
     type: request.type,
