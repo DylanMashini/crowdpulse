@@ -347,3 +347,24 @@ test('only "no face" and "no chest" say that nobody is in the picture', async ()
   assert.match(SHOWN_NOT_RECORDED, /^Shown live, .*Repeat the sitting$/);
 });
 
+test('the webcam routes answer in the shapes a phone already posts', async () => {
+  const { PostWebcamFrameResponse, WebcamSittingRequest, WebcamSittingResponse, WEBCAM, WEBCAM_FRAME_HEADERS } = await import('./webcam.ts');
+  const { PostReadingsRequest } = await import('./sittings.ts');
+  const { LIVE_FRAME_HEADERS, LIVE_VIEW } = await import('./live.ts');
+  const { errorStatus } = await import('./common.ts');
+  const id = '6f1d1c6e-3c0a-4f5e-9a51-0d6a3b1f2c11';
+  const none = { value: null, state: 'settling', reason: 'warming_up', quality: 0, coverage: 0, ageMs: null };
+  const reading = { t: '2026-11-15T03:21:07.512Z', elapsedMs: 1000, heartRate: none, breathingRate: none };
+  const answer = PostWebcamFrameResponse.parse({ viewers: 1, outlines: null, facePresent: false, exposureLocked: true, sittingId: id, readings: [reading] });
+  // What comes back goes straight into the readings route.
+  assert.equal(PostReadingsRequest.safeParse({ readings: answer.readings }).success, true);
+  assert.equal(WebcamSittingRequest.safeParse({ action: 'finish', sittingId: id }).success, true);
+  assert.equal(WebcamSittingRequest.safeParse({ action: 'pause', sittingId: id }).success, false);
+  assert.equal(WebcamSittingResponse.parse({ summary: null, endedAt: null }).summary, null);
+  // The frame's capture time travels in the live view's own header.
+  assert.equal(WEBCAM_FRAME_HEADERS.capturedAt, LIVE_FRAME_HEADERS.capturedAt);
+  assert.ok(WEBCAM.fps <= LIVE_VIEW.maxFps);
+  assert.equal(errorStatus.engine_unavailable, 503);
+  assert.equal(routes.webcamFrame(id), `/api/webcam/${id}/frame`);
+});
+

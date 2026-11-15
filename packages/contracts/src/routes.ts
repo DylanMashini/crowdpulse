@@ -38,5 +38,11 @@ export const routes = {
   liveState: (deviceId: string) => `/api/live/${deviceId}/state`,
   /** POST, from the dashboard: a command for the phone. */
   liveCommand: (deviceId: string) => `/api/live/${deviceId}/command`,
+  /** POST, from the check-in page's own webcam: one JPEG frame. The answer carries outlines and readings. */
+  webcamFrame: (deviceId: string) => `/api/webcam/${deviceId}/frame`,
+  /** POST, from the same page: start, finish or abandon the engine's sitting on those frames. */
+  webcamSitting: (deviceId: string) => `/api/webcam/${deviceId}/sitting`,
+  /** DELETE: the webcam is off. The server's engine for it stops. */
+  webcam: (deviceId: string) => `/api/webcam/${deviceId}`,
   stream: '/api/stream',
 } as const;
