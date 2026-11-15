@@ -15,8 +15,8 @@ import {
   type WebcamSittingResponse,
 } from '@triagecam/contracts';
 
-import { ApiError } from './api';
-import { WebcamError, frameBatch, type WebcamFrame, type WebcamHandlers } from './webcam-capture';
+import { ApiError } from './api.ts';
+import { WebcamError, frameBatch, type WebcamFrame, type WebcamHandlers } from './webcam-capture.ts';
 
 // This computer's webcam in the place of a camera phone. To the server and to the check-in page
 // it is a camera device like any other: it reports its state, takes the page's commands from
