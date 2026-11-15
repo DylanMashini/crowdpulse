@@ -153,17 +153,17 @@ describe("portraitQuality", () => {
 
   it("puts the patient facing the camera clearly above the same patient turned away", () => {
     const facing = quality(face(320, 200, 60)).score;
-    assert.ok(facing >= quality(turned(320, 200, 60)).score + CLEARLY_BETTER);
+    assert.ok(facing >= quality(turned(320, 200, 60)).score * CLEARLY_BETTER);
   });
 
   it("puts a still frame clearly above a blurred one", () => {
     const still = quality(face(320, 200, 60), checkerboard(8)).score;
     const moving = quality(face(320, 200, 60), blurred(checkerboard(8), 3)).score;
-    assert.ok(still >= moving + CLEARLY_BETTER, `${still} against ${moving}`);
+    assert.ok(still >= moving * CLEARLY_BETTER, `${still} against ${moving}`);
   });
 
   it("puts a face near the camera above one far away", () => {
-    assert.ok(quality(face(320, 200, 70)).score > quality(face(320, 200, 26)).score + CLEARLY_BETTER);
+    assert.ok(quality(face(320, 200, 70)).score > quality(face(320, 200, 26)).score * CLEARLY_BETTER);
   });
 
   it("prefers a face the detector is sure of", () => {
@@ -186,10 +186,25 @@ describe("shouldKeep", () => {
   });
 
   it("replaces the photo only for a clearly better frame", () => {
-    assert.equal(shouldKeep(0.5, 0.5 + CLEARLY_BETTER / 2), false);
+    assert.equal(shouldKeep(0.5, 0.5 * (1 + (CLEARLY_BETTER - 1) / 2)), false);
     assert.equal(shouldKeep(0.5, 0.5), false);
     assert.equal(shouldKeep(0.5, 0.3), false);
-    assert.equal(shouldKeep(0.5, 0.5 + CLEARLY_BETTER), true);
+    assert.equal(shouldKeep(0.5, 0.5 * CLEARLY_BETTER + 1e-9), true);
+  });
+
+  it("asks for the same improvement in a dim room as in a bright one", () => {
+    // What the old fixed margin of 0.08 got wrong: 0.30 to 0.36 is a fifth better and was refused.
+    assert.equal(shouldKeep(0.3, 0.36), true);
+    assert.equal(shouldKeep(0.8, 0.86), false);
+    // The same two frames with the light halved: every score falls by one factor, the answer stays.
+    const dimmer = 0.4;
+    for (const [kept, next] of [[0.5, 0.6], [0.5, 0.55], [0.7, 0.9]] as const) {
+      assert.equal(shouldKeep(kept * dimmer, next * dimmer), shouldKeep(kept, next));
+    }
+  });
+
+  it("replaces the phone's own crop, which scores nothing, with any portrait", () => {
+    assert.equal(shouldKeep(0, 0.05), true);
   });
 
   it("ends on the best frame of a sitting: sitting down, turned, then still and facing", () => {

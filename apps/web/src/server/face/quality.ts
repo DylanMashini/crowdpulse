@@ -158,8 +158,13 @@ export function portraitQuality(input: {
   return { score, parts };
 }
 
-/** A new frame has to beat the photo already kept by this much, so the photo does not flicker. */
-export const CLEARLY_BETTER = 0.08;
+/**
+ * A new frame has to score this many times the photo already kept, so the photo does not
+ * flicker. It is a ratio, not a difference: the parts multiply, so a dim room or a small face
+ * lowers every frame of a sitting by the same factor, and a sharper or better-posed frame
+ * still stands out by the same ratio as it would in good light.
+ */
+export const CLEARLY_BETTER = 1.15;
 /** At this score nothing later is likely to be clearly better: stop looking. */
 export const GOOD_ENOUGH = 0.9;
 
@@ -168,5 +173,5 @@ export const GOOD_ENOUGH = 0.9;
  * photo appears early; after that only a clearly better one replaces it.
  */
 export function shouldKeep(bestScore: number | null, score: number): boolean {
-  return bestScore === null || score >= bestScore + CLEARLY_BETTER;
+  return bestScore === null || (score > 0 && score >= bestScore * CLEARLY_BETTER);
 }
