@@ -7,6 +7,7 @@ import {
   heldReadingAge,
   isAbsentReason,
   type Estimate,
+  type Sitting,
   type StoredReading,
 } from '@triagecam/contracts';
 
@@ -93,11 +94,14 @@ function leftThePicture(readings: StoredReading[], from: number, pick: (reading:
 
 /**
  * Why a finished sitting has no value for a vital. The live display shows a value sooner than
- * the record accepts one, so a sitting can end with nothing recorded after a number was on
- * screen: that is said, and the shown value is never used in its place.
+ * the record accepts one, so a re-check can end with nothing recorded after a number was on
+ * screen: that is said, and the shown value is not used in its place. A check-in is never told
+ * to repeat for that: the server gives it the median of what was shown (`heartRateFromLive`),
+ * so one without a value had nothing on screen, or was stored before that rule.
  */
-export function noSummaryReason(readings: StoredReading[], pick: (reading: StoredReading) => Estimate): string {
-  return readings.some((reading) => pick(reading).value != null) ? SHOWN_NOT_RECORDED : 'No reading was accepted in this sitting';
+export function noSummaryReason(readings: StoredReading[], pick: (reading: StoredReading) => Estimate, kind: Sitting['kind'] = 'recheck'): string {
+  const shown = kind === 'recheck' && readings.some((reading) => pick(reading).value != null);
+  return shown ? SHOWN_NOT_RECORDED : 'No reading was accepted in this sitting';
 }
 
 /**

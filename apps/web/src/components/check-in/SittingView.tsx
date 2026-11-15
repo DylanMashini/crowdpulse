@@ -1,6 +1,8 @@
 'use client';
 
 import {
+  FROM_LIVE_READINGS,
+  FROM_LIVE_READINGS_DETAIL,
   isLowConfidence,
   LOWER_CONFIDENCE,
   LOWER_CONFIDENCE_DETAIL,
@@ -38,10 +40,11 @@ interface ReadoutContent {
   coverage: number;
 }
 
-function summaryContent(value: SummaryValue, endedAt: string, noValueReason: string, lowConfidence = false): ReadoutContent {
+function summaryContent(value: SummaryValue, endedAt: string, noValueReason: string, lowConfidence = false, fromLive = false): ReadoutContent {
   if (value.value == null) return { state: 'none', reason: noValueReason, coverage: value.coverage };
-  // A lower-confidence rate is not the median of anything much: say what it is instead.
-  const age = lowConfidence ? LOWER_CONFIDENCE_DETAIL : `Median of the sitting that ended at ${clockTime(endedAt)}`;
+  // A lower-confidence rate is not the median of anything much, and a check-in value taken
+  // from the readings shown live is not the record's median: say what each is instead.
+  const age = fromLive ? FROM_LIVE_READINGS_DETAIL : lowConfidence ? LOWER_CONFIDENCE_DETAIL : `Median of the sitting that ended at ${clockTime(endedAt)}`;
   return { state: 'valid', value: rate(value.value), age, coverage: value.coverage };
 }
 
@@ -107,13 +110,15 @@ export function SittingView({ sitting, patient, readings, serverNow }: SittingVi
   const tag = running && sitting.source === 'camera' ? { kind: 'live' as const, label: 'Live' } : provenance;
 
   const lowConfidence = sitting.summary?.heartRate.value != null && isLowConfidence(sitting.summary.heartRateConfidence);
+  const heartFromLive = sitting.summary?.heartRateFromLive === true;
+  const breathingFromLive = sitting.summary?.breathingRateFromLive === true;
   const heart =
     sitting.summary && sitting.endedAt
-      ? summaryContent(sitting.summary.heartRate, sitting.endedAt, noSummaryReason(readings, (r) => r.heartRate), lowConfidence)
+      ? summaryContent(sitting.summary.heartRate, sitting.endedAt, noSummaryReason(readings, (r) => r.heartRate, sitting.kind), lowConfidence, heartFromLive)
       : liveReadout(readings, (r) => r.heartRate, serverNow);
   const breathing =
     sitting.summary && sitting.endedAt
-      ? summaryContent(sitting.summary.breathingRate, sitting.endedAt, noSummaryReason(readings, (r) => r.breathingRate))
+      ? summaryContent(sitting.summary.breathingRate, sitting.endedAt, noSummaryReason(readings, (r) => r.breathingRate, sitting.kind), false, breathingFromLive)
       : liveReadout(readings, (r) => r.breathingRate, serverNow);
 
   const heartRates = useMemo(
@@ -146,8 +151,8 @@ export function SittingView({ sitting, patient, readings, serverNow }: SittingVi
 
         {/* The two readings share one well, ruled down the middle: an instrument, not two cards. */}
         <div className="grid rounded-lg border border-line bg-surface-0 max-sm:divide-y sm:grid-cols-2 sm:divide-x divide-line">
-          <Vital label="Heart rate" icon="pulse" unit="bpm" kind="pulse" content={heart} tag={tag} live={running} qualifier={lowConfidence ? LOWER_CONFIDENCE : undefined} />
-          <Vital label="Breathing rate" icon="breath" unit="breaths per min" kind="breath" content={breathing} tag={tag} live={running} />
+          <Vital label="Heart rate" icon="pulse" unit="bpm" kind="pulse" content={heart} tag={tag} live={running} qualifier={heartFromLive ? FROM_LIVE_READINGS : lowConfidence ? LOWER_CONFIDENCE : undefined} />
+          <Vital label="Breathing rate" icon="breath" unit="breaths per min" kind="breath" content={breathing} tag={tag} live={running} qualifier={breathingFromLive ? FROM_LIVE_READINGS : undefined} />
         </div>
         {running ? <p className="mt-2 type-caption text-ink-faint">Each trace is drawn at the rate being read, not from the camera&apos;s raw signal.</p> : null}
 

@@ -178,6 +178,9 @@ test('a finished sitting with nothing recorded says so when a value was on scree
   const shown = sitting([[none('warming_up', 'settling'), valid(16)], [none(), none()], [none(), none()]]);
   assert.equal(noSummaryReason(shown, breathing), SHOWN_NOT_RECORDED);
   assert.equal(noSummaryReason(shown, breathing), 'Shown live, not steady long enough to record. Repeat the sitting');
+  assert.equal(noSummaryReason(shown, breathing, 'recheck'), SHOWN_NOT_RECORDED);
+  // A check-in is never told to repeat because a shown value was not steady.
+  assert.equal(noSummaryReason(shown, breathing, 'check_in'), 'No reading was accepted in this sitting');
   // The other vital of the same sitting never showed one.
   assert.equal(noSummaryReason(shown, heart), 'No reading was accepted in this sitting');
   assert.equal(noSummaryReason([], heart), 'No reading was accepted in this sitting');
