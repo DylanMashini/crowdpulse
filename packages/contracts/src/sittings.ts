@@ -53,10 +53,30 @@ export const Sitting = z.object({
       droppedFrames: z.int().nonnegative(),
       /** Null when there is no heart rate, and for sittings stored before it existed. */
       heartRateConfidence: HeartRateConfidence.nullable().optional(),
+      /**
+       * True when the heart rate is the median of the readings shown live in a check-in sitting
+       * (`liveReadingFallback`), not a value the engine recorded. Such a rate counts as the
+       * baseline; `heartRate.coverage` still counts recorded seconds only. Left out or false otherwise.
+       */
+      heartRateFromLive: z.boolean().optional(),
+      /** The same for the breathing rate. */
+      breathingRateFromLive: z.boolean().optional(),
     })
     .nullable(),
 });
 export type Sitting = z.infer<typeof Sitting>;
+
+/**
+ * The value a check-in sitting takes for a vital the engine recorded nothing for (or, for heart
+ * rate, only a lower-confidence rate): the median of every value that was shown while it ran,
+ * provisional ones included. Null when nothing was shown, so no number is ever made up.
+ */
+export function liveReadingFallback(shown: ReadonlyArray<number | null | undefined>): number | null {
+  const values = shown.filter((value): value is number => typeof value === 'number' && Number.isFinite(value)).sort((a, b) => a - b);
+  if (values.length === 0) return null;
+  const middle = Math.floor(values.length / 2);
+  return values.length % 2 === 1 ? values[middle]! : (values[middle - 1]! + values[middle]!) / 2;
+}
 
 export const StartSittingResponse = z.object({ sitting: Sitting, serverTime: Timestamp });
 export type StartSittingResponse = z.infer<typeof StartSittingResponse>;

@@ -347,3 +347,29 @@ test('only "no face" and "no chest" say that nobody is in the picture', async ()
   assert.match(SHOWN_NOT_RECORDED, /^Shown live, .*Repeat the sitting$/);
 });
 
+
+test('a check-in falls back to the median of the readings shown live, and never to a made-up number', async () => {
+  const { liveReadingFallback, Sitting } = await import('./sittings.ts');
+  const { FROM_LIVE_READINGS, FROM_LIVE_READINGS_DETAIL } = await import('./copy.ts');
+  assert.equal(liveReadingFallback([]), null);
+  assert.equal(liveReadingFallback([null, undefined, Number.NaN]), null);
+  assert.equal(liveReadingFallback([null, 71.5, null]), 71.5);
+  assert.equal(liveReadingFallback([80, null, 70, 74]), 74);
+  assert.equal(liveReadingFallback([80, 70, 74, 76]), 75);
+  assert.doesNotMatch(`${FROM_LIVE_READINGS} ${FROM_LIVE_READINGS_DETAIL}`, /repeat/i);
+  // Additive: a summary without the two fields still parses, and so does one with them.
+  const summary = Sitting.shape.summary.unwrap();
+  const base = {
+    durationSeconds: 60,
+    heartRate: { value: 72, coverage: 0 },
+    breathingRate: { value: null, coverage: 0 },
+    rmssd: { value: null, coverage: 0 },
+    sdnn: { value: null, coverage: 0 },
+    timeToFirstReadingSeconds: null,
+    longestDropoutSeconds: 60,
+    frameCount: 3600,
+    droppedFrames: 0,
+  };
+  assert.ok(summary.safeParse(base).success);
+  assert.ok(summary.safeParse({ ...base, heartRateFromLive: true, breathingRateFromLive: false }).success);
+});

@@ -49,10 +49,20 @@ export function isAbsentReason(reason: string | null | undefined): boolean {
 }
 
 /**
- * Why a finished sitting has no heart or breathing rate although one was on screen while it
- * ran: the live display shows a value sooner than the record accepts one.
+ * Why a finished re-check has no heart or breathing rate although one was on screen while it
+ * ran: the live display shows a value sooner than the record accepts one. A check-in does not
+ * say this: it takes its value from the readings that were shown (`FROM_LIVE_READINGS`).
  */
 export const SHOWN_NOT_RECORDED = 'Shown live, not steady long enough to record. Repeat the sitting';
+
+/**
+ * Beside a check-in value that is the median of the readings shown live, because the sitting
+ * ended before one was steady long enough for the record's own checks.
+ */
+export const FROM_LIVE_READINGS = 'From live readings';
+
+/** What that label means, where there is room for a sentence. */
+export const FROM_LIVE_READINGS_DETAIL = 'Median of the readings shown live. They were not steady long enough for the usual check.';
 
 /** The label in the corner of a box that holds a value: "8 s ago". Null while the value is fresh. */
 export function heldReadingAge(ageMs: number): string | null {
