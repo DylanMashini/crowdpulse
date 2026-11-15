@@ -13,6 +13,7 @@ function part(frame: RelayedFrame): Uint8Array {
   const head = encoder.encode(
     `Content-Type: image/jpeg\r\nContent-Length: ${frame.jpeg.byteLength}\r\n` +
       (frame.capturedAt === null ? "" : `${LIVE_FRAME_HEADERS.capturedAt}: ${frame.capturedAt}\r\n`) +
+      (frame.regions === null ? "" : `${LIVE_FRAME_HEADERS.regions}: ${frame.regions}\r\n`) +
       `${LIVE_FRAME_HEADERS.receivedAt}: ${frame.receivedAt}\r\n` +
       `${LIVE_FRAME_HEADERS.sequence}: ${frame.sequence}\r\n\r\n`,
   );

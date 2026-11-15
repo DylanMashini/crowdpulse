@@ -4,6 +4,7 @@ import {
   FlagResponse,
   MeResponse,
   ResendVerificationResponse,
+  SendCameraCommandResponse,
   SettingsResponse,
   SignInResponse,
   SignUpResponse,
@@ -17,6 +18,7 @@ import {
   routes,
   type ErrorCode,
   type PatientRef,
+  type SendCameraCommandRequest,
   type UpdatePatientRequest,
   type UpdateSettingsRequest,
 } from '@triagecam/contracts';
@@ -123,11 +125,16 @@ export const api = {
   signOut: () => request<void>(null, 'POST', routes.auth.signOut),
 
   devices: () => request(DeviceListResponse, 'GET', routes.devices),
+  /** Asks a camera phone to open a check-in, start the sitting, end it or call it off. */
+  sendCameraCommand: (deviceId: string, command: SendCameraCommandRequest) =>
+    request(SendCameraCommandResponse, 'POST', routes.liveCommand(deviceId), command),
   worklist: () => request(WorklistResponse, 'GET', routes.worklist),
 
   patients: (status: PatientStatusFilter, cursor?: string) =>
     request(PatientListResponse, 'GET', withQuery(routes.patients, { status, cursor, limit: 50 })),
   patient: (number: number) => request(PatientDetailResponse, 'GET', routes.patient(number)),
+  /** A new patient with nothing filled in yet: the check-in page names them while the camera measures. */
+  createPatient: () => request(PatientResponse, 'POST', routes.patients, {}),
   /** Saves any part of the intake form. Called as staff type. */
   updatePatient: (number: number, changes: UpdatePatientRequest) =>
     request(PatientResponse, 'PATCH', routes.patient(number), changes),

@@ -75,6 +75,8 @@ export interface IntakeFormProps {
   cameraLive?: boolean;
   /** Puts the cursor in the name box when the form appears for a patient with no name. */
   autoFocus?: boolean;
+  /** Called whenever staff change anything on the form, before it is saved. */
+  onTouched?: () => void;
 }
 
 type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'saved'; at: number } | { kind: 'error'; message: string };
@@ -84,7 +86,7 @@ type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'saved'; at: nu
  * so the name is on the worklist while the sitting is still running. Mount it with
  * `key={patient.number}`.
  */
-export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoFocus }: IntakeFormProps) {
+export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoFocus, onTouched }: IntakeFormProps) {
   const [draft, setDraft] = useState<Draft>({});
   const [save, setSave] = useState<SaveState>({ kind: 'idle' });
   const [photo, setPhoto] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
@@ -148,6 +150,7 @@ export function IntakeForm({ patient, onSaved, cameraDeviceId, cameraLive, autoF
   );
 
   const change = <Key extends DraftKey>(key: Key, value: Draft[Key], immediately = false) => {
+    onTouched?.();
     const next = { ...draftRef.current, [key]: value };
     draftRef.current = next;
     setDraft(next);

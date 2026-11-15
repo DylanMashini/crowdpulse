@@ -3,11 +3,12 @@ import { and, desc, eq } from "drizzle-orm";
 
 import { db, schema } from "../db/client.ts";
 import { ApiError } from "./http.ts";
-import { liveAt } from "./live.ts";
+import { cameraState, liveAt } from "./live.ts";
 import type { DeviceRow } from "./serialize.ts";
 import { toDevice } from "./serialize.ts";
 
-const wire = (row: DeviceRow): Device => toDevice(row, row.role === "camera" ? liveAt(row.id) : null);
+const wire = (row: DeviceRow): Device =>
+  row.role === "camera" ? toDevice(row, liveAt(row.id), cameraState(row.id)) : toDevice(row, null);
 
 /** Creates a device, or updates the caller's own device when `id` is given. */
 export async function registerDevice(userId: string, request: RegisterDeviceRequest): Promise<Device> {
@@ -27,6 +28,24 @@ export async function registerDevice(userId: string, request: RegisterDeviceRequ
     .returning();
   if (!updated) throw new ApiError("not_found", "There is no device of yours with that id");
   return wire(updated);
+}
+
+/** A phone reports several times a second; when it was last heard from is written this often. */
+const SEEN_EVERY_MS = 20_000;
+const globalForSeen = globalThis as typeof globalThis & { triagecamDeviceSeen?: Map<string, number> };
+const seenAt = (globalForSeen.triagecamDeviceSeen ??= new Map());
+
+/**
+ * Notes that a camera phone is there, from its state reports, so "last seen" on the check-in
+ * page is when it stopped reporting and not when it last registered. Returns at once.
+ */
+export function noteDeviceSeen(id: string, now = Date.now()): void {
+  if (now - (seenAt.get(id) ?? 0) < SEEN_EVERY_MS) return;
+  seenAt.set(id, now);
+  db.update(schema.devices)
+    .set({ lastSeenAt: new Date(now) })
+    .where(eq(schema.devices.id, id))
+    .catch((error) => console.error("[devices] Could not note that a phone was seen:", error));
 }
 
 export async function listDevices(): Promise<Device[]> {

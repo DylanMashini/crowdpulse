@@ -1,4 +1,5 @@
 import {
+  type CameraState,
   type Device,
   type Estimate,
   type EstimateReason,
@@ -30,13 +31,14 @@ export const toUser = (row: UserRow): User => ({
   createdAt: iso(row.createdAt),
 });
 
-export const toDevice = (row: DeviceRow, liveAt: Date | null): Device => ({
+export const toDevice = (row: DeviceRow, liveAt: Date | null, camera: CameraState | null = null): Device => ({
   id: row.id,
   role: row.role,
   label: row.label,
   hasPushToken: row.expoPushToken !== null,
   lastSeenAt: iso(row.lastSeenAt),
   liveAt: isoOrNull(liveAt),
+  camera,
 });
 
 export const toPatientRef = (row: Pick<PatientRow, "number" | "name" | "photoUpdatedAt">): PatientRef => ({

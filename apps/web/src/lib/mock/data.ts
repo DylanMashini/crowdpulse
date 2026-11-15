@@ -34,9 +34,9 @@ export const user: User = { id: uuid(1, 1), email: 'operator@station.test', emai
 
 export const CAMERA_ID = uuid(2, 1);
 export const devices: Device[] = [
-  { id: CAMERA_ID, role: 'camera', label: 'Front desk phone', hasPushToken: false, lastSeenAt: ago(0), liveAt: ago(0) },
-  { id: uuid(2, 2), role: 'camera', label: 'Bay 2 phone', hasPushToken: false, lastSeenAt: ago(47), liveAt: null },
-  { id: uuid(2, 3), role: 'nurse', label: 'Charge nurse phone', hasPushToken: true, lastSeenAt: ago(1), liveAt: null },
+  { id: CAMERA_ID, role: 'camera', label: 'Front desk phone', hasPushToken: false, lastSeenAt: ago(0), liveAt: ago(0), camera: null },
+  { id: uuid(2, 2), role: 'camera', label: 'Bay 2 phone', hasPushToken: false, lastSeenAt: ago(47), liveAt: null, camera: null },
+  { id: uuid(2, 3), role: 'nurse', label: 'Charge nurse phone', hasPushToken: true, lastSeenAt: ago(1), liveAt: null, camera: null },
 ];
 
 export const settings: { value: Settings; updatedAt: string } = { value: { ...defaultSettings }, updatedAt: ago(180) };

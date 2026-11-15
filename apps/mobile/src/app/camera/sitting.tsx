@@ -4,7 +4,6 @@ import type { Reading } from '@triagecam/contracts';
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Linking, ScrollView, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import TriageCapture from 'triage-capture';
 
 import { Button } from '@/components/Button';
 import { CaptureStatus } from '@/components/CaptureStatus';
@@ -19,6 +18,7 @@ import { useScopedTheme } from '@/components/ThemeScope';
 import { PatientIdentity } from '@/components/PatientIdentity';
 import { usePatientRef } from '@/hooks/usePatientRef';
 import { readoutFor } from '@/lib/capture/readingFormat';
+import { stationLink } from '@/lib/capture/station';
 import { type Trace, pushTrace } from '@/lib/capture/trace';
 import { type LiveViewState, useSittingController } from '@/lib/capture/useSittingController';
 import { tidy } from '@/lib/format';
@@ -55,11 +55,6 @@ const NO_TRACES: Traces = { last: null, pulse: [], breathing: [] };
 
 function SittingScreen({ patientNumber, kind, enrolFace, deviceId }: Props) {
   useKeepAwake();
-  // The phone sits on its mount in landscape while it captures.
-  useEffect(() => {
-    TriageCapture.setLandscapeLock(true);
-    return () => TriageCapture.setLandscapeLock(false);
-  }, []);
   const theme = useScopedTheme();
   const { colors, space } = theme;
   const router = useRouter();
@@ -71,6 +66,8 @@ function SittingScreen({ patientNumber, kind, enrolFace, deviceId }: Props) {
     [router],
   );
   const sitting = useSittingController({ patientNumber, kind, enrolFace, deviceId, onFinished });
+  // Called off from the check-in page: the same as Back here, without the question.
+  useEffect(() => stationLink.onCommand((command) => (command.type === 'cancel' ? router.dismissTo('/camera') : undefined)), [router]);
   // The name is typed on the dashboard while this sitting runs, and the photo is taken from it.
   const patient = usePatientRef(patientNumber);
   const { phase, status, reading, source } = sitting;

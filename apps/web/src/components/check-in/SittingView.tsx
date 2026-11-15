@@ -12,10 +12,9 @@ import {
   type StoredReading,
   type SummaryValue,
 } from '@triagecam/contracts';
-import Link from 'next/link';
 import { useMemo } from 'react';
 
-import { LiveTrace, PatientIdentity, QualityMeter, Readout, SittingChart, buttonClass, type IconName, type ReadoutState } from '@/components/ds';
+import { LiveTrace, PatientIdentity, QualityMeter, Readout, SittingChart, type IconName, type ReadoutState } from '@/components/ds';
 import { Section } from '@/components/ui/Panel';
 import { clockTime, exposureIsStuck, rate, reasonText, seconds, secondsAgo } from '@/lib/format';
 import { provenanceOf } from '@/lib/mapping';
@@ -168,19 +167,17 @@ export function SittingView({ sitting, patient, readings, serverNow }: SittingVi
   return (
     <>
       <Section>
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-x-5 gap-y-2">
+        {/* The countdown and the way to the record are beside the picture and the form; this says whose readings these are. */}
+        <div className="mb-4">
           <PatientIdentity
             patient={patient}
             size="md"
             detail={
               <span className="tabular-nums">
-                {sitting.kind === 'check_in' ? 'check-in' : 're-check'}, {running ? `running for ${seconds(elapsed)}` : `${seconds(elapsed)}, finished at ${clockTime(endMs)}`}
+                {sitting.kind === 'check_in' ? 'check-in' : 're-check'}, {running ? 'measuring now' : `${seconds(elapsed)}, finished at ${clockTime(endMs)}`}
               </span>
             }
           />
-          <Link href={`/patients/${sitting.patientNumber}`} className={buttonClass('secondary')}>
-            Open record
-          </Link>
         </div>
 
         {/* The two readings share one well, ruled down the middle: an instrument, not two cards. */}

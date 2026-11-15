@@ -10,6 +10,8 @@ import {
   MatchFaceResponse,
   MeResponse,
   PostLiveFrameResponse,
+  type PostLiveStateRequest,
+  PostLiveStateResponse,
   PostReadingsResponse,
   type Reading,
   ResendVerificationResponse,
@@ -73,6 +75,9 @@ export function createApi(client: ApiClient) {
       ),
     finishSitting: (sittingId: string, request: FinishSittingRequest) =>
       client.request({ method: 'POST', path: routes.sittingFinish(sittingId), body: request }, SittingResponse),
+    /** The sitting was given up on the phone: it ends on the server without a summary. */
+    abandonSitting: (sittingId: string) =>
+      client.request({ method: 'POST', path: routes.sittingAbandon(sittingId) }, SittingResponse),
     uploadSittingFile: (sittingId: string, file: Blob) =>
       client.send({
         method: 'PUT',
@@ -94,6 +99,9 @@ export function createApi(client: ApiClient) {
 
     postLiveFrame: (deviceId: string, frame: LiveFrame) =>
       client.request({ method: 'POST', path: routes.liveFrame(deviceId), body: frame }, PostLiveFrameResponse),
+    /** What this phone is doing, and its outlines. The answer may carry a command from the check-in page. */
+    postLiveState: (deviceId: string, report: PostLiveStateRequest) =>
+      client.request({ method: 'POST', path: routes.liveState(deviceId), body: report }, PostLiveStateResponse),
 
     /** Every patient of one status, newest first, a page at a time. */
     patients: (status: 'waiting' | 'discharged' | 'all', cursor?: string) =>

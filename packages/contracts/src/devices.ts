@@ -1,6 +1,7 @@
 import * as z from 'zod';
 
 import { Id, Timestamp } from './common.ts';
+import { CameraState } from './live.ts';
 
 export const DeviceRole = z.enum(['camera', 'nurse']);
 export type DeviceRole = z.infer<typeof DeviceRole>;
@@ -13,6 +14,11 @@ export const Device = z.object({
   lastSeenAt: Timestamp,
   /** When this camera device last posted a live-view frame, if within the last 5 seconds. */
   liveAt: Timestamp.nullable(),
+  /**
+   * What a camera phone last said about itself, if within the last 4 seconds. Null for a nurse
+   * device, a phone that is not in the camera role right now, and an app from before the field.
+   */
+  camera: CameraState.nullable().default(null),
 });
 export type Device = z.infer<typeof Device>;
 

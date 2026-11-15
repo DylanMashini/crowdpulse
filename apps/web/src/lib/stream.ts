@@ -17,6 +17,7 @@ const EVENT_TYPES: StreamEventType[] = [
   'worklist_changed',
   'patient_changed',
   'live_changed',
+  'camera_state',
 ];
 
 /** EventSource gives up for good on an HTTP error (a 401, a restart). Try again after this long. */

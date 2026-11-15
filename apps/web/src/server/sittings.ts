@@ -10,7 +10,7 @@ import {
   type StartSittingRequest,
   summaryHeartRateConfidence,
 } from "@triagecam/contracts";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, max } from "drizzle-orm";
 
 import { db, schema } from "../db/client.ts";
 import { findDevice } from "./devices.ts";
@@ -18,9 +18,11 @@ import { env, isProduction } from "./env.ts";
 import { publish, worklistChanged } from "./events.ts";
 import { ApiError } from "./http.ts";
 import { noteSittingEnded, noteSittingStarted } from "./intake.ts";
+import { cameraState } from "./live.ts";
 import type { SittingRow } from "./serialize.ts";
-import { iso, toPatientRef, toSitting, toStoredReading } from "./serialize.ts";
+import { hasSummary, iso, toPatientRef, toSitting, toStoredReading } from "./serialize.ts";
 import { findWaitingPatient } from "./patients.ts";
+import { type Elsewhere, sittingIsStray } from "./stray.ts";
 import { syncPatients } from "./trend/engine.ts";
 
 export const SITTING_FILE_MAX_BYTES = 5 * 1024 * 1024;
@@ -99,10 +101,15 @@ export async function postReadings(sittingId: string, readings: Reading[]): Prom
   return stored.length;
 }
 
-/** Stores the summary and beat intervals, then runs the trend rules. Calling it again returns the stored sitting. */
+/**
+ * Stores the summary and beat intervals, then runs the trend rules. Calling it again returns
+ * the stored sitting. A sitting that was ended without a summary (its phone went quiet and the
+ * server closed it, or the patient's next sitting started) still takes the summary when the
+ * phone gets through with it: a measurement that was made is not thrown away.
+ */
 export async function finishSitting(sittingId: string, request: FinishSittingRequest): Promise<Sitting> {
   const { sitting, patient } = await findSitting(sittingId);
-  if (sitting.endedAt) return toSitting(sitting, patient.number);
+  if (sitting.endedAt && hasSummary(sitting)) return toSitting(sitting, patient.number);
 
   const { summary } = request;
   // On the server clock, and never before the start or in the future whatever the phone's clock says.
@@ -131,7 +138,7 @@ export async function finishSitting(sittingId: string, request: FinishSittingReq
         frameCount: summary.frameCount,
         droppedFrames: summary.droppedFrames,
       })
-      .where(and(eq(schema.sittings.id, sittingId), isNull(schema.sittings.endedAt)))
+      .where(and(eq(schema.sittings.id, sittingId), isNull(schema.sittings.durationSeconds)))
       .returning();
     if (row && summary.beatIntervals.length > 0) {
       await tx
@@ -154,6 +161,53 @@ export async function finishSitting(sittingId: string, request: FinishSittingReq
   if (patient.status === "waiting") await syncPatients([patient]);
   worklistChanged();
   return wire;
+}
+
+/**
+ * Ends a sitting the phone gave up on (the operator left the screen, or called it off from the
+ * check-in page) without a summary, so nothing follows it as if it were still running. A
+ * sitting that has already ended is returned as it is.
+ */
+export async function abandonSitting(sittingId: string): Promise<Sitting> {
+  const { sitting, patient } = await findSitting(sittingId);
+  if (sitting.endedAt) return toSitting(sitting, patient.number);
+  const [ended] = await db
+    .update(schema.sittings)
+    .set({ endedAt: new Date() })
+    .where(and(eq(schema.sittings.id, sittingId), isNull(schema.sittings.endedAt)))
+    .returning();
+  // Finished by another request between the read and the update: answer with what is stored.
+  if (!ended) return toSitting((await findSitting(sittingId)).sitting, patient.number);
+  noteSittingEnded(ended.deviceId, ended.id);
+  const wire = toSitting(ended, patient.number);
+  publish({ type: "sitting_finished", sitting: wire });
+  worklistChanged();
+  return wire;
+}
+
+const globalForStray = globalThis as typeof globalThis & { triagecamElsewhere?: Elsewhere };
+const elsewhere = (globalForStray.triagecamElsewhere ??= new Map());
+
+/**
+ * Ends every open sitting whose phone has gone (stray.ts says when that is). Run every few
+ * seconds: it is what takes a patient out of "sitting in progress" when the app was closed or
+ * the phone died mid-sitting, and what lets the check-in page move on without a reload.
+ */
+export async function closeStraySittings(now = Date.now()): Promise<void> {
+  const open = await db
+    .select({ id: schema.sittings.id, deviceId: schema.sittings.deviceId, startedAt: schema.sittings.startedAt, lastReadingAt: max(schema.readings.t) })
+    .from(schema.sittings)
+    .leftJoin(schema.readings, eq(schema.readings.sittingId, schema.sittings.id))
+    .where(isNull(schema.sittings.endedAt))
+    .groupBy(schema.sittings.id);
+  const ids = new Set(open.map((sitting) => sitting.id));
+  for (const id of elsewhere.keys()) if (!ids.has(id)) elsewhere.delete(id);
+  for (const sitting of open) {
+    const candidate = { id: sitting.id, startedAt: sitting.startedAt.getTime(), lastReadingAt: sitting.lastReadingAt?.getTime() ?? null };
+    if (!sittingIsStray(candidate, cameraState(sitting.deviceId), elsewhere, now)) continue;
+    elsewhere.delete(sitting.id);
+    await abandonSitting(sitting.id);
+  }
 }
 
 export async function sittingDetail(sittingId: string): Promise<SittingDetailResponse> {

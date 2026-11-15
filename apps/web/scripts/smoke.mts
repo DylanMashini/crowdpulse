@@ -38,9 +38,11 @@ import {
   MatchFaceResponse,
   MeResponse,
   PostLiveFrameResponse,
+  PostLiveStateResponse,
   PostReadingsResponse,
   ResendVerificationResponse,
   routes,
+  SendCameraCommandResponse,
   SESSION_COOKIE,
   SettingsResponse,
   SignInResponse,
@@ -826,6 +828,106 @@ await seen("live_changed", (event) => event.deviceId === camera.id && !event.liv
 const liveLater = (await ok(DeviceListResponse, 200, "GET", routes.devices, { auth: web })).devices.find((device) => device.id === camera.id);
 assert.equal(liveLater?.liveAt, null, "the frame is dropped after 5 seconds of silence");
 done("live view: frame relayed to the dashboard as multipart JPEG, auth on both ends, dropped after 5 s of silence");
+
+// --- the check-in page runs the phone -------------------------------------------------------
+
+{
+  const idle = { phase: "idle", patientNumber: null, kind: null, sittingId: null, viewfinder: null, facePresent: false, exposureLocked: false, error: null };
+  const report = (state: object, regions: object | null = null) =>
+    ok(PostLiveStateResponse, 200, "POST", routes.liveState(camera.id), { auth: mobile, body: { state, regions } });
+
+  await refused(401, "unauthenticated", "POST", routes.liveState(camera.id), { body: { state: idle, regions: null } });
+  await refused(403, "forbidden", "POST", routes.liveState(nurse.id), { auth: mobile, body: { state: idle, regions: null } });
+  await refused(400, "invalid_request", "POST", routes.liveState(camera.id), { auth: mobile, body: { state: { ...idle, phase: "dancing" }, regions: null } });
+  await refused(401, "unauthenticated", "POST", routes.liveCommand(camera.id), { body: { type: "start" } });
+  await refused(400, "invalid_request", "POST", routes.liveCommand(nurse.id), { auth: web, body: { type: "start" } });
+  // No report yet: the phone is not connected.
+  await refused(409, "camera_offline", "POST", routes.liveCommand(camera.id), { auth: web, body: { type: "start" } });
+
+  const remote = (await ok(PatientResponse, 201, "POST", routes.patients, { auth: web, body: {} })).patient.number;
+  const sinceReport = events.length;
+  assert.equal((await report(idle)).command, null);
+  await until("the phone's state on the stream", () =>
+    events.slice(sinceReport).find((event) => event.type === "camera_state" && event.deviceId === camera.id && event.state?.phase === "idle"),
+  );
+  const listed = (await ok(DeviceListResponse, 200, "GET", routes.devices, { auth: web })).devices.find((device) => device.id === camera.id);
+  assert.equal(listed?.camera?.phase, "idle", "the device list carries the phone's state");
+
+  await refused(409, "camera_busy", "POST", routes.liveCommand(camera.id), { auth: web, body: { type: "start" } });
+  await refused(400, "invalid_request", "POST", routes.liveCommand(camera.id), { auth: web, body: { type: "open" } });
+  await refused(404, "not_found", "POST", routes.liveCommand(camera.id), { auth: web, body: { type: "open", patientNumber: 999_999, kind: "check_in" } });
+  const open = (await ok(SendCameraCommandResponse, 202, "POST", routes.liveCommand(camera.id), { auth: web, body: { type: "open", patientNumber: remote, kind: "check_in" } })).command;
+  const again = (await ok(SendCameraCommandResponse, 202, "POST", routes.liveCommand(camera.id), { auth: web, body: { type: "open", patientNumber: remote, kind: "check_in" } })).command;
+  assert.equal(again.id, open.id, "the same command asked twice is one command");
+  assert.equal((await report(idle)).command?.id, open.id, "the phone collects the command with its report");
+  assert.equal((await report(idle)).command, null, "and only once");
+
+  // The phone opens the sitting screen and reports outlines; they ride on the next frame.
+  const framing = { ...idle, phase: "framing", patientNumber: remote, kind: "check_in", viewfinder: "locking", facePresent: true };
+  const box = [{ x: 0.4, y: 0.2 }, { x: 0.6, y: 0.2 }, { x: 0.6, y: 0.3 }, { x: 0.4, y: 0.3 }];
+  await report(framing, { aspectRatio: 4 / 3, face: { x: 0.35, y: 0.15, width: 0.3, height: 0.5 }, forehead: box, leftCheek: box, rightCheek: box, chest: null });
+  const outlineAbort = new AbortController();
+  const outlined = await fetch(base + routes.liveStream(camera.id), { headers: { Cookie: web.cookie as string }, signal: outlineAbort.signal });
+  let parts = "";
+  void (async () => {
+    try {
+      for await (const chunk of outlined.body as ReadableStream<Uint8Array>) parts += Buffer.from(chunk).toString("latin1");
+    } catch (error) {
+      if (!outlineAbort.signal.aborted) throw error;
+    }
+  })();
+  await ok(PostLiveFrameResponse, 200, "POST", routes.liveFrame(camera.id), { auth: mobile, body: liveFrame });
+  const header = await until("the outlines on a stream part", () => /x-frame-regions: (.+)\r\n/.exec(parts)?.[1]);
+  assert.deepEqual(JSON.parse(header).forehead, box);
+  outlineAbort.abort();
+
+  const start = (await ok(SendCameraCommandResponse, 202, "POST", routes.liveCommand(camera.id), { auth: web, body: { type: "start", enrolFace: true } })).command;
+  assert.equal(start.enrolFace, true);
+  assert.equal((await report(framing)).command?.type, "start");
+  const begun = (
+    await ok(StartSittingResponse, 201, "POST", routes.sittings, {
+      auth: mobile,
+      body: { patientNumber: remote, deviceId: camera.id, kind: "check_in", source: "simulated", clientTime: phoneNow().toISOString() },
+    })
+  ).sitting;
+  await report({ ...framing, phase: "running", sittingId: begun.id, viewfinder: "measuring", exposureLocked: true });
+  await refused(409, "camera_busy", "POST", routes.liveCommand(camera.id), { auth: web, body: { type: "start" } });
+
+  // Called off from the dashboard: the phone gives the sitting up and the server ends it bare.
+  await ok(SendCameraCommandResponse, 202, "POST", routes.liveCommand(camera.id), { auth: web, body: { type: "cancel" } });
+  await refused(401, "unauthenticated", "POST", routes.sittingAbandon(begun.id));
+  const sinceAbandon = events.length;
+  const abandoned = (await ok(SittingResponse, 200, "POST", routes.sittingAbandon(begun.id), { auth: mobile })).sitting;
+  assert.ok(abandoned.endedAt, "an abandoned sitting has ended");
+  assert.equal(abandoned.summary, null, "and has no summary");
+  await until("sitting_finished for the abandoned sitting", () =>
+    events.slice(sinceAbandon).find((event) => event.type === "sitting_finished" && event.sitting.id === begun.id),
+  );
+  assert.equal((await ok(SittingResponse, 200, "POST", routes.sittingAbandon(begun.id), { auth: mobile })).sitting.endedAt, abandoned.endedAt, "abandoning twice changes nothing");
+  await refused(409, "sitting_finished", "POST", routes.sittingReadings(begun.id), {
+    auth: mobile,
+    body: { readings: [{ t: phoneNow().toISOString(), elapsedMs: 1000, heartRate: settling, breathingRate: settling }] },
+  });
+  // The phone was only out of reach and gets through with its summary afterwards: it is kept.
+  const late = (
+    await ok(SittingResponse, 200, "POST", routes.sittingFinish(begun.id), { auth: mobile, body: { endedAt: phoneNow().toISOString(), summary: summary(70, null) } })
+  ).sitting;
+  assert.equal(late.summary?.heartRate.value, 70, "a summary that arrives after the sitting was ended bare is stored");
+  // A command that names a patient is refused when the phone is on someone else.
+  await report({ ...framing, patientNumber: remote });
+  await refused(409, "camera_busy", "POST", routes.liveCommand(camera.id), { auth: web, body: { type: "start", patientNumber: remote + 1 } });
+  await ok(SendCameraCommandResponse, 202, "POST", routes.liveCommand(camera.id), { auth: web, body: { type: "cancel", patientNumber: remote } });
+  await ok(PatientResponse, 200, "POST", routes.patientDischarge(remote), { auth: web });
+
+  // The phone goes quiet: its state lapses and the dashboard is told.
+  await until(
+    "the phone's state to lapse",
+    () => events.find((event) => event.type === "camera_state" && event.deviceId === camera.id && event.state === null),
+    6000,
+  );
+  await refused(409, "camera_offline", "POST", routes.liveCommand(camera.id), { auth: web, body: { type: "cancel" } });
+  done("remote control: state and outlines up, commands down once, refused when offline or busy, abandoned sitting ends without a summary");
+}
 
 // --- face match -----------------------------------------------------------------------------
 

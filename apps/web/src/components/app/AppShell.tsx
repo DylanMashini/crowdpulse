@@ -46,7 +46,7 @@ const HOME = '/waiting-room';
 const ONLINE_WITHIN_MS = 2 * 60_000;
 /** Signing a phone in sends no live event, so the rail asks often enough to pick a new one up quickly. */
 const DEVICES_REFRESH_MS = 10_000;
-const DEVICE_EVENTS: ReadonlySet<LiveEvent['type']> = new Set(['live_changed', 'sitting_started', 'sitting_finished', 'reconnected']);
+const DEVICE_EVENTS: ReadonlySet<LiveEvent['type']> = new Set(['live_changed', 'camera_state', 'sitting_started', 'sitting_finished', 'reconnected']);
 
 /** Below this width the rail starts as icons, so the worklist keeps its columns. */
 const WIDE_QUERY = '(min-width: 1120px)';
@@ -163,9 +163,16 @@ function stationDevice(devices: Device[] | undefined, serverNow: number): SideNa
   if (!devices) return { label: 'Camera phone', detail: 'Checking', connected: false };
   const camera = devices
     .filter((device) => device.role === 'camera')
-    .sort((a, b) => Number(b.liveAt !== null) - Number(a.liveAt !== null) || b.lastSeenAt.localeCompare(a.lastSeenAt))[0];
+    .sort(
+      (a, b) =>
+        Number(b.liveAt !== null) - Number(a.liveAt !== null) ||
+        Number(b.camera !== null) - Number(a.camera !== null) ||
+        b.lastSeenAt.localeCompare(a.lastSeenAt),
+    )[0];
   if (!camera) return { label: 'No camera phone', detail: 'Sign in on a phone to add one', connected: false };
   if (camera.liveAt !== null) return { label: camera.label, detail: 'Live view on', connected: true, live: true };
+  // Reporting to the check-in page: the app is open in the camera role, with the camera off.
+  if (camera.camera !== null) return { label: camera.label, detail: 'Connected', connected: true };
   const silentMs = Math.max(0, serverNow - new Date(camera.lastSeenAt).getTime());
   if (silentMs < ONLINE_WITHIN_MS) return { label: camera.label, detail: 'Online', connected: true };
   // The same words as the camera phone list on Check-in.
