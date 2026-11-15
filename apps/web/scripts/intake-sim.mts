@@ -6,8 +6,10 @@
 //   SIM_PASSWORD
 //   SIM_SECONDS   How long the phone streams. Default 8.
 //   SIM_FACE      Path to a picture with one face in it. With it, the frames show that face
-//                 and the automatic profile photo is checked; without it, the frames are a
-//                 test pattern and only the phone's own crop is stored.
+//                 and the automatic profile photo is checked: the first half of the stream
+//                 is out of focus and the photo must be replaced once the picture is sharp.
+//                 Without it, the frames are a test pattern and only the phone's own crop
+//                 is stored.
 //   SIM_KEEP=1    Leave the patient in the waiting room instead of discharging them.
 //
 // What the phone does here is what apps/mobile does: POST /api/patients, POST /api/sittings,
@@ -123,9 +125,10 @@ async function eventAfter(since: number, matches: (event: StreamEvent) => boolea
 const WIDTH = LIVE_VIEW.maxLongSidePx;
 const HEIGHT = 480;
 /** A second of distinct frames, so the stream is not the same bytes over and over. */
-async function makeFrames(): Promise<Buffer[]> {
-  const background = facePath
-    ? await sharp(await readFile(facePath)).resize(WIDTH, HEIGHT, { fit: "cover", position: "top" }).toBuffer()
+async function makeFrames(blurSigma = 0): Promise<Buffer[]> {
+  const picture = facePath ? sharp(await readFile(facePath)).resize(WIDTH, HEIGHT, { fit: "cover", position: "top" }) : null;
+  const background = picture
+    ? await (blurSigma ? picture.blur(blurSigma) : picture).toBuffer()
     : await sharp({ create: { width: WIDTH, height: HEIGHT, channels: 3, background: { r: 28, g: 40, b: 38 } } }).png().toBuffer();
   return Promise.all(
     Array.from({ length: LIVE_VIEW.fps }, (_, index) => {
@@ -136,6 +139,8 @@ async function makeFrames(): Promise<Buffer[]> {
   );
 }
 const frames = await makeFrames();
+/** The patient still sitting down: the same picture out of focus, for the first half of the stream. */
+const softFrames = facePath ? await makeFrames(5) : frames;
 const frameBytes = Math.round(frames.reduce((sum, frame) => sum + frame.byteLength, 0) / frames.length);
 
 // --- intake starts on the phone -----------------------------------------------------------------
@@ -216,7 +221,8 @@ try {
   const ticker = setInterval(() => {
     if (inFlight >= 2) return void (dropped += 1);
     inFlight += 1;
-    const frame = frames[sent % frames.length] as Buffer;
+    const settled = performance.now() - streamStart >= seconds * 500;
+    const frame = (settled ? frames : softFrames)[sent % frames.length] as Buffer;
     sent += 1;
     fetch(base + routes.liveFrame(device.id), {
       method: "POST",
@@ -300,7 +306,23 @@ try {
     assert.ok(auto.photoUpdatedAt, "the photo was not taken from the live view by itself");
     await photoHeaders(auto.photoUpdatedAt);
     const tookAfterMs = Date.parse(auto.photoUpdatedAt) - Date.parse(sitting.startedAt);
-    console.log(`Profile photo: taken from the live view by itself ${(tookAfterMs / 1000).toFixed(1)} s into the sitting`);
+    // The photo came early, from an out-of-focus frame, and was replaced once the picture was sharp.
+    const versions = [
+      ...new Set(
+        events.flatMap(({ event }) =>
+          event.type === "patient_changed" && event.patientNumber === number && event.patient.photoUpdatedAt ? [event.patient.photoUpdatedAt] : [],
+        ),
+      ),
+    ].sort();
+    const firstAfterMs = Date.parse(versions[0] as string) - Date.parse(sitting.startedAt);
+    assert.ok(firstAfterMs < seconds * 500, "no photo was taken while the picture was still out of focus");
+    assert.ok(versions.length >= 2, "the photo was not replaced when a sharper frame arrived");
+    assert.ok(tookAfterMs >= seconds * 500, "the photo kept is not from the sharp half of the stream");
+    assert.ok(versions.length <= 3, `the photo changed ${versions.length} times: it should settle, not flicker`);
+    console.log(
+      `Profile photo: taken from the live view by itself ${(firstAfterMs / 1000).toFixed(1)} s into the sitting, ` +
+        `replaced by a sharper frame at ${(tookAfterMs / 1000).toFixed(1)} s (${versions.length} versions)`,
+    );
 
     // Keep the camera live for the retake: one more frame.
     await fetch(base + routes.liveFrame(device.id), { method: "POST", headers: { ...phone, "Content-Type": "image/jpeg" }, body: new Uint8Array(frames[0] as Buffer) });
