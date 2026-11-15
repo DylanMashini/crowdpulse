@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { HELD_READING_FOR_MS, type Estimate, type StoredReading } from '@triagecam/contracts';
+import { HELD_READING_FOR_MS, SHOWN_NOT_RECORDED, type Estimate, type StoredReading } from '@triagecam/contracts';
 
-import { liveReadout } from './live-readout.ts';
+import { coverageIsShown, liveReadout, noSummaryReason } from './live-readout.ts';
 
 const START = Date.parse('2026-11-14T03:21:00.000Z');
 
@@ -126,4 +126,66 @@ test('reloading the page during a sitting shows the same box: it is built from t
   const reloaded = JSON.parse(JSON.stringify(readings)) as StoredReading[];
   assert.deepEqual(liveReadout(reloaded, heart, now), liveReadout(readings, heart, now));
   assert.equal(liveReadout(reloaded, heart, now).heldAge, '4 s ago');
+});
+
+test('a value is let go once nobody has been in the picture for five seconds, and stays gone', () => {
+  const run: Array<[Estimate, Estimate]> = [[valid(72), none()]];
+  // Seconds 1 to 5 of an empty chair span four seconds: still held, with its age.
+  for (let second = 1; second <= 5; second++) run.push([none('no_face'), none()]);
+  let readings = sitting(run);
+  assert.equal(liveReadout(readings, heart, justAfter(readings)).state, 'held');
+  assert.equal(liveReadout(readings, heart, justAfter(readings)).heldAge, '5 s ago');
+
+  run.push([none('no_face'), none()]);
+  readings = sitting(run);
+  const gone = liveReadout(readings, heart, justAfter(readings));
+  assert.equal(gone.state, 'none');
+  assert.equal(gone.value, undefined);
+  assert.equal(gone.reason, 'No face in view');
+
+  // Somebody sits down again: the old value does not come back, the next one takes the box.
+  run.push([none('low_quality'), none()]);
+  readings = sitting(run);
+  assert.equal(liveReadout(readings, heart, justAfter(readings)).state, 'none');
+  run.push([valid(80), none()]);
+  readings = sitting(run);
+  assert.equal(liveReadout(readings, heart, justAfter(readings)).value, '80');
+});
+
+test('dropouts with the person still in view keep the value, however long and however often the face is lost briefly', () => {
+  const run: Array<[Estimate, Estimate]> = [[valid(72), valid(15)]];
+  for (let round = 0; round < 6; round++) {
+    // Four seconds looking away, then movement: never five seconds of absence in a row.
+    for (let second = 0; second < 4; second++) run.push([none('no_face'), none('no_chest')]);
+    run.push([none('motion'), none('motion')]);
+  }
+  const readings = sitting(run);
+  const now = justAfter(readings);
+  assert.deepEqual([liveReadout(readings, heart, now).state, liveReadout(readings, heart, now).value], ['held', '72']);
+  assert.deepEqual([liveReadout(readings, breathing, now).state, liveReadout(readings, breathing, now).value], ['held', '15']);
+});
+
+test('each vital is let go on its own reason: a chest out of view does not empty the heart rate', () => {
+  const run: Array<[Estimate, Estimate]> = [[valid(72), valid(15)]];
+  for (let second = 0; second < 8; second++) run.push([none('low_quality'), none('no_chest')]);
+  const readings = sitting(run);
+  const now = justAfter(readings);
+  assert.equal(liveReadout(readings, heart, now).state, 'held');
+  assert.equal(liveReadout(readings, breathing, now).state, 'none');
+});
+
+test('a finished sitting with nothing recorded says so when a value was on screen while it ran', () => {
+  const shown = sitting([[none('warming_up', 'settling'), valid(16)], [none(), none()], [none(), none()]]);
+  assert.equal(noSummaryReason(shown, breathing), SHOWN_NOT_RECORDED);
+  assert.equal(noSummaryReason(shown, breathing), 'Shown live, not steady long enough to record. Repeat the sitting');
+  // The other vital of the same sitting never showed one.
+  assert.equal(noSummaryReason(shown, heart), 'No reading was accepted in this sitting');
+  assert.equal(noSummaryReason([], heart), 'No reading was accepted in this sitting');
+});
+
+test('the coverage meter is not drawn at 0% while a sitting runs', () => {
+  assert.equal(coverageIsShown(true, 0), false);
+  assert.equal(coverageIsShown(true, 0.02), true);
+  // A finished sitting with nothing recorded shows its 0%: that is the result.
+  assert.equal(coverageIsShown(false, 0), true);
 });

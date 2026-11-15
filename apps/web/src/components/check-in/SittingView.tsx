@@ -16,7 +16,7 @@ import { Section } from '@/components/ui/Panel';
 import { clockTime, rate, seconds } from '@/lib/format';
 import { provenanceOf } from '@/lib/mapping';
 
-import { liveReadout } from './live-readout';
+import { coverageIsShown, liveReadout, noSummaryReason } from './live-readout';
 
 export interface SittingViewProps {
   sitting: Sitting;
@@ -38,8 +38,8 @@ interface ReadoutContent {
   coverage: number;
 }
 
-function summaryContent(value: SummaryValue, endedAt: string, lowConfidence = false): ReadoutContent {
-  if (value.value == null) return { state: 'none', reason: 'No reading was accepted in this sitting', coverage: value.coverage };
+function summaryContent(value: SummaryValue, endedAt: string, noValueReason: string, lowConfidence = false): ReadoutContent {
+  if (value.value == null) return { state: 'none', reason: noValueReason, coverage: value.coverage };
   // A lower-confidence rate is not the median of anything much: say what it is instead.
   const age = lowConfidence ? LOWER_CONFIDENCE_DETAIL : `Median of the sitting that ended at ${clockTime(endedAt)}`;
   return { state: 'valid', value: rate(value.value), age, coverage: value.coverage };
@@ -79,7 +79,10 @@ function Vital({ label, icon, unit, kind, content, tag, live, qualifier }: Vital
       >
         {live ? <LiveTrace kind={kind} rate={reading ? Number(content.value) : null} className="mt-3" /> : null}
       </Readout>
-      <QualityMeter value={content.coverage} hint="Share of seconds with a reading" />
+      {/* Kept in the layout while hidden, so the box does not grow when the first second is recorded. */}
+      <div className={coverageIsShown(live, content.coverage) ? undefined : 'invisible'}>
+        <QualityMeter value={content.coverage} hint="Share of seconds recorded" />
+      </div>
     </div>
   );
 }
@@ -106,10 +109,12 @@ export function SittingView({ sitting, patient, readings, serverNow }: SittingVi
   const lowConfidence = sitting.summary?.heartRate.value != null && isLowConfidence(sitting.summary.heartRateConfidence);
   const heart =
     sitting.summary && sitting.endedAt
-      ? summaryContent(sitting.summary.heartRate, sitting.endedAt, lowConfidence)
+      ? summaryContent(sitting.summary.heartRate, sitting.endedAt, noSummaryReason(readings, (r) => r.heartRate), lowConfidence)
       : liveReadout(readings, (r) => r.heartRate, serverNow);
   const breathing =
-    sitting.summary && sitting.endedAt ? summaryContent(sitting.summary.breathingRate, sitting.endedAt) : liveReadout(readings, (r) => r.breathingRate, serverNow);
+    sitting.summary && sitting.endedAt
+      ? summaryContent(sitting.summary.breathingRate, sitting.endedAt, noSummaryReason(readings, (r) => r.breathingRate))
+      : liveReadout(readings, (r) => r.breathingRate, serverNow);
 
   const heartRates = useMemo(
     () =>
