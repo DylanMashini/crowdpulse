@@ -4,10 +4,20 @@ import { readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { LiveRegions, WEBCAM, type PostWebcamFramesResponse, type Reading, type WebcamSittingResponse } from "@triagecam/contracts";
+import {
+  LiveRegions,
+  WEBCAM,
+  WebcamCameraStatus,
+  type PollWebcamResponse,
+  type PostWebcamFramesResponse,
+  type Reading,
+  type WebcamSittingResponse,
+} from "@triagecam/contracts";
 
 import { env, isProduction } from "./env.ts";
 import { ApiError } from "./http.ts";
+import { considerFrameForPhoto } from "./intake.ts";
+import { currentFrame, postFrame } from "./live.ts";
 import { saveSittingFile, sittingDetail } from "./sittings.ts";
 import { wireReading, wireSummary, type EngineReading, type WebcamFrame } from "./webcam-wire.ts";
 
@@ -16,6 +26,12 @@ import { wireReading, wireSummary, type EngineReading, type WebcamFrame } from "
 // frames into readings. That happens here: each webcam gets one `live-sitting` process
 // (eval/video-to-sitting), which runs the phone's region code and the SignalEngine on the
 // frames as they arrive. Nothing here invents a value: with no process there is no reading.
+//
+// The frames come one of two ways. The check-in page uses the first:
+//   pollNativeWebcam  The process opens this Mac's camera itself (`live-sitting --camera`) and
+//                     measures on its uncompressed frames. Its small preview pictures go to the
+//                     live view and the profile photo from here; the browser sends nothing.
+//   feedFrames        The browser's own JPEG frames, piped in (the frames route).
 
 /** Frames handed to the process and not yet answered. Beyond this a frame is dropped, and counted. */
 const MAX_PENDING = 20;
@@ -45,18 +61,30 @@ type Session = {
   exposureLocked: boolean;
   sitting: RunningSitting | null;
   idle?: NodeJS.Timeout;
+  /** The process has the Mac's camera open itself, and takes no frames from a browser. */
+  native: boolean;
+  /** What that camera last said of itself. */
+  camera: WebcamCameraStatus | null;
 };
 
 const globalForWebcam = globalThis as typeof globalThis & { triagecamWebcamSessions?: Map<string, Session> };
 const sessions = (globalForWebcam.triagecamWebcamSessions ??= new Map());
+
+/** Why a webcam's camera stopped, kept until the page next asks so it can say so instead of starting it again. */
+const failures = new Map<string, { message: string; at: number }>();
+const FAILURE_KEPT_MS = 10_000;
+const CAMERA_FAILURES: Record<string, string> = {
+  camera_denied: "This Mac has not allowed the server to use its camera. Allow it in System Settings, Privacy & Security, Camera, then try again.",
+  no_camera: "No camera was found on this Mac.",
+  camera_failed: "This Mac's camera could not be started. Another program may be using it.",
+};
 
 function binary(): string {
   const configured = env().LIVE_SITTING_BIN;
   return resolve(/*turbopackIgnore: true*/ process.cwd(), configured ?? "../../eval/video-to-sitting/.build/release/live-sitting");
 }
 
-const unavailable = () =>
-  new ApiError("engine_unavailable", "The measuring engine for the webcam is not built on this server. Run pnpm webcam:build, then try again.");
+const unavailable = () => new ApiError("engine_unavailable", "Webcam check-in needs the server to run on a Mac.");
 
 function drop(deviceId: string, session: Session, reason: string): void {
   if (sessions.get(deviceId) === session) sessions.delete(deviceId);
@@ -128,7 +156,24 @@ function receive(deviceId: string, session: Session, line: string): void {
     case "summary":
       void summarised(session, message as never);
       break;
+    case "camera": {
+      const camera = WebcamCameraStatus.safeParse(message);
+      if (camera.success) session.camera = camera.data;
+      break;
+    }
+    case "preview": {
+      // The live view's picture and the profile photo, as a phone's live-view frame is. Kept in memory only.
+      if (typeof message.jpeg !== "string") break;
+      const jpeg = Buffer.from(message.jpeg, "base64");
+      postFrame(deviceId, jpeg, typeof message.t === "number" ? message.t : null);
+      considerFrameForPhoto(deviceId, jpeg);
+      break;
+    }
     case "error":
+      if (typeof message.message === "string" && message.message in CAMERA_FAILURES) {
+        failures.set(deviceId, { message: CAMERA_FAILURES[message.message] as string, at: Date.now() });
+        break;
+      }
       // A frame that could not be decoded was still counted as handed over.
       if (message.message === "A frame could not be decoded") session.pending = Math.max(0, session.pending - 1);
       else if (message.message === "No sitting is running" && session.sitting?.finish) {
@@ -141,13 +186,17 @@ function receive(deviceId: string, session: Session, line: string): void {
   }
 }
 
-function open(deviceId: string): Session {
+function open(deviceId: string, native = false): Session {
   const existing = sessions.get(deviceId);
-  if (existing) return existing;
+  if (existing && existing.native === native) return existing;
+  if (existing) drop(deviceId, existing, "The webcam changed how it sends frames");
   const path = binary();
-  if (!existsSync(path)) throw unavailable();
-  const child = spawn(path, [], { stdio: ["pipe", "pipe", "pipe"] });
-  const session: Session = { child, tail: "", pending: 0, skipped: 0, outlines: null, facePresent: false, exposureLocked: false, sitting: null };
+  if (process.platform !== "darwin" || !existsSync(path)) {
+    if (process.platform === "darwin") console.error(`[webcam] ${path} is not built. Run pnpm webcam:build.`);
+    throw unavailable();
+  }
+  const child = spawn(path, native ? ["--camera"] : [], { stdio: ["pipe", "pipe", "pipe"] });
+  const session: Session = { child, tail: "", pending: 0, skipped: 0, outlines: null, facePresent: false, exposureLocked: false, sitting: null, native, camera: null };
   child.stdout.setEncoding("utf8");
   child.stdout.on("data", (chunk: string) => {
     const lines = (session.tail + chunk).split("\n");
@@ -158,7 +207,13 @@ function open(deviceId: string): Session {
   child.stderr.resume();
   child.stdin.on("error", () => drop(deviceId, session, "The measuring engine stopped"));
   child.on("error", () => drop(deviceId, session, "The measuring engine could not be started"));
-  child.on("exit", () => drop(deviceId, session, "The measuring engine stopped"));
+  child.on("exit", () => {
+    // Still this webcam's process, so nobody closed it: the camera went away under a check-in.
+    if (native && sessions.get(deviceId) === session && !failures.has(deviceId)) {
+      failures.set(deviceId, { message: "This Mac's camera stopped. Close this check-in and try again.", at: Date.now() });
+    }
+    drop(deviceId, session, "The measuring engine stopped");
+  });
   sessions.set(deviceId, session);
   return session;
 }
@@ -200,6 +255,28 @@ export function feedFrames(deviceId: string, frames: WebcamFrame[], dropped: num
     session.child.stdin.write(jpeg);
   }
   return snapshot(session, viewers, readingsAfter);
+}
+
+/**
+ * The check-in page asking after the camera this server opens itself. The first call turns the
+ * camera on; it goes off when the calls stop. Returns what the engine has made of its frames
+ * so far, with the running sitting's readings after `readingsAfter`.
+ */
+export function pollNativeWebcam(deviceId: string, viewers: number, readingsAfter: number, wantSnapshot: boolean): PollWebcamResponse {
+  const failed = failures.get(deviceId);
+  if (failed) {
+    failures.delete(deviceId);
+    if (Date.now() - failed.at <= FAILURE_KEPT_MS) throw new ApiError("engine_unavailable", failed.message);
+  }
+  const session = open(deviceId, true);
+  clearTimeout(session.idle);
+  session.idle = setTimeout(() => drop(deviceId, session, "The check-in page stopped asking for the webcam"), WEBCAM.timeoutMs);
+  const picture = wantSnapshot ? currentFrame(deviceId) : null;
+  return {
+    ...snapshot(session, viewers, readingsAfter),
+    camera: session.camera,
+    snapshotJpegBase64: picture ? picture.jpeg.toString("base64") : null,
+  };
 }
 
 /** Starts the engine's sitting on the frames that follow. The sitting must be this device's own, and running. */
