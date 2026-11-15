@@ -3,7 +3,7 @@ import type { Landmarks } from "./detect.ts";
 /** A face narrower than this between the eyes, in frame pixels, makes too soft a portrait. */
 const MIN_EYE_DISTANCE_PX = 22;
 /** The portrait is this many eye-distances wide: the head, some hair and a little shoulder. */
-const PORTRAIT_SPAN = 3.8;
+export const PORTRAIT_SPAN = 3.8;
 
 type Point = { x: number; y: number };
 const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);

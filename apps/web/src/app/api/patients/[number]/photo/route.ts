@@ -2,7 +2,7 @@ import { PatientPhotoRequest, type PatientResponse } from "@triagecam/contracts"
 
 import { requireSession } from "@/server/auth/session";
 import { ApiError, noContent, patientNumberParam, readJson, route } from "@/server/http";
-import { notePhotoRemoved, notePhotoStored } from "@/server/intake";
+import { notePhoneCropStored, notePhotoRemoved, notePhotoStored } from "@/server/intake";
 import { findPatient, patientToWire } from "@/server/patients";
 import { deletePhoto, portraitFromCrop, readPhoto, storePhoto } from "@/server/photos";
 
@@ -37,7 +37,10 @@ export const PUT = route(async (request: Request, context: Context) => {
   const portrait = await portraitFromCrop(Buffer.from(jpegBase64, "base64"));
   // Without `replace` this stores nothing when there is a photo already or staff removed it.
   const updated = await storePhoto(patient, portrait, { onlyIfMissing: !replace });
-  if (updated.photoUpdatedAt) notePhotoStored(patient.id);
+  if (replace) notePhotoStored(patient.id);
+  // A crop that filled the gap stands in until the live view gives a better portrait. One
+  // that was dropped changes nothing: the photo already there keeps improving if it can.
+  else if (updated !== patient && updated.photoUpdatedAt) notePhoneCropStored(patient.id, updated.photoUpdatedAt);
   return Response.json({ patient: await patientToWire(updated) } satisfies PatientResponse);
 });
 
