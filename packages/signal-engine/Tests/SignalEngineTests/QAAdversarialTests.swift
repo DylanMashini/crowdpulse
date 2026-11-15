@@ -143,11 +143,17 @@ struct QAScene {
 
 struct QAStats {
   let result: SittingReplay.Result
+  /// What the sitting records. These suites are about that; what the screen may be shown
+  /// besides (`Estimate.provisional`) is held to its own bounds in `DisplayTierTests`.
   var hr: [(Double, Double)] {
-    result.readings.compactMap { r in r.heartRate.value.map { (r.elapsed, $0) } }
+    result.readings.compactMap { r in r.heartRate.recordedValue.map { (r.elapsed, $0) } }
   }
   var br: [(Double, Double)] {
-    result.readings.compactMap { r in r.breathingRate.value.map { (r.elapsed, $0) } }
+    result.readings.compactMap { r in r.breathingRate.recordedValue.map { (r.elapsed, $0) } }
+  }
+  /// Everything that was on screen, provisional readings included.
+  var shownHr: [(Double, Double)] {
+    result.readings.compactMap { r in r.heartRate.value.map { (r.elapsed, $0) } }
   }
   func line(_ label: String, truth: (Double) -> Double) -> String {
     let errs = hr.map { abs($0.1 - truth($0.0)) }
@@ -471,7 +477,9 @@ func qaScene(_ change: (inout QAScene) -> Void) -> QAScene {
   @Test func breathingRestartsOnFaceChange() {
     let s = qa(qaScene { $0.seconds = 90; $0.track = { $0 < 50 ? 1 : 2 } })
     let after = s.result.readings.filter { $0.elapsed >= 50 && $0.elapsed < 89 }
-    #expect(after.allSatisfy { $0.breathingRate.value == nil })
+    #expect(after.allSatisfy { $0.breathingRate.recordedValue == nil })
+    // Nor is the first face's rate shown for the second: the chest history starts again.
+    #expect(after.filter { $0.elapsed < 70 }.allSatisfy { $0.breathingRate.value == nil })
   }
 }
 
@@ -614,7 +622,7 @@ func qaScene(_ change: (inout QAScene) -> Void) -> QAScene {
       // (`minimumRecentAmplitudeShare`). Two seconds, as it was when a step in brightness
       // was refused as motion; four while only the first of those two checks existed.
       let during = r.result.readings.filter { $0.elapsed >= 33 && $0.elapsed < 45 }
-      #expect(during.allSatisfy { $0.heartRate.value == nil }, "seed \(seed)")
+      #expect(during.allSatisfy { $0.heartRate.recordedValue == nil }, "seed \(seed)")
       // In those two seconds the rate may drift a little as the pulse runs out of the
       // window: 2.7 bpm at worst over these seeds. (2 bpm held only for the constant hand.)
       #expect(r.hr.allSatisfy { abs($0.1 - 72) <= 3 }, "seed \(seed)")
@@ -630,7 +638,7 @@ func qaScene(_ change: (inout QAScene) -> Void) -> QAScene {
       let frames = zip(person, empty).map { $0.t - 5000 < 30 ? $0 : $1 }
       let r = QAStats(result: SittingReplay.run(frames))
       print(r.line("pulse gone at 30, no step, seed \(seed)", truth: { _ in 72 }))
-      #expect(r.result.readings.filter { $0.elapsed >= 33 }.allSatisfy { $0.heartRate.value == nil }, "seed \(seed)")
+      #expect(r.result.readings.filter { $0.elapsed >= 33 }.allSatisfy { $0.heartRate.recordedValue == nil }, "seed \(seed)")
       #expect(r.hr.allSatisfy { abs($0.1 - 72) <= 2 })
     }
   }

@@ -186,6 +186,45 @@ public struct EngineConfiguration: Codable, Sendable, Equatable {
   /// The chest history restarts when the chest is untracked for longer than this, in seconds.
   public var chestGapSeconds: Double = 0.5
 
+  // MARK: Live display
+
+  /// The checks above decide what a sitting records. These decide what the screen may show
+  /// while it runs: a reading that fails the checks above and passes these is `valid` and
+  /// `provisional` (`Estimate.provisional`). It is shown, and nothing else is done with it:
+  /// the summary, its coverage, the beat intervals and the whole-sitting estimate are the
+  /// same with this on or off. The checks that say a rhythm is not blood at all (lamp
+  /// flicker, light changing colour, a head moving in rhythm, the band edge, motion, gaps)
+  /// are not loosened. False switches the display tier off.
+  public var showsProvisionalReadings: Bool = true
+  /// Quality a heart-rate window needs to be shown.
+  public var displayQualityThreshold: Double = 0.45
+  /// As `minimumRecentQuality` and `minimumRecentAmplitudeShare`, for a window to be shown.
+  public var displayMinimumRecentQuality: Double = 0.3
+  public var displayMinimumRecentAmplitudeShare: Double = 0.35
+  /// Windows among the newest `agreementSpanWindows` that must agree for one to be shown.
+  public var displayAgreeingWindows: Int = 3
+  /// A window whose rate is within `agreementToleranceBpm` of one that windows agreed on no
+  /// longer ago than `displayTrackingSeconds` is following a rate already found: it is
+  /// shown at this quality, without waiting for another window to agree. A window that is
+  /// only following never becomes the rate to follow.
+  public var displayTrackingQuality: Double = 0.35
+  public var displayTrackingSeconds: Double = 10
+  /// Shortest heart-rate window the screen may be shown a rate from, in seconds. The record
+  /// needs `heartRateMinimumWindowSeconds`.
+  public var displayMinimumWindowSeconds: Double = 5
+  /// As `maximumDisturbedShare`, for a window to be shown.
+  public var displayMaximumDisturbedShare: Double = 0.5
+  /// Chest signal needed before a breathing rate may be shown, in seconds. The recorded
+  /// rate still waits for `breathingMinimumWindowSeconds`. A window that long is held to the
+  /// record's own checks, so the display tier adds nothing after it.
+  public var breathingDisplayMinimumWindowSeconds: Double = 20
+  /// Quality a breathing window shorter than `breathingMinimumWindowSeconds` needs to be
+  /// shown. A chest that only drifts gives a short window a peak often enough: of 24
+  /// synthetic sittings with no breathing, 14 showed a rate at 0.5 and none at 0.75.
+  public var breathingDisplayQualityThreshold: Double = 0.75
+  /// Breathing windows in a row that must agree for one to be shown.
+  public var breathingDisplayAgreeingWindows: Int = 3
+
   // MARK: Beat intervals
 
   /// Rate the pulse waveform is interpolated to before beats are located, in Hz.

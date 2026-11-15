@@ -109,7 +109,7 @@ private func emptySkin(seed: UInt64) -> [FrameRecord] {
   @Test func theVouchingRunsOut() {
     // Rocking that never stops: the reading established before it is believed for
     // `steadyRateSeconds`, not for the rest of the sitting.
-    let result = replay(rocking(from: 20, seed: 21))
+    let result = replay(rocking(from: 20, seed: 21), recordOnly)
     #expect(result.heartRates.contains { $0.elapsed >= 30 })
     #expect(result.heartRates.filter { $0.elapsed >= 46 }.isEmpty)
     #expect(result.heartRate(at: 50).reason == .motion)

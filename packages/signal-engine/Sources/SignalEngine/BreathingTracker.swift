@@ -26,12 +26,17 @@ struct BreathingTracker {
   private var warmUpReason = EstimateReason.warmingUp
   private var gate: AgreementGate
   private var acceptedSinceReset = false
+  /// The display tier's own agreement (`EngineConfiguration`, "Live display").
+  private var displayGate: AgreementGate
 
   init(configuration: EngineConfiguration, fourier: Fourier) {
     self.configuration = configuration
     self.fourier = fourier
     gate = AgreementGate(
       required: configuration.agreeingWindows, span: configuration.agreeingWindows,
+      tolerance: configuration.breathingAgreementTolerancePerMin)
+    displayGate = AgreementGate(
+      required: configuration.breathingDisplayAgreeingWindows, span: configuration.breathingDisplayAgreeingWindows,
       tolerance: configuration.breathingAgreementTolerancePerMin)
   }
 
@@ -76,6 +81,7 @@ struct BreathingTracker {
     afterFastMove = false
     acceptedSinceReset = false
     gate.reset()
+    displayGate.reset()
   }
 
   /// Why the newest frames cannot be used, or nil when the chest is tracked.
@@ -85,49 +91,80 @@ struct BreathingTracker {
 
   mutating func missedTick() {
     gate.push(nil)
+    displayGate.push(nil)
   }
 
   mutating func tick(at now: Double) -> TickEstimate {
     guard isTracking(at: now), let first = times.first else {
+      displayGate.push(nil)
       return .withheld(.none, .noChest)
     }
-    guard now - first >= configuration.breathingMinimumWindowSeconds else {
+    // The recorded rate waits for a long window. The screen may show one from a shorter
+    // window before that (`breathingDisplayMinimumWindowSeconds`).
+    let records = now - first >= configuration.breathingMinimumWindowSeconds
+    let displays = !records && configuration.showsProvisionalReadings
+      && now - first >= configuration.breathingDisplayMinimumWindowSeconds
+    guard records || displays else {
       return .withheld(.settling, warmUpReason)
     }
-    warmUpReason = .warmingUp
+    let warmingUp = TickEstimate.withheld(.settling, warmUpReason)
+    if records { warmUpReason = .warmingUp }
     let windowSeconds = min(now - first, configuration.breathingWindowSeconds)
     let start = times.firstIndex(where: { $0 >= now - windowSeconds }) ?? 0
     let range = start..<times.count
 
     let moving = motion[range].reduce(0) { $0 + ($1 ? 1 : 0) }
-    if Double(moving) / Double(range.count) > configuration.maximumMotionShare {
+    let movingShare = Double(moving) / Double(range.count)
+    let sampled = Double(range.count) / windowSeconds >= configuration.minimumFrameRate
+    let still = movingShare <= configuration.maximumMotionShare
+    let outcome = sampled && still ? analyse(range) : nil
+
+    // What the sitting records for this second, exactly as without the display tier.
+    let recorded: TickEstimate
+    if !records {
+      recorded = warmingUp
+    } else if !still {
       gate.push(nil)
-      return .withheld(.none, .motion)
-    }
-    if Double(range.count) / windowSeconds < configuration.minimumFrameRate {
+      recorded = .withheld(.none, .motion)
+    } else if !sampled {
       gate.push(nil)
-      return .withheld(.none, .gaps)
+      recorded = .withheld(.none, .gaps)
+    } else {
+      switch outcome ?? .flat {
+      case .flat, .flicker, .drift, .illumination:
+        gate.push(nil)
+        recorded = .withheld(.none, .lowQuality)
+      case .bandEdge(let quality):
+        gate.push(nil)
+        recorded = .withheld(.none, .bandEdge, quality: quality)
+      case .peak(_, let quality) where quality < configuration.breathingQualityThreshold:
+        gate.push(nil)
+        recorded = .withheld(.none, .lowQuality, quality: quality)
+      case .peak(let hz, let quality):
+        let perMinute = hz * 60
+        gate.push(perMinute)
+        if gate.agreed {
+          acceptedSinceReset = true
+          recorded = .valid(perMinute, quality: quality)
+        } else {
+          recorded = .withheld(acceptedSinceReset ? .none : .settling, .awaitingAgreement, quality: quality)
+        }
+      }
     }
 
-    switch analyse(range) {
-    case .flat, .flicker, .drift, .illumination:
-      gate.push(nil)
-      return .withheld(.none, .lowQuality)
-    case .bandEdge(let quality):
-      gate.push(nil)
-      return .withheld(.none, .bandEdge, quality: quality)
-    case .peak(_, let quality) where quality < configuration.breathingQualityThreshold:
-      gate.push(nil)
-      return .withheld(.none, .lowQuality, quality: quality)
-    case .peak(let hz, let quality):
-      let perMinute = hz * 60
-      gate.push(perMinute)
-      guard gate.agreed else {
-        return .withheld(acceptedSinceReset ? .none : .settling, .awaitingAgreement, quality: quality)
-      }
-      acceptedSinceReset = true
-      return .valid(perMinute, quality: quality)
+    // What the screen may show before the record has a window long enough: a peak clear
+    // enough to stand in a short one.
+    var candidate: (perMinute: Double, quality: Double)?
+    if displays, case .peak(let hz, let quality)? = outcome,
+      quality >= configuration.breathingDisplayQualityThreshold
+    {
+      candidate = (hz * 60, quality)
     }
+    displayGate.push(candidate?.perMinute)
+    if recorded.state != .valid, let candidate, displayGate.agreed {
+      return .shown(candidate.perMinute, quality: candidate.quality, unrecorded: recorded.reason ?? .lowQuality)
+    }
+    return recorded
   }
 
   private func analyse(_ range: Range<Int>) -> PeakOutcome {

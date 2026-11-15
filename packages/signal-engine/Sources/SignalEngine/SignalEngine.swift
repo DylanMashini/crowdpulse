@@ -73,6 +73,7 @@ public final class SignalEngine {
         diagnostic.reason = heart.reason
         diagnostic.value = heart.value
         diagnostic.quality = heart.quality
+        diagnostic.provisional = heart.provisional
         diagnostics.append(diagnostic)
       }
     }
@@ -93,9 +94,11 @@ public final class SignalEngine {
     let seconds = silent ? max(ticks.count, Int(elapsed)) : ticks.count
 
     func estimate(_ vital: KeyPath<Tick, TickEstimate>, blocked: EstimateReason?) -> Estimate {
-      let valid = ticks.filter { $0[keyPath: vital].state == .valid }
-      let coverage = seconds > 0 ? Double(valid.count) / Double(seconds) : 0
-      let age = valid.last.map { max(0, Int(((now - $0.time) * 1000).rounded())) }
+      // Coverage counts what the sitting records. The age is that of what was last shown.
+      let confirmed = ticks.reduce(0) { $0 + ($1[keyPath: vital].isConfirmed ? 1 : 0) }
+      let coverage = seconds > 0 ? Double(confirmed) / Double(seconds) : 0
+      let age = ticks.last { $0[keyPath: vital].state == .valid }
+        .map { max(0, Int(((now - $0.time) * 1000).rounded())) }
       let current: TickEstimate
       if silent {
         current = .withheld(.stale, .noFrames)
@@ -108,7 +111,7 @@ public final class SignalEngine {
       return Estimate(
         value: current.value, state: current.state, reason: current.reason,
         quality: min(1, max(0, current.quality)), coverage: coverage,
-        ageMs: current.state == .valid ? 0 : age)
+        ageMs: current.state == .valid ? 0 : age, provisional: current.provisional)
     }
 
     return Reading(
@@ -134,11 +137,13 @@ public final class SignalEngine {
       history: pulse.history, windows: pulse.validWindows, weights: pulse.regionWeightSums,
       origin: first, duration: duration)
 
-    let firstValid = ticks.firstIndex { $0.heart.state == .valid }
+    // The summary is built from the readings the sitting records. A provisional reading was
+    // on screen and counts for nothing here.
+    let firstValid = ticks.firstIndex { $0.heart.isConfirmed }
     var longestDropout = 0
     var dropout = 0
     for tick in ticks.dropFirst(firstValid ?? ticks.count) {
-      dropout = tick.heart.state == .valid ? 0 : dropout + 1
+      dropout = tick.heart.isConfirmed ? 0 : dropout + 1
       longestDropout = max(longestDropout, dropout)
     }
 
@@ -151,7 +156,7 @@ public final class SignalEngine {
     var source: HeartRateSource? = heartRate.value == nil ? nil : .readings
     var confidence: HeartRateConfidence? = heartRate.value == nil ? nil : .normal
     let whole = WholeSittingAnalyzer(configuration: configuration).estimate(pulse.evidence, origin: first)
-    let valid = ticks.compactMap(\.heart.value)
+    let valid = ticks.compactMap(\.heart.confirmedValue)
     func near(_ bpm: Double, _ other: Double) -> Bool {
       abs(bpm - other) <= configuration.agreementToleranceBpm
     }
@@ -195,13 +200,14 @@ public final class SignalEngine {
   /// Median of the valid one-second readings, or the commonest reason there were too few.
   private func summary(_ vital: KeyPath<Tick, TickEstimate>) -> SummaryValue {
     let estimates = ticks.map { $0[keyPath: vital] }
-    let values = estimates.compactMap(\.value)
+    let values = estimates.compactMap(\.confirmedValue)
     let coverage = ticks.isEmpty ? 0 : Double(values.count) / Double(ticks.count)
     if values.count >= configuration.minimumSummaryReadings, let median = DSP.median(values) {
       return SummaryValue(value: median, coverage: coverage)
     }
     var counts: [EstimateReason: Int] = [:]
-    for reason in estimates.compactMap(\.reason) { counts[reason, default: 0] += 1 }
+    // A second that was only shown is counted under what kept it from being recorded.
+    for reason in estimates.compactMap({ $0.reason ?? $0.unrecorded }) { counts[reason, default: 0] += 1 }
     let commonest = counts.max { ($0.value, $0.key.rawValue) < ($1.value, $1.key.rawValue) }?.key
     let reason = values.isEmpty
       ? (commonest ?? .warmingUp).rawValue

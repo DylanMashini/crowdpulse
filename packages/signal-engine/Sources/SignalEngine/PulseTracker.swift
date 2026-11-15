@@ -6,9 +6,23 @@ struct TickEstimate {
   var reason: EstimateReason?
   var value: Double?
   var quality: Double
+  /// Valid for the screen only (`EngineConfiguration.showsProvisionalReadings`).
+  var provisional = false
+  /// Why a provisional reading is not one the sitting records. Nil otherwise.
+  var unrecorded: EstimateReason?
+
+  /// The value, when it is one the sitting records.
+  var confirmedValue: Double? { provisional ? nil : value }
+  var isConfirmed: Bool { state == .valid && !provisional }
 
   static func valid(_ value: Double, quality: Double) -> TickEstimate {
     TickEstimate(state: .valid, reason: nil, value: value, quality: quality)
+  }
+
+  /// A value for the screen. `unrecorded` is the reason it would have been withheld with.
+  static func shown(_ value: Double, quality: Double, unrecorded: EstimateReason) -> TickEstimate {
+    TickEstimate(
+      state: .valid, reason: nil, value: value, quality: quality, provisional: true, unrecorded: unrecorded)
   }
 
   static func withheld(_ state: EstimateState, _ reason: EstimateReason, quality: Double = 0) -> TickEstimate {
@@ -406,6 +420,12 @@ struct PulseTracker {
   private var chestTrackedCount = 0
   private var gate: AgreementGate
   private var acceptedSinceReset = false
+  /// The display tier's own agreement, over windows that passed the display checks.
+  private var displayGate: AgreementGate
+  private var shownSinceReset = false
+  /// The newest reading that windows agreed on, recorded or provisional, and when: the rate
+  /// a later window may follow (`displayTrackingSeconds`).
+  private var lastShown: (bpm: Double, time: Double)?
   /// The newest valid reading from a window whose rhythm could not be movement
   /// (`movesInRhythm`), and when it was read.
   private var steadyRate: (bpm: Double, time: Double)?
@@ -427,6 +447,15 @@ struct PulseTracker {
     gate = AgreementGate(
       required: configuration.agreeingWindows, span: configuration.agreementSpanWindows,
       tolerance: configuration.agreementToleranceBpm)
+    displayGate = AgreementGate(
+      required: configuration.displayAgreeingWindows, span: configuration.agreementSpanWindows,
+      tolerance: configuration.agreementToleranceBpm)
+  }
+
+  /// The window gave nothing either gate may count.
+  private mutating func refuse() {
+    gate.push(Double?.none)
+    displayGate.push(nil)
   }
 
   /// Returns true when the tracked face changed with this frame.
@@ -549,11 +578,14 @@ struct PulseTracker {
     acceptedSinceReset = false
     steadyRate = nil
     gate.reset()
+    shownSinceReset = false
+    lastShown = nil
+    displayGate.reset()
   }
 
   /// The second passed with no frame.
   mutating func missedTick() {
-    gate.push(nil)
+    refuse()
     if collectsDiagnostics {
       var diagnostic = PulseDiagnostic()
       diagnostic.gate = .noFrames
@@ -584,7 +616,13 @@ struct PulseTracker {
       diagnostic.gate = blocked == .exposureAdjusting ? .exposureAdjusting : .noFace
       return .withheld(.none, blocked)
     }
-    guard let segmentStart, now - segmentStart >= configuration.heartRateMinimumWindowSeconds else {
+    // The shortest window the screen may be shown a rate from. The record needs
+    // `heartRateMinimumWindowSeconds`.
+    let shortest =
+      configuration.showsProvisionalReadings
+      ? min(configuration.displayMinimumWindowSeconds, configuration.heartRateMinimumWindowSeconds)
+      : configuration.heartRateMinimumWindowSeconds
+    guard let segmentStart, now - segmentStart >= shortest else {
       diagnostic.gate = .warmingUp
       if collectsDiagnostics, let segmentStart {
         describeRefused(
@@ -593,9 +631,20 @@ struct PulseTracker {
       }
       return .withheld(.settling, warmUpReason)
     }
-    warmUpReason = .warmingUp
+    // Set when a check has refused this window for the record: what it is withheld with.
+    // The window may still be analysed for the screen.
+    var unrecorded: TickEstimate?
+    if now - segmentStart < configuration.heartRateMinimumWindowSeconds {
+      diagnostic.gate = .warmingUp
+      unrecorded = .withheld(.settling, warmUpReason)
+    } else {
+      warmUpReason = .warmingUp
+    }
     var windowSeconds = min(now - segmentStart, configuration.heartRateWindowSeconds)
     var range = history.index(atOrAfter: now - windowSeconds)..<history.times.count
+    if unrecorded != nil, collectsDiagnostics {
+      describeRefused(range, windowSeconds: windowSeconds, in: &diagnostic)
+    }
 
     // A window never spans a gap: it starts after the newest one, and is rejected until
     // enough gap-free signal has built up again.
@@ -604,15 +653,27 @@ struct PulseTracker {
     }) {
       range = afterGap..<range.upperBound
       windowSeconds = now - history.times[afterGap]
-      if windowSeconds < configuration.heartRateMinimumWindowSeconds {
-        gate.push(nil)
+      if windowSeconds < shortest, let unrecorded {
+        displayGate.push(nil)
+        return unrecorded
+      }
+      if windowSeconds < configuration.heartRateMinimumWindowSeconds, unrecorded == nil {
         diagnostic.gate = .recentGap
         if collectsDiagnostics { describeRefused(range, windowSeconds: windowSeconds, in: &diagnostic) }
-        return .withheld(.none, .gaps)
+        guard windowSeconds >= shortest else {
+          refuse()
+          return .withheld(.none, .gaps)
+        }
+        gate.push(Double?.none)
+        unrecorded = .withheld(.none, .gaps)
       }
     }
     if let rejection = rejection(of: range, windowSeconds: windowSeconds) {
-      gate.push(nil)
+      if let unrecorded {
+        displayGate.push(nil)
+        return unrecorded
+      }
+      refuse()
       diagnostic.gate = .tooFewSamples
       if collectsDiagnostics { describeRefused(range, windowSeconds: windowSeconds, in: &diagnostic) }
       return .withheld(.none, rejection)
@@ -625,15 +686,23 @@ struct PulseTracker {
       PulseTracker.share(cutFrom: masks[$0.region]) <= configuration.maximumDisturbedShare
     }
     let leastCut = masks.map { PulseTracker.share(cutFrom: $0) }.min() ?? 0
-    if regions.isEmpty, !complete.isEmpty || leastCut > configuration.maximumDisturbedShare {
-      gate.push(nil)
+    if unrecorded == nil, regions.isEmpty, !complete.isEmpty || leastCut > configuration.maximumDisturbedShare {
+      gate.push(Double?.none)
       diagnostic.gate = .motion
       if collectsDiagnostics { describeRefused(range, windowSeconds: windowSeconds, in: &diagnostic) }
-      return .withheld(.none, .motion)
+      unrecorded = .withheld(.none, .motion)
+    }
+    if let unrecorded {
+      // Not a window the sitting records. The screen may still be shown its rate, from the
+      // regions that were cut by no more than the display tier allows.
+      let usable = complete.filter {
+        PulseTracker.share(cutFrom: masks[$0.region]) <= configuration.displayMaximumDisturbedShare
+      }
+      return showRefused(range, regions: usable, masks: masks, at: now, otherwise: unrecorded)
     }
     if collectsDiagnostics { measure(range, windowSeconds: windowSeconds, in: &diagnostic) }
     guard !regions.isEmpty else {
-      gate.push(nil)
+      refuse()
       diagnostic.gate = .incompleteRegions
       return .withheld(.none, .gaps)
     }
@@ -658,55 +727,139 @@ struct PulseTracker {
     }
 
     switch outcome.peak {
-    case .flat, .flicker, .drift, .illumination:
-      gate.push(nil)
-      switch outcome.peak {
-      case .flicker: diagnostic.gate = .flicker
-      case .illumination: diagnostic.gate = .illumination
-      default: diagnostic.gate = .flat
+    case .flicker:
+      // Where a lamp's flicker would appear. The record never takes a rate from there. The
+      // screen keeps one it was already showing: a heart can beat at that rate too.
+      gate.push(Double?.none)
+      diagnostic.gate = .flicker
+      if let hz = outcome.detail.candidateHz, let quality = outcome.detail.candidateQuality,
+        displays(hz * 60, quality: quality, detail: outcome.detail, at: now, onlyFollowing: true)
+      {
+        return .shown(hz * 60, quality: quality, unrecorded: .lowQuality)
       }
       return .withheld(.none, .lowQuality)
+    case .flat, .drift, .illumination:
+      refuse()
+      if case .illumination = outcome.peak { diagnostic.gate = .illumination } else { diagnostic.gate = .flat }
+      return .withheld(.none, .lowQuality)
     case .bandEdge(let quality):
-      gate.push(nil)
+      refuse()
       diagnostic.gate = .bandEdge
       return .withheld(.none, .bandEdge, quality: quality)
     case .peak(let hz, let quality) where movesInRhythm(outcome.detail) && !vouchedFor(hz * 60, at: now):
-      gate.push(nil)
+      // A rhythm that could be movement. As with flicker, the screen keeps a rate it was
+      // already showing and never starts one here.
+      gate.push(Double?.none)
       diagnostic.gate = .rhythmicMovement
+      if displays(hz * 60, quality: quality, detail: outcome.detail, at: now, onlyFollowing: true) {
+        return .shown(hz * 60, quality: quality, unrecorded: .motion)
+      }
       return .withheld(.none, .motion, quality: quality)
     case .peak where lightChangesColour(outcome.detail):
-      gate.push(nil)
+      refuse()
       diagnostic.gate = .illumination
       return .withheld(.none, .lowQuality)
-    case .peak(_, let quality) where quality < configuration.qualityThreshold:
-      gate.push(nil)
-      diagnostic.gate = .quality
-      return .withheld(.none, .lowQuality, quality: quality)
-    case .peak(_, let quality)
-    where (outcome.detail.recentQuality ?? 1) < configuration.minimumRecentQuality
-      || (outcome.detail.recentAmplitudeShare ?? 1) < configuration.minimumRecentAmplitudeShare:
-      gate.push(nil)
-      diagnostic.gate = .quality
-      return .withheld(.none, .lowQuality, quality: quality)
     case .peak(let hz, let quality):
       // The value shown is this window's own rate. Earlier windows only vouch for it; they
       // are never averaged in, so the reading cannot lag behind a rate that has moved.
       let bpm = hz * 60
-      gate.push(bpm)
-      guard gate.agreed else {
-        diagnostic.gate = .agreement
-        return .withheld(acceptedSinceReset ? .none : .settling, .awaitingAgreement, quality: quality)
+      let recentQuality = outcome.detail.recentQuality ?? 1
+      let recentShare = outcome.detail.recentAmplitudeShare ?? 1
+      let confirms =
+        quality >= configuration.qualityThreshold
+        && recentQuality >= configuration.minimumRecentQuality
+        && recentShare >= configuration.minimumRecentAmplitudeShare
+      gate.push(confirms ? bpm : nil)
+      let shows = displays(bpm, quality: quality, detail: outcome.detail, at: now, confirms: confirms)
+
+      if confirms, gate.agreed {
+        acceptedSinceReset = true
+        lastShown = (bpm, now)
+        // Only a window whose rhythm cannot be movement may vouch for later ones.
+        if !movesInRhythm(outcome.detail) { steadyRate = (bpm, now) }
+        validWindows.append(
+          ValidPulseWindow(start: history.times[range.lowerBound], end: now, rateHz: hz))
+        for (entry, weight) in zip(regions, outcome.weights) {
+          regionWeightSums[entry.region] += weight
+        }
+        return .valid(bpm, quality: quality)
       }
-      acceptedSinceReset = true
-      // Only a window whose rhythm cannot be movement may vouch for later ones.
-      if !movesInRhythm(outcome.detail) { steadyRate = (bpm, now) }
-      validWindows.append(
-        ValidPulseWindow(start: history.times[range.lowerBound], end: now, rateHz: hz))
-      for (entry, weight) in zip(regions, outcome.weights) {
-        regionWeightSums[entry.region] += weight
+      diagnostic.gate = confirms ? .agreement : .quality
+      if shows {
+        return .shown(bpm, quality: quality, unrecorded: confirms ? .awaitingAgreement : .lowQuality)
       }
-      return .valid(bpm, quality: quality)
+      guard confirms else {
+        return .withheld(.none, .lowQuality, quality: quality)
+      }
+      return .withheld(
+        acceptedSinceReset || shownSinceReset ? .none : .settling, .awaitingAgreement, quality: quality)
     }
+  }
+
+  /// The display tier (`EngineConfiguration`, "Live display"): whether the screen may show
+  /// `bpm` from this window, under looser limits than the record's, or because it follows a
+  /// rate shown a moment ago. Counts the window in the display tier's agreement either way.
+  /// - Parameters:
+  ///   - confirms: the window passed the record's own quality checks.
+  ///   - onlyFollowing: the window may only carry on a rate already shown, never start one.
+  private mutating func displays(
+    _ bpm: Double, quality: Double, detail: PulseAnalyzer.Detail, at now: Double,
+    confirms: Bool = false, onlyFollowing: Bool = false
+  ) -> Bool {
+    guard configuration.showsProvisionalReadings else {
+      displayGate.push(nil)
+      return false
+    }
+    let recentEnough = (detail.recentAmplitudeShare ?? 1) >= configuration.displayMinimumRecentAmplitudeShare
+    let tracks = recentEnough && quality >= configuration.displayTrackingQuality && follows(bpm, at: now)
+    // A window that stands on its own counts towards agreement and, once agreed, becomes
+    // the rate later windows may follow. One that is only following does neither: a rate
+    // cannot be carried from window to window further than `displayTrackingSeconds` from
+    // the last one that agreed, nor wander off in steps of the tolerance.
+    let stands =
+      !onlyFollowing
+      && (confirms
+        || (recentEnough && quality >= configuration.displayQualityThreshold
+          && (detail.recentQuality ?? 1) >= configuration.displayMinimumRecentQuality))
+    displayGate.push(stands ? bpm : nil)
+    let agreed = stands && displayGate.agreed
+    guard agreed || tracks else { return false }
+    shownSinceReset = true
+    if agreed { lastShown = (bpm, now) }
+    return true
+  }
+
+  /// A window refused for the record before the analysis (too short yet, too soon after a
+  /// gap, cut too much around movement), analysed for the screen alone. Nothing the sitting
+  /// records is touched: not the agreement gate, the whole-sitting evidence or the windows
+  /// beats are read from. Returns `otherwise`, what the record withholds the second with,
+  /// when the screen is shown nothing either.
+  private mutating func showRefused(
+    _ range: Range<Int>, regions: [(region: Int, series: RegionSeries)], masks: [[Bool]?],
+    at now: Double, otherwise: TickEstimate
+  ) -> TickEstimate {
+    guard configuration.showsProvisionalReadings, !regions.isEmpty else {
+      displayGate.push(nil)
+      return otherwise
+    }
+    let outcome = analyzer.analyse(
+      regions.map(\.series), rate: configuration.resampleRateHz, frameRate: frameRate(of: range),
+      masks: regions.map { masks[$0.region] })
+    guard case .peak(let hz, let quality) = outcome.peak, !lightChangesColour(outcome.detail) else {
+      displayGate.push(nil)
+      return otherwise
+    }
+    let moves = movesInRhythm(outcome.detail)
+    guard displays(hz * 60, quality: quality, detail: outcome.detail, at: now, onlyFollowing: moves) else {
+      return otherwise
+    }
+    return .shown(hz * 60, quality: quality, unrecorded: otherwise.reason ?? .lowQuality)
+  }
+
+  /// Whether `bpm` is the rate windows agreed on no longer ago than `displayTrackingSeconds`.
+  private func follows(_ bpm: Double, at now: Double) -> Bool {
+    guard let lastShown, now - lastShown.time <= configuration.displayTrackingSeconds else { return false }
+    return abs(bpm - lastShown.bpm) <= configuration.agreementToleranceBpm
   }
 
   /// Whether the rhythm a window holds is the subject moving, not blood. A head that nods,

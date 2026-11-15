@@ -83,12 +83,14 @@ private func brightnessStep(at second: Double, factor: Double) -> [FrameRecord] 
       #expect(diagnostic.state == reading.heartRate.state)
       #expect(diagnostic.reason == reading.heartRate.reason)
       #expect(diagnostic.value == reading.heartRate.value)
-      #expect((diagnostic.gate == nil) == (reading.heartRate.state == .valid))
+      // A reading that was only shown carries the check that kept it out of the record.
+      #expect((diagnostic.gate == nil) == reading.heartRate.isRecorded)
+      #expect(diagnostic.provisional == reading.heartRate.provisional)
     }
   }
 
   @Test func aValidReadingIsItsOwnCandidate() {
-    let valid = diagnosed(sitting().frames()).diagnostics.filter { $0.state == .valid }
+    let valid = diagnosed(sitting().frames()).diagnostics.filter { $0.state == .valid && !$0.provisional }
     #expect(valid.count > 40)
     for diagnostic in valid {
       #expect(diagnostic.candidateBpm == diagnostic.value)
@@ -118,7 +120,7 @@ private func brightnessStep(at second: Double, factor: Double) -> [FrameRecord] 
   @Test func motionIsNamedWithItsShareAndWhatTheWindowHeld() {
     // Long enough that more than `maximumDisturbedShare` of a window has to be cut: a
     // shorter burst is now cut out and the rest of the window analysed.
-    let result = diagnosed(sitting { $0.motionBursts = [.init(start: 20, end: 25)] }.frames())
+    let result = diagnosed(sitting { $0.motionBursts = [.init(start: 20, end: 25)] }.frames(), recordOnly)
     let refused = result.diagnostics.filter { $0.gate == .motion }
     #expect(!refused.isEmpty)
     for diagnostic in refused {
@@ -156,7 +158,7 @@ private func brightnessStep(at second: Double, factor: Double) -> [FrameRecord] 
   }
 
   @Test func aRecentGapIsNamed() {
-    let diagnostics = diagnosed(sitting { $0.frameGap = .init(start: 30, end: 30.6) }.frames()).diagnostics
+    let diagnostics = diagnosed(sitting { $0.frameGap = .init(start: 30, end: 30.6) }.frames(), recordOnly).diagnostics
     let refused = diagnostics.filter { $0.gate == .recentGap }
     #expect(!refused.isEmpty)
     #expect(refused.allSatisfy { $0.reason == .gaps && ($0.windowSeconds ?? 10) < 6 })

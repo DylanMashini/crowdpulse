@@ -22,14 +22,41 @@ func replay(
   return SittingReplay.run(frames, configuration: configuration)
 }
 
+extension Estimate {
+  /// The value, when it is one the sitting records and not one that was only shown.
+  var recordedValue: Double? { provisional ? nil : value }
+  var isRecorded: Bool { state == .valid && !provisional }
+}
+
+/// The record as it reads with the display tier off. For tests of the record's own states
+/// and reasons second by second: `DisplayTierTests` shows the record is the same either way.
+func recordOnly(_ configuration: inout EngineConfiguration) { configuration.showsProvisionalReadings = false }
+
 extension SittingReplay.Result {
-  /// Valid heart-rate readings as (seconds since the first frame, bpm).
+  /// The heart-rate readings the sitting records, as (seconds since the first frame, bpm).
+  /// Provisional readings, which are only shown, are in `shownHeartRates`.
   var heartRates: [(elapsed: Double, bpm: Double)] {
-    readings.compactMap { reading in reading.heartRate.value.map { (reading.elapsed, $0) } }
+    shownHeartRates(provisional: false)
   }
 
   var breathingRates: [(elapsed: Double, perMinute: Double)] {
-    readings.compactMap { reading in reading.breathingRate.value.map { (reading.elapsed, $0) } }
+    shownBreathingRates(provisional: false)
+  }
+
+  /// Every heart rate the screen was shown, or with `provisional` only the recorded
+  /// (false) or only the provisional (true) ones.
+  func shownHeartRates(provisional: Bool? = nil) -> [(elapsed: Double, bpm: Double)] {
+    readings.compactMap { reading in
+      guard provisional == nil || reading.heartRate.provisional == provisional else { return nil }
+      return reading.heartRate.value.map { (reading.elapsed, $0) }
+    }
+  }
+
+  func shownBreathingRates(provisional: Bool? = nil) -> [(elapsed: Double, perMinute: Double)] {
+    readings.compactMap { reading in
+      guard provisional == nil || reading.breathingRate.provisional == provisional else { return nil }
+      return reading.breathingRate.value.map { (reading.elapsed, $0) }
+    }
   }
 
   /// The heart-rate estimate of the reading taken `seconds` after the first frame.
