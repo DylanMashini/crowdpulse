@@ -20,12 +20,21 @@ const LONG_SIDES = [INPUT_SIZE / 2, INPUT_SIZE] as const;
 
 /** The landmarks of the most confident face, or null when YuNet finds none. */
 export async function detectFace(image: RgbImage, models: FaceModels): Promise<Landmarks | null> {
+  return (await detectFaceScored(image, models))?.landmarks ?? null;
+}
+
+/** The most confident face and how confident YuNet is of it (0.7 to 1), or null when it finds none. */
+export async function detectFaceScored(
+  image: RgbImage,
+  models: FaceModels,
+): Promise<{ landmarks: Landmarks; confidence: number } | null> {
   for (const longSide of LONG_SIDES) {
     const { canvas, scale, offsetX, offsetY } = await letterbox(image, INPUT_SIZE, longSide);
     const outputs = await models.detector.run({ input: bgrPlanes(canvas, INPUT_SIZE) });
     const best = bestCandidate(outputs);
     if (best) {
-      return best.map(({ x, y }) => ({ x: (x - offsetX) / scale, y: (y - offsetY) / scale })) as Landmarks;
+      const landmarks = best.points.map(({ x, y }) => ({ x: (x - offsetX) / scale, y: (y - offsetY) / scale })) as Landmarks;
+      return { landmarks, confidence: best.score };
     }
   }
   return null;
@@ -46,7 +55,7 @@ function bgrPlanes(rgb: Uint8Array, size: number): Tensor {
 type Outputs = Awaited<ReturnType<FaceModels["detector"]["run"]>>;
 
 /** Decodes YuNet's per-stride grids and keeps the highest-scoring cell: one face is all that is needed. */
-function bestCandidate(outputs: Outputs): Point[] | null {
+function bestCandidate(outputs: Outputs): { points: Point[]; score: number } | null {
   let bestScore = MIN_SCORE;
   let best: Point[] | null = null;
   for (const stride of STRIDES) {
@@ -67,5 +76,5 @@ function bestCandidate(outputs: Outputs): Point[] | null {
       }));
     }
   }
-  return best;
+  return best ? { points: best, score: bestScore } : null;
 }

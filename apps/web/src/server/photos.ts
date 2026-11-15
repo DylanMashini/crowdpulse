@@ -4,10 +4,11 @@ import sharp, { type Sharp } from "sharp";
 
 import { db, schema } from "../db/client.ts";
 import { patientChanged } from "./events.ts";
-import { detectFace } from "./face/detect.ts";
+import { detectFaceScored } from "./face/detect.ts";
 import { decodeJpegBytes } from "./face/image.ts";
 import { faceModels } from "./face/models.ts";
 import { portraitSquare } from "./face/portrait.ts";
+import { portraitQuality, type Quality } from "./face/quality.ts";
 import { ApiError } from "./http.ts";
 import type { PatientRow } from "./serialize.ts";
 import { toPatientRef } from "./serialize.ts";
@@ -30,25 +31,46 @@ export async function portraitFromCrop(jpeg: Buffer): Promise<Buffer> {
   }
 }
 
+/** The side of the small greyscale copy a portrait is scored on. */
+const SCORED_SIZE = 96;
+
+/** A portrait that could be cut from a frame: how good it would be, and the cut itself on request. */
+export type PortraitCandidate = { quality: Quality; encode: () => Promise<Buffer> };
+
 /**
- * Finds the face in a whole camera frame and cuts the portrait out of it. Null when no face
- * is found or it is too small. Throws face_unavailable when the detector is not installed.
+ * Finds the face in a whole camera frame and scores the portrait it would make. Null when no
+ * face is found or it is too small. Throws face_unavailable when the detector is not installed.
  */
-export async function portraitFromFrame(jpeg: Buffer): Promise<Buffer | null> {
+export async function portraitCandidate(jpeg: Buffer): Promise<PortraitCandidate | null> {
   const models = await faceModels();
   const image = await decodeJpegBytes(jpeg);
-  const landmarks = await detectFace(image, models);
-  if (!landmarks) return null;
-  const square = portraitSquare(landmarks, image.width, image.height);
+  const face = await detectFaceScored(image, models);
+  if (!face) return null;
+  const square = portraitSquare(face.landmarks, image.width, image.height);
   if (!square) return null;
-  return encode(
+  const cut = () =>
     sharp(image.data, { raw: { width: image.width, height: image.height, channels: 3 } }).extract({
       left: square.left,
       top: square.top,
       width: square.size,
       height: square.size,
-    }),
-  );
+    });
+  const grey = await cut().resize(SCORED_SIZE, SCORED_SIZE, { fit: "fill" }).greyscale().raw().toBuffer();
+  const quality = portraitQuality({
+    landmarks: face.landmarks,
+    confidence: face.confidence,
+    width: image.width,
+    height: image.height,
+    grey,
+    greyWidth: SCORED_SIZE,
+    greyHeight: SCORED_SIZE,
+  });
+  return { quality, encode: () => encode(cut()) };
+}
+
+/** The portrait from a whole camera frame, whatever its quality: the frame staff chose. */
+export async function portraitFromFrame(jpeg: Buffer): Promise<Buffer | null> {
+  return (await (await portraitCandidate(jpeg))?.encode()) ?? null;
 }
 
 /**
@@ -58,13 +80,17 @@ export async function portraitFromFrame(jpeg: Buffer): Promise<Buffer | null> {
  * own crop): it only fills a gap. An existing photo is left alone, and so is a patient whose
  * photo staff removed. That is decided by the row in the database, in the same transaction, so
  * it holds across a server restart and against a removal that lands while a frame is being
- * looked at. Without it the photo is one staff asked for: it replaces whatever is there and
- * ends a removal.
+ * looked at. With `onlyIfStillAt` it is a better frame for a photo that was taken
+ * automatically at that time: it replaces that photo and no other, so one staff took or
+ * removed in between is left alone. With neither, the photo is one staff asked for: it
+ * replaces whatever is there and ends a removal.
+ *
+ * Returns the patient it was given, the same object, when nothing was stored.
  */
 export async function storePhoto(
   patient: PatientRow,
   portrait: Buffer,
-  options: { onlyIfMissing?: boolean } = {},
+  options: { onlyIfMissing?: boolean; onlyIfStillAt?: Date } = {},
 ): Promise<PatientRow> {
   const now = new Date();
   const values = {
@@ -79,9 +105,15 @@ export async function storePhoto(
       .update(schema.patients)
       .set({ photoUpdatedAt: now, photoRemovedAt: null })
       .where(
-        options.onlyIfMissing
-          ? and(eq(schema.patients.id, patient.id), isNull(schema.patients.photoUpdatedAt), isNull(schema.patients.photoRemovedAt))
-          : eq(schema.patients.id, patient.id),
+        options.onlyIfStillAt
+          ? and(
+              eq(schema.patients.id, patient.id),
+              eq(schema.patients.photoUpdatedAt, options.onlyIfStillAt),
+              isNull(schema.patients.photoRemovedAt),
+            )
+          : options.onlyIfMissing
+            ? and(eq(schema.patients.id, patient.id), isNull(schema.patients.photoUpdatedAt), isNull(schema.patients.photoRemovedAt))
+            : eq(schema.patients.id, patient.id),
       )
       .returning();
     if (!row) return null;
