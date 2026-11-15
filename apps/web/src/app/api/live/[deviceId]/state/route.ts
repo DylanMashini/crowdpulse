@@ -1,5 +1,6 @@
 import { PostLiveStateRequest, type PostLiveStateResponse } from "@triagecam/contracts";
 
+import { noteDeviceSeen } from "@/server/devices";
 import { idParam, readJson, route } from "@/server/http";
 import { reportState } from "@/server/live";
 import { authoriseCamera } from "@/server/live-auth";
@@ -13,5 +14,6 @@ export const POST = route(async (request: Request, context: RouteContext<"/api/l
   const deviceId = idParam((await context.params).deviceId, "device");
   await authoriseCamera(request, deviceId);
   const { state, regions } = await readJson(request, PostLiveStateRequest);
+  noteDeviceSeen(deviceId);
   return Response.json(reportState(deviceId, state, regions) satisfies PostLiveStateResponse);
 });
