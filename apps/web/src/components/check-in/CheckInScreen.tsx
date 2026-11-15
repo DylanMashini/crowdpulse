@@ -30,13 +30,14 @@ import { useResource } from '@/lib/use-resource';
 
 import { LiveFeed, type FeedStats } from './LiveFeed';
 import { SittingView } from './SittingView';
-import { SUMMARY_OVERDUE_MS, readyToStart, sittingToShow, stageCopy, stageOf, type Stage } from './station';
+import { SUMMARY_OVERDUE_MS, isBlankRecord, readyToStart, sittingToShow, stageCopy, stageOf, type Stage } from './station';
 import { useCameraCommands } from './use-camera-commands';
 import { useFollowedSitting } from './use-followed-sitting';
 
 /** A phone counts as online when the server heard from it within this long. */
 const ONLINE_WITHIN_MS = 2 * 60_000;
 const DEVICE_REFRESH_MS = 15_000;
+const LAST_PHONE_KEY = 'crowdpulse.check-in.phone';
 
 export function CheckInScreen() {
   const { worklist } = useLive();
@@ -74,9 +75,24 @@ export function CheckInScreen() {
   const isConnected = (device: Device) => device.camera !== null || device.liveAt !== null;
   const isOnline = (device: Device) => isConnected(device) || serverNow - new Date(device.lastSeenAt).getTime() < ONLINE_WITHIN_MS;
   const [chosen, setChosen] = useState<string | null>(null);
-  // The phone this page was last showing. When it goes quiet the page stays on it and says so,
-  // instead of dropping to an empty list in the middle of a sitting.
-  const [last, setLast] = useState<string | null>(null);
+  // The phone this page was last working with: one that was connected, or picked by hand. When
+  // it goes quiet the page stays on it and says so, instead of dropping to an empty list in the
+  // middle of a sitting; and it is remembered in this browser, so a reload with the app closed
+  // comes back to the same phone and not to whichever other one signed in most recently.
+  const [last, setLast] = useState<string | null>(() => {
+    try {
+      return typeof window === 'undefined' ? null : window.localStorage.getItem(LAST_PHONE_KEY);
+    } catch {
+      return null;
+    }
+  });
+  useEffect(() => {
+    try {
+      if (last) window.localStorage.setItem(LAST_PHONE_KEY, last);
+    } catch {
+      // Private browsing: the page still stays on its phone until it is reloaded.
+    }
+  }, [last]);
   const selected =
     cameras.find((device) => device.id === chosen) ??
     cameras.find((device) => device.liveAt !== null) ??
@@ -84,7 +100,7 @@ export function CheckInScreen() {
     cameras.find((device) => device.id === last) ??
     cameras.find(isOnline) ??
     null;
-  if (selected && selected.id !== last) setLast(selected.id);
+  if (selected && selected.id !== last && (selected.id === chosen || isConnected(selected))) setLast(selected.id);
 
   const picker = (
     <Section heading="Camera phone" className="max-xl:order-4">
@@ -309,17 +325,29 @@ function Station({ device, serverOffsetMs, serverNow, picker, waiting }: Station
   // A new check-in makes the patient's record before the camera starts. Cancelled before a
   // sitting, a record with no name and no sitting is nobody: it is taken out of the waiting
   // room again. One that staff have started to fill in is kept, and the page says so.
-  const everSat = (record.data?.sittings.length ?? 0) > 0;
+  // Blank means nothing entered at all: asked of the server after the cancel, so another
+  // screen's typing counts, and never for a patient whose form was touched on this page, whose
+  // last keystrokes may still be on their way to the server.
+  const touched = useRef<number | null>(null);
   const cancelCheckIn = async () => {
-    const blank = kind === 'check_in' && patient !== null && !patient.name && record.data !== null && !everSat ? patient.number : null;
-    const kept = kind === 'check_in' && patientRef !== null && blank === null ? patientLabel(patientRef) : null;
+    const number = kind === 'check_in' ? patientNumber : null;
     if (!(await send({ type: 'cancel', patientNumber: onPhone }))) return;
-    if (blank === null) return setNotice(kept ? `${kept} stays in the waiting room.` : null);
+    if (number === null) return setNotice(null);
+    let label = `Patient ${number}`;
+    let blank = false;
     try {
-      await api.dischargePatient(blank);
+      const fresh = await api.patient(number);
+      label = patientLabel(fresh.patient);
+      blank = touched.current !== number && isBlankRecord(fresh.patient, fresh.sittings.length);
+    } catch {
+      // Not known to be blank, so kept.
+    }
+    if (!blank) return setNotice(`${label} stays in the waiting room.`);
+    try {
+      await api.dischargePatient(number);
       setNotice(null);
     } catch {
-      setNotice(`Patient ${blank} is still in the waiting room. Discharge them from their record.`);
+      setNotice(`Patient ${number} is still in the waiting room. Discharge them from their record.`);
     }
   };
 
@@ -584,6 +612,9 @@ function Station({ device, serverOffsetMs, serverNow, picker, waiting }: Station
                 key={patient.number}
                 patient={patient}
                 onSaved={onSaved}
+                onTouched={() => {
+                  touched.current = patient.number;
+                }}
                 cameraDeviceId={device.id}
                 cameraLive={cameraLive}
                 autoFocus={newPatient && running && !patient.name}
