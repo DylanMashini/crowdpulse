@@ -56,7 +56,7 @@ function SummaryContent({ sitting }: { sitting: FinishedSitting }) {
       </View>
 
       <SittingSummary
-        items={summaryItems(sitting.summary, sitting.mainReasons)}
+        items={summaryItems(sitting.summary, sitting.mainReasons, sitting.shownLive)}
         status={status}
         sourceNote={source ? `${source} signal, not a camera measurement` : null}
       >

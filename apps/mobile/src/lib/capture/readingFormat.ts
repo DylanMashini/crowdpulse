@@ -1,8 +1,11 @@
 import {
   EXPOSURE_STUCK,
   EXPOSURE_STUCK_AFTER_SECONDS,
+  HELD_READING_CLEARS_AFTER_ABSENT_MS,
   HELD_READING_FOR_MS,
+  SHOWN_NOT_RECORDED,
   heldReadingAge,
+  isAbsentReason,
   isLowConfidence,
   LOWER_CONFIDENCE,
   LOWER_CONFIDENCE_DETAIL,
@@ -59,7 +62,27 @@ export function liveSourceText(source: CaptureSource): string {
 }
 
 /** The newest value a vital has had in this sitting, and the wall clock when it arrived. */
-export type LastValid = { value: number; atMs: number };
+export type LastValid = {
+  value: number;
+  atMs: number;
+  /** Since when every reading after it has said "no face" or "no chest". Unset while somebody is in view. */
+  absentSinceMs?: number;
+};
+
+/**
+ * The held value of a vital after one more reading. A reading with a value replaces it. One
+ * without keeps it, unless nobody has been in the picture for
+ * `HELD_READING_CLEARS_AFTER_ABSENT_MS`: then it is let go, and the box stays empty until the
+ * next value. A dropout for any other reason, or a shorter absence, keeps it.
+ */
+export function nextLastValid(previous: LastValid | null, estimate: Estimate, atMs: number): LastValid | null {
+  if (estimate.value != null) return { value: estimate.value, atMs };
+  if (!previous) return null;
+  if (!isAbsentReason(estimate.reason)) return { value: previous.value, atMs: previous.atMs };
+  const absentSinceMs = previous.absentSinceMs ?? atMs;
+  if (atMs - absentSinceMs >= HELD_READING_CLEARS_AFTER_ABSENT_MS) return null;
+  return { value: previous.value, atMs: previous.atMs, absentSinceMs };
+}
 
 export type ReadoutModel =
   | { state: 'valid'; value: string; foot: string }
@@ -102,10 +125,18 @@ export class ReasonTally {
     breathingRate: new Map(),
   };
 
+  private readonly shown: Record<Vital, boolean> = { heartRate: false, breathingRate: false };
+
   add(vital: Vital, estimate: Estimate): void {
+    if (estimate.value != null) this.shown[vital] = true;
     if (estimate.state === 'valid' || !estimate.reason) return;
     const counts = this.counts[vital];
     counts.set(estimate.reason, (counts.get(estimate.reason) ?? 0) + 1);
+  }
+
+  /** Whether the vital had a value on screen at any point in the sitting. */
+  wasShown(vital: Vital): boolean {
+    return this.shown[vital];
   }
 
   /** The most frequent reason, or null when every reading was valid or none arrived. */
@@ -145,7 +176,9 @@ const SUMMARY_REASONS: Partial<Record<EstimateReason, string>> = {
   no_frames: 'The camera stopped sending frames',
 };
 
-function summaryReason(reason: EstimateReason | null): string {
+/** `shownLive`: a value was on screen during the sitting, so "no reading" alone would look like a fault. */
+function summaryReason(reason: EstimateReason | null, shownLive: boolean): string {
+  if (shownLive) return SHOWN_NOT_RECORDED;
   if (!reason) return 'No reading passed the quality threshold';
   return SUMMARY_REASONS[reason] ?? reasonText(reason);
 }
@@ -171,6 +204,8 @@ export function hasLowConfidencePulse(summary: Pick<CaptureSittingSummary, 'hear
 export function summaryItems(
   summary: CaptureSittingSummary,
   mainReasons: Record<Vital, EstimateReason | null>,
+  /** Which vitals had a value on screen while the sitting ran. Never turned into a result. */
+  shownLive: Partial<Record<Vital, boolean>> = {},
 ): SummaryItem[] {
   const value = (v: number | null) => (v == null ? null : wholeNumber(v));
   return [
@@ -180,7 +215,7 @@ export function summaryItems(
       icon: 'pulse',
       value: value(summary.heartRate.value),
       unit: 'bpm',
-      reason: summary.heartRate.value == null ? summaryReason(mainReasons.heartRate) : null,
+      reason: summary.heartRate.value == null ? summaryReason(mainReasons.heartRate, shownLive.heartRate === true) : null,
       note: hasLowConfidencePulse(summary) ? `${LOWER_CONFIDENCE}. ${LOWER_CONFIDENCE_DETAIL}` : undefined,
       coverage: summary.heartRate.coverage,
       experimental: false,
@@ -191,7 +226,7 @@ export function summaryItems(
       icon: 'breath',
       value: value(summary.breathingRate.value),
       unit: 'per min',
-      reason: summary.breathingRate.value == null ? summaryReason(mainReasons.breathingRate) : null,
+      reason: summary.breathingRate.value == null ? summaryReason(mainReasons.breathingRate, shownLive.breathingRate === true) : null,
       coverage: summary.breathingRate.coverage,
       experimental: false,
     },
