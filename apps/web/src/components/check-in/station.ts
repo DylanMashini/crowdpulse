@@ -35,6 +35,8 @@ export interface StageInput {
   cameraLive: boolean;
   /** The sitting this page is showing for the phone: running, or the last one that ended. */
   sitting: Sitting | null;
+  /** The phone reported its state earlier in this visit to the page, so it is not an older app. */
+  reportedBefore?: boolean;
   /** The phone has been back at idle for a while and the sitting's summary still has not arrived. */
   summaryOverdue?: boolean;
 }
@@ -42,13 +44,16 @@ export interface StageInput {
 /** How long the summary may take to arrive after the phone has left the sitting. */
 export const SUMMARY_OVERDUE_MS = 10_000;
 
-export function stageOf({ camera, cameraLive, sitting, summaryOverdue = false }: StageInput): Stage {
+export function stageOf({ camera, cameraLive, sitting, reportedBefore = false, summaryOverdue = false }: StageInput): Stage {
   const running = sitting !== null && sitting.endedAt === null;
   const ended = sitting !== null && sitting.endedAt !== null;
   if (!camera) {
-    if (running) return cameraLive ? 'manual' : 'lost';
+    // Frames with no state reports are an older app, unless this phone was reporting a moment
+    // ago: then it has gone quiet, and its last frames are still on their way out.
+    const manual = cameraLive && !reportedBefore;
+    if (running) return manual ? 'manual' : 'lost';
     if (ended) return sitting.summary ? 'done' : 'called_off';
-    return cameraLive ? 'manual' : 'offline';
+    return manual ? 'manual' : 'offline';
   }
   switch (camera.phase) {
     case 'idle':
@@ -121,7 +126,16 @@ export interface StageCopy {
 }
 
 /** The two lines under the picture: what is happening, and what to do about it. */
-export function stageCopy(stage: Stage, camera: CameraState | null, phone: string, patient: string | null, kind: Sitting['kind'] | null, lowConfidence: boolean): StageCopy {
+export function stageCopy(
+  stage: Stage,
+  camera: CameraState | null,
+  phone: string,
+  patient: string | null,
+  kind: Sitting['kind'] | null,
+  lowConfidence: boolean,
+  /** The sitting finished with no heart rate at all. */
+  noReading = false,
+): StageCopy {
   const who = patient ?? 'this patient';
   switch (stage) {
     case 'offline':
@@ -152,9 +166,12 @@ export function stageCopy(stage: Stage, camera: CameraState | null, phone: strin
     case 'lost':
       return { title: `${phone} stopped responding`, detail: 'The sitting may still be running on the phone. Check that the app is open and the phone is on the network.', attention: true };
     case 'done':
+      // Finished is not the same as measured: with nothing to show for it, say so and what to do.
+      if (noReading) return { title: 'Sitting complete, no reading', detail: `No heart rate was accepted for ${who}. Repeat the sitting.`, attention: true };
       if (lowConfidence) return { title: 'Sitting complete', detail: `Saved with lower confidence for ${who}. Repeat the sitting.`, attention: true };
       return { title: 'Sitting complete', detail: kind === 'recheck' ? `Re-check saved for ${who}.` : `Baseline saved for ${who}.` };
     case 'called_off':
-      return { title: 'Sitting called off', detail: `Nothing was saved for ${who}.` };
+      // The readings are gone; the patient is not. A new check-in made the record before the camera started.
+      return { title: 'Sitting called off', detail: `No readings were saved. ${patient ?? 'The patient'} is still in the waiting room.` };
   }
 }

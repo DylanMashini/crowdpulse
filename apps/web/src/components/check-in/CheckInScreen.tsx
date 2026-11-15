@@ -246,23 +246,36 @@ function Station({ device, serverOffsetMs, serverNow, picker, waiting }: Station
     return () => clearTimeout(timer);
   }, [awaitingSummary]);
 
-  const stage = stageOf({ camera, cameraLive, sitting, summaryOverdue: overdue !== null && overdue === sitting?.id });
+  // A phone that has reported once is not an older app: if it goes quiet, it has gone quiet.
+  const [reportedBefore, setReportedBefore] = useState(false);
+  if (camera && !reportedBefore) setReportedBefore(true);
+
+  const stage = stageOf({ camera, cameraLive, sitting, reportedBefore, summaryOverdue: overdue !== null && overdue === sitting?.id });
   const lowConfidence = sitting?.summary?.heartRate.value != null && isLowConfidence(sitting.summary.heartRateConfidence);
-  const copy = stageCopy(stage, camera, device.label, patientRef ? patientLabel(patientRef) : null, kind, lowConfidence);
+  const noReading = sitting?.summary != null && sitting.summary.heartRate.value == null;
+  const copy = stageCopy(stage, camera, device.label, patientRef ? patientLabel(patientRef) : null, kind, lowConfidence, noReading);
 
   // --- what the buttons do ----------------------------------------------------------------------
 
   const commands = useCameraCommands(device.id, device.label, camera);
   const [creating, setCreating] = useState(false);
   const [confirming, setConfirming] = useState<Confirming>(null);
+  const [removing, setRemoving] = useState(false);
   /** A patient created for a check-in the phone then did not open: used again, not made twice. */
   const unopened = useRef<number | null>(null);
-  const busy = commands.pending !== null || creating;
+  const busy = commands.pending !== null || creating || removing;
   const { send, fail } = commands;
+
+  /** What became of the patient of a check-in that was cancelled before it started. */
+  const [notice, setNotice] = useState<string | null>(null);
+  // Start, End and Call off name the patient this page shows, so they cannot act on a check-in
+  // another dashboard has opened on the same phone since.
+  const onPhone = camera?.patientNumber ?? undefined;
 
   const open = (number: number, sittingKind: SittingKind) => {
     // The sitting on screen is done with: the page is about the next one from here.
     if (sitting) setDismissed(sitting.id);
+    setNotice(null);
     return send({ type: 'open', patientNumber: number, kind: sittingKind });
   };
 
@@ -279,11 +292,43 @@ function Station({ device, serverOffsetMs, serverNow, picker, waiting }: Station
     }
   };
 
-  const start = () => void send({ type: 'start', enrolFace: patient ? patient.faceOptIn && !patient.faceEnrolled : false });
+  const start = () => void send({ type: 'start', patientNumber: onPhone, enrolFace: patient ? patient.faceOptIn && !patient.faceEnrolled : false });
   const confirmed = () => {
     const type = confirming;
     setConfirming(null);
-    if (type) void send({ type });
+    if (type) void send({ type, patientNumber: onPhone });
+  };
+
+  // A new check-in makes the patient's record before the camera starts. Cancelled before a
+  // sitting, a record with no name and no sitting is nobody: it is taken out of the waiting
+  // room again. One that staff have started to fill in is kept, and the page says so.
+  const everSat = (record.data?.sittings.length ?? 0) > 0;
+  const cancelCheckIn = async () => {
+    const blank = kind === 'check_in' && patient !== null && !patient.name && record.data !== null && !everSat ? patient.number : null;
+    const kept = kind === 'check_in' && patientRef !== null && blank === null ? patientLabel(patientRef) : null;
+    if (!(await send({ type: 'cancel', patientNumber: onPhone }))) return;
+    if (blank === null) return setNotice(kept ? `${kept} stays in the waiting room.` : null);
+    try {
+      await api.dischargePatient(blank);
+      setNotice(null);
+    } catch {
+      setNotice(`Patient ${blank} is still in the waiting room. Discharge them from their record.`);
+    }
+  };
+
+  // After a check-in was called off mid-sitting: the patient is still waiting, unless staff say otherwise.
+  const removable = stage === 'called_off' && sitting !== null && sitting.kind === 'check_in' && record.data !== null && record.data.sittings.every((past) => past.summary === null);
+  const remove = async () => {
+    if (!sitting) return;
+    setRemoving(true);
+    try {
+      await api.dischargePatient(sitting.patientNumber);
+      setDismissed(sitting.id);
+    } catch (failure) {
+      fail(failure instanceof ApiError ? failure.message : 'The patient could not be removed. Try again.');
+    } finally {
+      setRemoving(false);
+    }
   };
 
   const [optIn, setOptIn] = useState<{ saving: boolean; error: string | null }>({ saving: false, error: null });
@@ -297,6 +342,19 @@ function Station({ device, serverOffsetMs, serverNow, picker, waiting }: Station
       setOptIn({ saving: false, error: failure instanceof ApiError ? failure.message : 'Face match could not be changed. Try again.' });
     }
   };
+
+  // Each step replaces the button that was pressed. Focus follows to the next step's button, or to
+  // the words when there is none to press, so the keyboard and a screen reader keep their place.
+  const controlRef = useRef<HTMLDivElement | null>(null);
+  const statusRef = useRef<HTMLDivElement | null>(null);
+  const held = useRef(false);
+  useEffect(() => {
+    const root = controlRef.current;
+    if (!held.current || !root) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLButtonElement && !active.disabled && root.contains(active)) return;
+    (root.querySelector<HTMLButtonElement>('button:not(:disabled)') ?? statusRef.current)?.focus();
+  }, [stage]);
 
   const pendingType = commands.pending?.type ?? null;
   const offline = camera === null;
@@ -312,13 +370,13 @@ function Station({ device, serverOffsetMs, serverNow, picker, waiting }: Station
         );
       case 'opening':
         return (
-          <Button variant="quiet" disabled={busy} onClick={() => void send({ type: 'cancel' })}>
+          <Button variant="quiet" disabled={busy} onClick={() => void cancelCheckIn()}>
             Cancel
           </Button>
         );
       case 'blocked':
         return (
-          <Button disabled={busy} onClick={() => void send({ type: 'cancel' })}>
+          <Button disabled={busy} onClick={() => void cancelCheckIn()}>
             Close check-in
           </Button>
         );
@@ -328,7 +386,7 @@ function Station({ device, serverOffsetMs, serverNow, picker, waiting }: Station
             <Button variant="primary" size="lg" disabled={busy || !readyToStart(camera)} onClick={start}>
               {pendingType === 'start' ? 'Starting' : 'Start sitting'}
             </Button>
-            <Button variant="quiet" size="lg" disabled={busy} onClick={() => void send({ type: 'cancel' })}>
+            <Button variant="quiet" size="lg" disabled={busy} onClick={() => void cancelCheckIn()}>
               Cancel
             </Button>
           </>
@@ -374,6 +432,11 @@ function Station({ device, serverOffsetMs, serverNow, picker, waiting }: Station
             <Button size="lg" disabled={busy || offline} onClick={() => void checkInNew()}>
               Check in a new patient
             </Button>
+            {removable ? (
+              <Button variant="quiet" size="lg" disabled={busy} onClick={() => void remove()}>
+                {removing ? 'Removing' : 'Remove from waiting room'}
+              </Button>
+            ) : null}
           </>
         );
       default:
@@ -384,8 +447,18 @@ function Station({ device, serverOffsetMs, serverNow, picker, waiting }: Station
   // The words and the buttons for this moment. Under the picture while the camera is on; in
   // its place, as the one thing to look at, while it is off.
   const control = (
-    <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-3">
-      <div role="status" className="flex min-w-0 flex-1 basis-[240px] flex-col gap-1">
+    <div
+      ref={controlRef}
+      onFocusCapture={() => {
+        held.current = true;
+      }}
+      onBlurCapture={(event) => {
+        // Focus that goes somewhere else on the page has left; focus lost because the button it was on is gone has not.
+        if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) held.current = false;
+      }}
+      className="flex flex-wrap items-center justify-between gap-x-5 gap-y-3"
+    >
+      <div ref={statusRef} tabIndex={-1} role="status" className="flex min-w-0 flex-1 basis-[240px] flex-col gap-1 rounded-sm">
         <p className="type-heading text-ink">{copy.title}</p>
         {copy.detail ? <p className={cx('max-w-[520px] type-dense', copy.attention ? 'text-watch' : 'text-ink-muted')}>{copy.detail}</p> : null}
       </div>
@@ -456,7 +529,16 @@ function Station({ device, serverOffsetMs, serverNow, picker, waiting }: Station
               </div>
             ) : null}
 
-            {stage === 'ready' ? <Recheck waiting={waiting} disabled={busy} onOpen={(number) => void open(number, 'recheck')} /> : null}
+            {notice && stage === 'ready' ? (
+              <p role="status" className="type-dense text-ink-muted">
+                {notice}
+              </p>
+            ) : null}
+
+            {/* Between sittings, whichever way the last one ended: someone already waiting can sit down next. */}
+            {camera && (stage === 'ready' || stage === 'done' || stage === 'called_off') ? (
+              <Recheck waiting={waiting} disabled={busy} onOpen={(number) => void open(number, 'recheck')} />
+            ) : null}
 
             <PrivacyNote icon="video">{PRIVACY_CAPTURE}</PrivacyNote>
           </div>

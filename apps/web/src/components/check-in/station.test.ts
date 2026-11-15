@@ -66,6 +66,9 @@ test('a phone that stops reporting is lost mid-sitting, offline otherwise, and a
   // Frames without state reports: an app from before remote control.
   assert.equal(stageOf({ camera: null, cameraLive: true, sitting: null }), 'manual');
   assert.equal(stageOf({ camera: null, cameraLive: true, sitting: runningSitting }), 'manual');
+  // The same frames from a phone that was reporting a moment ago: it has gone quiet (QW-04).
+  assert.equal(stageOf({ camera: null, cameraLive: true, sitting: runningSitting, reportedBefore: true }), 'lost');
+  assert.equal(stageOf({ camera: null, cameraLive: true, sitting: null, reportedBefore: true }), 'offline');
 });
 
 test('the last sitting stays on screen until staff move on or the phone opens the next check-in', () => {
@@ -109,6 +112,10 @@ test('Start waits for a face, and the words say what to do next', () => {
   assert.equal(stageCopy('done', idle, 'Front desk phone', 'Simone Rivera', 'check_in', false).detail, 'Baseline saved for Simone Rivera.');
   assert.equal(stageCopy('done', idle, 'Front desk phone', 'Simone Rivera', 'recheck', false).detail, 'Re-check saved for Simone Rivera.');
   assert.match(stageCopy('done', idle, 'Front desk phone', 'Simone Rivera', 'check_in', true).detail ?? '', /lower confidence/);
-  assert.equal(stageCopy('called_off', idle, 'Front desk phone', null, 'check_in', false).detail, 'Nothing was saved for this patient.');
+  assert.equal(stageCopy('called_off', idle, 'Front desk phone', 'Patient 43', 'check_in', false).detail, 'No readings were saved. Patient 43 is still in the waiting room.');
+  // Ended at six seconds: finished, with nothing measured.
+  const empty = stageCopy('done', idle, 'Front desk phone', 'Robert Okafor', 'recheck', false, true);
+  assert.equal(empty.title, 'Sitting complete, no reading');
+  assert.equal(empty.attention, true);
   assert.equal(stageCopy('offline', null, 'Front desk phone', null, null, false).title, 'Front desk phone is not connected');
 });
