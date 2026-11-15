@@ -76,7 +76,7 @@ export const errorStatus: Record<ErrorCode, number> = {
   no_face_detected: 422,
   /** The face models are not installed on the server. Choose the patient from the waiting-room list instead. */
   face_unavailable: 503,
-  /** The webcam's measuring engine is not built on this server (`pnpm webcam:build`), or would not start. Webcam routes only. */
+  /** The webcam's measuring engine cannot run: the server is not a Mac, the program is not built (`pnpm webcam:build`), or the Mac's camera would not open. The message says which. Webcam routes only. */
   engine_unavailable: 503,
   payload_too_large: 413,
   rate_limited: 429,

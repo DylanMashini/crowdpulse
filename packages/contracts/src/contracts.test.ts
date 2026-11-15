@@ -366,3 +366,17 @@ test('the webcam routes answer in the shapes a phone already posts', async () =>
   assert.equal(routes.webcamFrames(id), `/api/webcam/${id}/frames`);
 });
 
+test('the camera the server opens answers as the frames route does, with what the camera reports', async () => {
+  const { PollWebcamRequest, PollWebcamResponse, PostWebcamFramesResponse } = await import('./webcam.ts');
+  const id = '6f1d1c6e-3c0a-4f5e-9a51-0d6a3b1f2c11';
+  assert.deepEqual(PollWebcamRequest.parse({}), { readingsAfter: 0, snapshot: false });
+  const camera = { name: 'MacBook Pro Camera', width: 1280, height: 720, fps: 30, delivered: 1800, dropped: 0, exposureHeld: false, whiteBalanceHeld: false };
+  const base = { viewers: 0, outlines: null, facePresent: false, exposureLocked: false, sittingId: null, readings: [] };
+  const answer = PollWebcamResponse.parse({ ...base, camera, snapshotJpegBase64: null });
+  // Everything the station read from the frames route is still there.
+  assert.equal(PostWebcamFramesResponse.safeParse(answer).success, true);
+  assert.equal(PollWebcamResponse.safeParse({ ...base, camera: null, snapshotJpegBase64: null }).success, true);
+  assert.equal(PollWebcamResponse.safeParse({ ...base, camera: { ...camera, dropped: -1 }, snapshotJpegBase64: null }).success, false);
+  assert.equal(routes.webcamNative(id), `/api/webcam/${id}/native`);
+});
+

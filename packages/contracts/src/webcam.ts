@@ -85,3 +85,50 @@ export const WebcamSittingResponse = z.object({
   readings: z.array(Reading).max(600).default([]),
 });
 export type WebcamSittingResponse = z.infer<typeof WebcamSittingResponse>;
+
+// --- The camera opened by the server -----------------------------------------------------------
+//
+// Added so that the frames never pass through a browser: the server's own program opens the
+// Mac's camera, measures on its uncompressed frames, and puts a small picture on the live view
+// by itself. The browser only asks what the engine has made of them, and drives the sitting
+// with the sitting route above. The server and the camera are then the same Mac.
+
+/** Limits for the camera the server opens. */
+export const WEBCAM_NATIVE = {
+  /** How often the check-in page asks. The first request turns the camera on; it goes off `WEBCAM.timeoutMs` after the last. */
+  pollIntervalMs: 100,
+  /** The camera is given this long to deliver its first frame, which covers the Mac's own permission prompt. */
+  startTimeoutMs: 30_000,
+} as const;
+
+export const PollWebcamRequest = z.object({
+  /** How many readings of the running sitting the browser already holds: the answer carries the ones after. */
+  readingsAfter: z.int().nonnegative().default(0),
+  /** Also return the newest picture, for enrolling the patient's face. */
+  snapshot: z.boolean().default(false),
+});
+export type PollWebcamRequest = z.infer<typeof PollWebcamRequest>;
+
+/** What the camera itself reports, once a second. */
+export const WebcamCameraStatus = z.object({
+  name: z.string().max(200),
+  width: z.int().nonnegative(),
+  height: z.int().nonnegative(),
+  /** Frames delivered in the last second. */
+  fps: z.number().nonnegative(),
+  /** Frames delivered and frames lost since the camera opened. */
+  delivered: z.int().nonnegative(),
+  dropped: z.int().nonnegative(),
+  /** True when the camera let the program freeze its exposure, and its white balance. A MacBook's built-in camera allows neither. */
+  exposureHeld: z.boolean(),
+  whiteBalanceHeld: z.boolean(),
+});
+export type WebcamCameraStatus = z.infer<typeof WebcamCameraStatus>;
+
+export const PollWebcamResponse = PostWebcamFramesResponse.extend({
+  /** Null until the camera has reported, about a second after it opens. */
+  camera: WebcamCameraStatus.nullable(),
+  /** With `snapshot`: the newest live-view picture as base64 JPEG, or null when there is none yet. */
+  snapshotJpegBase64: z.string().nullable(),
+});
+export type PollWebcamResponse = z.infer<typeof PollWebcamResponse>;

@@ -40,6 +40,8 @@ export const routes = {
   liveCommand: (deviceId: string) => `/api/live/${deviceId}/command`,
   /** POST, from the check-in page's own webcam: the frames taken since the last request. The answer carries outlines and readings. */
   webcamFrames: (deviceId: string) => `/api/webcam/${deviceId}/frames`,
+  /** POST, from the check-in page: turns on the camera the server itself opens, and returns what the engine has made of its frames. */
+  webcamNative: (deviceId: string) => `/api/webcam/${deviceId}/native`,
   /** POST, from the same page: start, finish or abandon the engine's sitting on those frames. */
   webcamSitting: (deviceId: string) => `/api/webcam/${deviceId}/sitting`,
   /** DELETE: the webcam is off. The server's engine for it stops. */
