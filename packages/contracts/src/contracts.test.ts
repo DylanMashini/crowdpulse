@@ -326,3 +326,13 @@ test('a camera phone reports its state and outlines, and a command names what it
   assert.equal(StreamEvent.parse({ type: 'camera_state', deviceId: device.id, state: null }).type, 'camera_state');
   assert.equal(routes.liveState(device.id), `/api/live/${device.id}/state`);
 });
+
+test('a held reading carries its age only once it is no longer fresh', async () => {
+  const { HELD_READING_LABEL_AFTER_MS, heldReadingAge } = await import('./copy.ts');
+  assert.equal(heldReadingAge(0), null);
+  assert.equal(heldReadingAge(HELD_READING_LABEL_AFTER_MS - 1), null);
+  assert.equal(heldReadingAge(HELD_READING_LABEL_AFTER_MS), '3 s ago');
+  assert.equal(heldReadingAge(8_400), '8 s ago');
+  assert.equal(heldReadingAge(52_000), '52 s ago');
+  assert.equal(heldReadingAge(Number.NaN), null);
+});
