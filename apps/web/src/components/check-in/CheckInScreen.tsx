@@ -91,7 +91,9 @@ export function CheckInScreen() {
     [devices.data, reported, webcamId],
   );
   const own = cameras.find((device) => device.id === webcamId) ?? null;
-  const phones = cameras.filter((device) => device.id !== webcamId);
+  const others = cameras.filter((device) => device.id !== webcamId);
+  // Only a phone takes the page by connecting. Another computer's webcam is chosen by hand, to watch it.
+  const phones = own ? others.filter((device) => device.label !== WEBCAM_LABEL) : others;
   const isOnline = (device: Device) => isConnected(device) || serverNow - new Date(device.lastSeenAt).getTime() < ONLINE_WITHIN_MS;
   const [chosen, setChosen] = useState<string | null>(null);
   // The phone this page was last working with: one that was connected, or picked by hand. When
@@ -133,7 +135,7 @@ export function CheckInScreen() {
   const picker = (
     <Section heading={own ? 'Camera' : 'Camera phone'} className="max-xl:order-4">
       <div role="radiogroup" aria-label={own ? 'Camera' : 'Camera phone'} className="flex flex-col gap-[2px]">
-        {[...phones, ...(own ? [own] : [])].map((device) => {
+        {[...others, ...(own ? [own] : [])].map((device) => {
           const on = device.id === selected?.id;
           const isOwn = device.id === webcamId;
           const seenMinutes = Math.max(0, Math.floor((serverNow - new Date(device.lastSeenAt).getTime()) / 60_000));
