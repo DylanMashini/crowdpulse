@@ -28,7 +28,7 @@ export const WEBCAM = {
   /** With no frame for this long the server closes the webcam's engine; a running sitting is not saved by it. */
   timeoutMs: 15_000,
   /** The camera has stopped when it delivers no frame for this long. */
-  lostAfterMs: 3000,
+  lostAfterMs: 5000,
 } as const;
 
 /** Bytes before each JPEG in the body of the frames route: Float64 capture time, Uint32 length, both little-endian. */
