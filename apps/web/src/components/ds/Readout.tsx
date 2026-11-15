@@ -6,7 +6,7 @@ import { Icon, type IconName } from './Icon';
 import { ProvenanceTag } from './ProvenanceTag';
 import type { Provenance } from './types';
 
-export type ReadoutState = 'valid' | 'settling' | 'none' | 'stale';
+export type ReadoutState = 'valid' | 'settling' | 'none' | 'stale' | 'held';
 type ReadoutSize = 'xl' | 'lg' | 'md';
 
 const VALUE: Record<ReadoutSize, string> = {
@@ -31,8 +31,10 @@ export interface ReadoutProps {
   icon?: IconName;
   /** How old the value is, in words: "2 s ago". */
   age?: string;
-  /** Why there is no value. Shown for `none`, and for `settling` in place of the default. */
+  /** Why there is no value. Shown for `none`, for `settling` in place of the default, and under a `held` value. */
   reason?: string;
+  /** How old a `held` value is, in its corner: "8 s ago". Left out while the value is fresh. */
+  heldAge?: string;
   tag?: Provenance;
   /** Words for the tag when the kind's own word is not exact enough. */
   tagLabel?: ReactNode;
@@ -46,9 +48,12 @@ export interface ReadoutProps {
 
 /**
  * One measured value with its unit, source and age. Without a value it prints "No reading" or
- * "Settling" in words with the reason: never a dash, a zero or the last good number.
+ * "Settling" in words with the reason: never a dash, a zero or the last good number. The one
+ * exception is `held`, during a sitting: the latest value stays in its box when the readings
+ * after it carry none, in `ink` and not the live accent, with its age in the corner once it is
+ * no longer fresh and the reason there is no fresh one underneath.
  */
-export function Readout({ label, value, unit, size = 'lg', state = 'valid', icon, age, reason, tag, tagLabel, qualifier, live, children }: ReadoutProps) {
+export function Readout({ label, value, unit, size = 'lg', state = 'valid', icon, age, reason, heldAge, tag, tagLabel, qualifier, live, children }: ReadoutProps) {
   const foot =
     state === 'stale'
       ? `Stale, ${age ?? 'no recent reading'}`
@@ -56,7 +61,9 @@ export function Readout({ label, value, unit, size = 'lg', state = 'valid', icon
         ? (reason ?? 'Waiting for three windows to agree')
         : state === 'none'
           ? (reason ?? 'Signal quality too low')
-          : age;
+          : state === 'held'
+            ? reason
+            : age;
   const words = state === 'none' ? 'No reading' : state === 'settling' ? 'Settling' : null;
   const reading = live && state === 'valid';
 
@@ -95,6 +102,7 @@ export function Readout({ label, value, unit, size = 'lg', state = 'valid', icon
                 {qualifier}
               </ProvenanceTag>
             ) : null}
+            {state === 'held' && heldAge ? <span className="ml-auto self-start type-caption tabular-nums text-ink-faint">{heldAge}</span> : null}
           </>
         )}
       </div>
