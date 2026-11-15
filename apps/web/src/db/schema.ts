@@ -173,9 +173,13 @@ export const sittings = pgTable(
     heartRateCoverage: real("heart_rate_coverage"),
     /** `normal` or `low` (contracts `HeartRateConfidence`). Null without a heart rate and for sittings from before it existed. */
     heartRateConfidence: text("heart_rate_confidence"),
+    /** The heart rate is the median of the readings shown live in a check-in, not a recorded value. */
+    heartRateFromLive: boolean("heart_rate_from_live").notNull().default(false),
     /** Breaths per minute. */
     breathingRate: real("breathing_rate"),
     breathingRateCoverage: real("breathing_rate_coverage"),
+    /** The same for the breathing rate. */
+    breathingRateFromLive: boolean("breathing_rate_from_live").notNull().default(false),
     /** ms. */
     rmssd: real(),
     rmssdCoverage: real("rmssd_coverage"),

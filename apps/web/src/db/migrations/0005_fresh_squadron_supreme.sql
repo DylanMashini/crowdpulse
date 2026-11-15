@@ -1,0 +1,2 @@
+ALTER TABLE "sittings" ADD COLUMN "heart_rate_from_live" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "sittings" ADD COLUMN "breathing_rate_from_live" boolean DEFAULT false NOT NULL;
