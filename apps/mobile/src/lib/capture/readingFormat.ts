@@ -1,6 +1,8 @@
 import {
   EXPOSURE_STUCK,
   EXPOSURE_STUCK_AFTER_SECONDS,
+  HELD_READING_FOR_MS,
+  heldReadingAge,
   isLowConfidence,
   LOWER_CONFIDENCE,
   LOWER_CONFIDENCE_DETAIL,
@@ -56,22 +58,22 @@ export function liveSourceText(source: CaptureSource): string {
   }
 }
 
-/** How long a struck-through value may stay on screen once frames stop. */
-export const STALE_BLANK_AFTER_MS = 10_000;
-
+/** The newest value a vital has had in this sitting, and the wall clock when it arrived. */
 export type LastValid = { value: number; atMs: number };
 
 export type ReadoutModel =
   | { state: 'valid'; value: string; foot: string }
   | { state: 'settling'; foot: string }
   | { state: 'none'; foot: string }
-  /** The last accepted value, struck through, with its age. */
-  | { state: 'stale'; value: string; foot: string };
+  /** The latest value of the sitting, kept in its box. `age` once it is no longer fresh: "8 s ago". */
+  | { state: 'held'; value: string; age: string | null; foot: string };
 
 /**
- * What a live Readout shows for one estimate. The engine never repeats an old value, so the
- * struck-through number in the stale state comes from `lastValid`, which the screen keeps, and
- * it is blanked after STALE_BLANK_AFTER_MS.
+ * What a live Readout shows for one estimate. Once a vital has had a value in this sitting its
+ * box holds the latest one for the rest of the run, with its age once it is no longer fresh and
+ * the reason there is no fresh one underneath. The engine never repeats an old value, so the
+ * held number comes from `lastValid`, which the screen keeps for each vital on its own and
+ * empties when a sitting starts.
  */
 export function readoutFor(
   estimate: Estimate | null,
@@ -83,16 +85,14 @@ export function readoutFor(
   if (estimate.state === 'valid' && estimate.value != null) {
     return { state: 'valid', value: wholeNumber(estimate.value), foot: liveSourceText(source) };
   }
-  if (estimate.state === 'settling') return { state: 'settling', foot: reasonText(estimate.reason ?? 'awaiting_agreement') };
-  if (estimate.state === 'stale') {
-    const age = lastValid ? nowMs - lastValid.atMs : null;
-    if (lastValid && age !== null && age < STALE_BLANK_AFTER_MS) {
-      const seconds = Math.max(1, Math.round(age / 1000));
-      return { state: 'stale', value: wholeNumber(lastValid.value), foot: `Stale, last reading ${seconds} s ago` };
-    }
-    return { state: 'none', foot: reasonText('no_frames') };
+  const settling = estimate.state === 'settling';
+  const foot = settling
+    ? reasonText(estimate.reason ?? 'awaiting_agreement')
+    : reasonText(estimate.state === 'stale' ? 'no_frames' : estimate.reason);
+  if (lastValid && nowMs - lastValid.atMs <= HELD_READING_FOR_MS) {
+    return { state: 'held', value: wholeNumber(lastValid.value), age: heldReadingAge(nowMs - lastValid.atMs), foot };
   }
-  return { state: 'none', foot: reasonText(estimate.reason) };
+  return { state: settling ? 'settling' : 'none', foot };
 }
 
 /** Counts why readings were declined during a sitting, so the summary can name the main reason. */

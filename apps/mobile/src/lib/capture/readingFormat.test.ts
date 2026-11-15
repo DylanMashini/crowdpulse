@@ -2,10 +2,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { EXPOSURE_STUCK, EXPOSURE_STUCK_AFTER_SECONDS, type Estimate } from '@triagecam/contracts';
+import { EXPOSURE_STUCK, EXPOSURE_STUCK_AFTER_SECONDS, HELD_READING_FOR_MS, type Estimate } from '@triagecam/contracts';
 import type { CaptureSittingSummary, VariabilityReason } from 'triage-capture';
 
-import { ReasonTally, STALE_BLANK_AFTER_MS, hasLowConfidencePulse, readoutFor, summaryItems, viewfinderHint } from './readingFormat.ts';
+import { ReasonTally, hasLowConfidencePulse, readoutFor, summaryItems, viewfinderHint } from './readingFormat.ts';
 
 const estimate = (patch: Partial<Estimate>): Estimate => ({
   value: null,
@@ -24,9 +24,40 @@ test('a valid estimate shows its rounded value and where it came from', () => {
   assert.equal(stub.foot, 'Stub script, not a measurement');
 });
 
-test('no reading carries the reason and never a value', () => {
-  const model = readoutFor(estimate({ reason: 'no_face' }), 'camera', { value: 80, atMs: 0 }, 1000);
+test('no reading carries the reason and no value when the sitting has had none', () => {
+  const model = readoutFor(estimate({ reason: 'no_face' }), 'camera', null, 1000);
   assert.deepEqual(model, { state: 'none', foot: 'Face not in view' });
+});
+
+test('a reading that is lost stays in its box, and says how old it is after a few seconds', () => {
+  const last = { value: 79.6, atMs: 10_000 };
+  assert.deepEqual(readoutFor(estimate({ reason: 'no_face' }), 'camera', last, 11_000), {
+    state: 'held',
+    value: '80',
+    age: null,
+    foot: 'Face not in view',
+  });
+  assert.deepEqual(readoutFor(estimate({ reason: 'motion' }), 'camera', last, 18_200), {
+    state: 'held',
+    value: '80',
+    age: '8 s ago',
+    foot: 'Too much movement. Keep still',
+  });
+  // Waiting for windows to agree again is no reason to empty the box either.
+  const settling = readoutFor(estimate({ state: 'settling', reason: 'awaiting_agreement' }), 'camera', last, 14_000);
+  assert.deepEqual([settling.state, 'age' in settling ? settling.age : null], ['held', '4 s ago']);
+});
+
+test('a fresh reading clears the age label', () => {
+  const model = readoutFor(estimate({ value: 82, state: 'valid', reason: null }), 'camera', { value: 79.6, atMs: 10_000 }, 30_000);
+  assert.deepEqual(model, { state: 'valid', value: '82', foot: 'Camera, measured this second' });
+});
+
+test('a value is held for the rest of a sitting and no longer', () => {
+  const last = { value: 72, atMs: 5_000 };
+  const lost = estimate({ reason: 'low_quality' });
+  assert.equal(readoutFor(lost, 'camera', last, 5_000 + 55_000).state, 'held');
+  assert.equal(readoutFor(lost, 'camera', last, 5_000 + HELD_READING_FOR_MS + 1).state, 'none');
 });
 
 test('settling says what it is waiting for', () => {
@@ -34,19 +65,16 @@ test('settling says what it is waiting for', () => {
   assert.equal(readoutFor(null, 'camera', null, 0).state, 'settling');
 });
 
-test('stale strikes the last accepted value with its age, then blanks it', () => {
+test('a camera that stops sending frames keeps the last value, with its age and the reason', () => {
   const stale = estimate({ state: 'stale', reason: 'no_frames' });
   const last = { value: 76.2, atMs: 10_000 };
   assert.deepEqual(readoutFor(stale, 'camera', last, 14_000), {
-    state: 'stale',
+    state: 'held',
     value: '76',
-    foot: 'Stale, last reading 4 s ago',
-  });
-  assert.deepEqual(readoutFor(stale, 'camera', last, 10_000 + STALE_BLANK_AFTER_MS), {
-    state: 'none',
+    age: '4 s ago',
     foot: 'The camera stopped sending frames',
   });
-  assert.equal(readoutFor(stale, 'camera', null, 14_000).state, 'none');
+  assert.deepEqual(readoutFor(stale, 'camera', null, 14_000), { state: 'none', foot: 'The camera stopped sending frames' });
 });
 
 test('the summary names the main reason a measurement failed and tags variability experimental', () => {
